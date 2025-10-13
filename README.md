@@ -18,4 +18,9 @@ pip install -e .
 ```
 
 
+### Usage
+```
+import spd
+spd.run_pytket_circuit(circ, measure_qubits_list=[0, 1], trunc_val=1e-3)  # < Z0Z1 >
+```
 
