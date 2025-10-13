@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools"]  # Required to build the package
+build-backend = "setuptools.build_meta"  # Use setuptools to build the package
+
+[project]
+name = "spd"
+version = "0.0.1"
+requires-python = ">=3.7"
+dependencies = [
+    "jax>=0.4.0",  # Replace with the version you need
+    "pytket>=2.7.0",
+    "numpy>=1.23.0"
+]
+
