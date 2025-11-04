@@ -6,6 +6,7 @@ import time
 import sys
 from pytket import Circuit
 from pytket.circuit import OpType
+from pytket.pauli import Pauli
 
 from . import jax_backend as backend
 
@@ -23,40 +24,62 @@ from . import jax_backend as backend
 # [TODO]: Merging the conj, merge into a single function
 # [TODO]: make sure c_array always float32
 
-def run_pytket_circuit(circ, measure_qubits_list, trunc_val, packbit=32, loggin=True):
+_PACKBIT = 32
+
+if _PACKBIT == 8:
+    pauli_str_to_uint = backend.pauli_str_to_uint8
+    pack_bits_to_uint = backend.pack_bits_to_uint8
+elif _PACKBIT == 32:
+    pauli_str_to_uint = backend.pauli_str_to_uint32
+    pack_bits_to_uint = backend.pack_bits_to_uint32
+elif _PACKBIT == 64:
+    raise NotImplementedError("64-bit has some bug in the code. It cannot generate correct result")
+    pauli_str_to_uint = backend.pauli_str_to_uint64
+    pack_bits_to_uint = backend.pack_bits_to_uint64
+else:
+    raise ValueError("_PACKBIT must be 8 or 32")
+
+def create_measurement_arrays(measurement_dict, system_size):
+    xz_list = []
+    c_list = []
+    for key, val in measurement_dict.items():
+        x_array = jnp.zeros((1, system_size), dtype=bool)
+        z_array = jnp.array([1 if i in key else 0 for i in range(system_size)], dtype=bool).reshape(1, -1)
+        xz_array = jnp.concatenate((x_array, z_array), axis=1)
+        xz_array = pack_bits_to_uint(xz_array.flatten())
+        xz_list.append(xz_array)
+        c_list.append(val)
+
+    return jnp.array(xz_list), jnp.array(c_list)
+
+
+def run_pytket_circuit(circ, measure_qubits_data,
+                       trunc_val, loggin=True):
     # [TODO] Separate the backend.run part from the parse circuit part.
 
     from pytket.passes import DecomposeBoxes, AutoRebase
     from pytket.circuit import OpType
-
-    AutoRebase({# OpType.CX, OpType.CY, OpType.CZ,
-                OpType.CX, OpType.CZ,
-                OpType.ZZPhase, OpType.YYPhase, OpType.XXPhase,
-                OpType.Rx, OpType.Ry, OpType.Rz,
-                OpType.H, OpType.S, OpType.Sdg,
-                }).apply(circ)
+    # AutoRebase({# OpType.CX, OpType.CY, OpType.CZ,
+    #             OpType.CX, OpType.CZ,
+    #             OpType.ZZPhase, OpType.YYPhase, OpType.XXPhase,
+    #             OpType.Rx, OpType.Ry, OpType.Rz,
+    #             OpType.H, OpType.S, OpType.Sdg,
+    #             }).apply(circ)
 
     total_start_time = time.time()
     system_size = circ.n_qubits
-    system_size = packbit * ((system_size + packbit - 1) // packbit)  # pad to multiple of packbit
+    system_size = _PACKBIT * ((system_size + _PACKBIT - 1) // _PACKBIT)  # pad to multiple of _PACKBIT
     print("SYSTEM SIZE (PADDED):", system_size)
     commands = circ.get_commands()
     total_num_gate = len(commands)
 
-    if packbit == 8:
-        pauli_str_to_uint = backend.pauli_str_to_uint8
-    elif packbit == 32:
-        pauli_str_to_uint = backend.pauli_str_to_uint32
-    elif packbit == 64:
-        raise NotImplementedError("64-bit has some bug in the code. It cannot generate correct result")
-        pauli_str_to_uint = backend.pauli_str_to_uint64
-    else:
-        raise ValueError("packbit must be 8 or 32")
-
-
-    measure_Zs = ''.join(['Z' if i in measure_qubits_list else 'I' for i in range(system_size)])
-    xz_array = pauli_str_to_uint(measure_Zs).reshape([1, -1])
-    c_array = jnp.ones((1,), dtype=jnp.complex64)
+    if type(measure_qubits_data) is dict:
+        xz_array, c_array = create_measurement_arrays(measure_qubits_data, system_size)
+    elif type(measure_qubits_data) is list:
+        measure_qubits_list = measure_qubits_data
+        measure_Zs = ''.join(['Z' if i in measure_qubits_list else 'I' for i in range(system_size)])
+        xz_array = pauli_str_to_uint(measure_Zs).reshape([1, -1])
+        c_array = jnp.ones((1,), dtype=jnp.complex64)
 
     merge_pauli = backend.merge_and_pad
     max_num_string = 0
@@ -75,11 +98,11 @@ def run_pytket_circuit(circ, measure_qubits_list, trunc_val, packbit=32, loggin=
                                                         trunc_val=trunc_val,
                                                         )
             max_num_string = max(max_num_string, num_string)
-        elif command.op.type in [OpType.H, OpType.S, OpType.Sdg]:
+        elif command.op.type in [OpType.H, OpType.S, OpType.Sdg, OpType.X, OpType.Y, OpType.Z]:
             func = _CLIFFORD_FUNC_DISPATCH[command.op.type]
             qubit = command.args[0].index[0]
             xz_array, c_array = func(xz_array, c_array, qubit)
-        elif command.op.type in [OpType.CX, OpType.CZ]:
+        elif command.op.type in [OpType.CX, OpType.CY, OpType.CZ]:
             func = _CLIFFORD_FUNC_DISPATCH[command.op.type]
             control_qubit = command.args[0].index[0]
             target_qubit = command.args[1].index[0]
@@ -120,10 +143,37 @@ def run_pytket_circuit(circ, measure_qubits_list, trunc_val, packbit=32, loggin=
 
 def parse_pauli_theta(command, system_size):
     P = ['I'] * system_size
-    theta = command.op.params[0] * np.pi # / 2
     op_type = command.op.type
-    _ROT_DISPATCH[op_type](command, P)
+    P, theta = _ROT_DISPATCH[op_type](command, P)
     return ''.join(P), theta
+
+def _single_pauli_rot(command, P, axis):
+    qubit = command.args[0].index[0]
+    P[qubit] = axis
+    theta = command.op.params[0] * np.pi # / 2
+    return P, theta
+
+def _two_pauli_rot(command, P, axis):
+    qubit1 = command.args[0].index[0]
+    qubit2 = command.args[1].index[0]
+    P[qubit1] = axis
+    P[qubit2] = axis
+    theta = command.op.params[0] * np.pi # / 2
+    return P, theta
+
+def _pauli_exp_box(command, P):
+    # (Pdb) cmd.op.get_paulis()
+    # [Pauli.X, Pauli.X, Pauli.X]
+    # (Pdb) cmd.op.get_phase()
+    # 0.0318309886183791
+    n_qubits = command.op.n_qubits
+    q_indices = [command.args[i].index[0] for i in range(n_qubits)]
+    paulis = command.op.get_paulis()
+    for q_idx, pauli in zip(q_indices, paulis):
+        P[q_idx] = str(pauli)[-1]
+
+    theta = command.op.get_phase() * np.pi # / 2
+    return P, theta
 
 # global dispatch table
 _ROT_DISPATCH = {
@@ -133,23 +183,15 @@ _ROT_DISPATCH = {
         OpType.ZZPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "Z"),
         OpType.XXPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "X"),
         OpType.YYPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "Y"),
+        OpType.PauliExpBox: _pauli_exp_box,
         }
-
-def _single_pauli_rot(command, P, axis):
-    qubit = command.args[0].index[0]
-    P[qubit] = axis
-
-def _two_pauli_rot(command, P, axis):
-    qubit1 = command.args[0].index[0]
-    qubit2 = command.args[1].index[0]
-    P[qubit1] = axis
-    P[qubit2] = axis
 
 _CLIFFORD_FUNC_DISPATCH = {
         OpType.H: backend.conjugated_pauli_batched_uint32_H,
         OpType.S: backend.conjugated_pauli_batched_uint32_S,
         OpType.Sdg: backend.conjugated_pauli_batched_uint32_Sdg,
         OpType.CX: backend.conjugated_pauli_batched_uint32_CX,
+        OpType.CY: backend.conjugated_pauli_batched_uint32_CY,
         OpType.CZ: backend.conjugated_pauli_batched_uint32_CZ,
         OpType.X: backend.conjugated_pauli_batched_uint32_X,
         OpType.Y: backend.conjugated_pauli_batched_uint32_Y,

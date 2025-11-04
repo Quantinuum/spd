@@ -632,6 +632,20 @@ def conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_
     return xz_updated, phase * c_array
 
 @jax.jit
+def conjugated_pauli_batched_uint32_CY(xz_array, c_array, control_qubit, target_qubit):
+    print("Recompile: conjugated_pauli_batched_uint_CY", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
+    # --- Step 1: S on target ---
+    xz_array, c_array = conjugated_pauli_batched_uint32_S(xz_array, c_array, target_qubit)
+
+    # --- Step 2: CX ---
+    xz_array, c_array = conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_qubit)
+
+    # --- Step 3: S† on target ---
+    xz_array, c_array = conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, target_qubit)
+
+    return xz_array, c_array
+
+@jax.jit
 def conjugated_pauli_batched_uint32_CZ(xz_array, c_array, control_qubit, target_qubit):
     """
     Apply CZ gate on the specified qubits for a batch of packed (x,z) representations.
