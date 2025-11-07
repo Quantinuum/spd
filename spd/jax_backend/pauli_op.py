@@ -182,6 +182,10 @@ def uint8_to_pauli_str(packed, N):
     bool_array = unpack_uint8_to_bits(packed, 2 * N)
     return bool_to_pauli_str(bool_array)
 
+def uint32_to_pauli_str(packed, N):
+    bool_array = unpack_uint32_to_bits(packed, 2 * N)
+    return bool_to_pauli_str(bool_array)
+
 # ---------- single Pauli multiply (JAX) ----------
 def pauli_product(xz1, c1, xz2, c2):
     """
@@ -1057,13 +1061,17 @@ def merge_pauli_batches_fast(x_array_1, z_array_1, c_array_1,
 
 def get_expectation_value(xz_array, c_array):
     """
+    This is too slow for large arrays.
     if ( p_str.count('X') + p_str.count('Y') ) == 0:
         exp_val += pauli_dict[key]
 
     We just use a mask from x_array to select I and Z-only terms.
+
+    # This is wrong due to overflow
+    # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
     """
     N = xz_array.shape[1] // 2
-    mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
+    mask = jnp.all(xz_array[:, :N] == 0, axis=1)
     exp_val = jnp.sum(c_array[mask])
     return exp_val
 

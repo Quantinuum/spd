@@ -39,12 +39,12 @@ elif _PACKBIT == 64:
 else:
     raise ValueError("_PACKBIT must be 8 or 32")
 
-def create_measurement_arrays(measurement_dict, system_size):
+def create_measurement_arrays(measurement_dict, padded_system_size):
     xz_list = []
     c_list = []
     for key, val in measurement_dict.items():
-        x_array = jnp.zeros((1, system_size), dtype=bool)
-        z_array = jnp.array([1 if i in key else 0 for i in range(system_size)], dtype=bool).reshape(1, -1)
+        x_array = jnp.zeros((1, padded_system_size), dtype=bool)
+        z_array = jnp.array([1 if i in key else 0 for i in range(padded_system_size)], dtype=bool).reshape(1, -1)
         xz_array = jnp.concatenate((x_array, z_array), axis=1)
         xz_array = pack_bits_to_uint(xz_array.flatten())
         xz_list.append(xz_array)
@@ -54,7 +54,9 @@ def create_measurement_arrays(measurement_dict, system_size):
 
 
 def run_pytket_circuit(circ, measure_qubits_data,
-                       trunc_val, loggin=True):
+                       trunc_val, log_filename=None,
+                       save_strings=False,
+                       ):
     # [TODO] Separate the backend.run part from the parse circuit part.
 
     from pytket.passes import DecomposeBoxes, AutoRebase
@@ -67,17 +69,17 @@ def run_pytket_circuit(circ, measure_qubits_data,
     #             }).apply(circ)
 
     total_start_time = time.time()
-    system_size = circ.n_qubits
-    system_size = _PACKBIT * ((system_size + _PACKBIT - 1) // _PACKBIT)  # pad to multiple of _PACKBIT
-    print("SYSTEM SIZE (PADDED):", system_size)
+    original_system_size = circ.n_qubits
+    padded_system_size = _PACKBIT * ((original_system_size + _PACKBIT - 1) // _PACKBIT)  # pad to multiple of _PACKBIT
+    print("SYSTEM SIZE (PADDED):", padded_system_size)
     commands = circ.get_commands()
     total_num_gate = len(commands)
 
     if type(measure_qubits_data) is dict:
-        xz_array, c_array = create_measurement_arrays(measure_qubits_data, system_size)
+        xz_array, c_array = create_measurement_arrays(measure_qubits_data, padded_system_size)
     elif type(measure_qubits_data) is list:
         measure_qubits_list = measure_qubits_data
-        measure_Zs = ''.join(['Z' if i in measure_qubits_list else 'I' for i in range(system_size)])
+        measure_Zs = ''.join(['Z' if i in measure_qubits_list else 'I' for i in range(padded_system_size)])
         xz_array = pauli_str_to_uint(measure_Zs).reshape([1, -1])
         c_array = jnp.ones((1,), dtype=jnp.complex64)
 
@@ -88,7 +90,7 @@ def run_pytket_circuit(circ, measure_qubits_data,
         t0 = time.time()
 
         if command.op.type in _ROT_DISPATCH:
-            P, theta = parse_pauli_theta(command, system_size)
+            P, theta = parse_pauli_theta(command, padded_system_size)
             xzk = pauli_str_to_uint(P)
             # Parsing the rotation: u = exp(-i * theta * P)
 
@@ -132,17 +134,22 @@ def run_pytket_circuit(circ, measure_qubits_data,
 
     exp_val = backend.get_expectation_value(xz_array, c_array)
 
-    if loggin:
+    if log_filename is not None:
         # We log trunc_val, final number of terms, max number string, final weight, total time, exp_val
-        with open("spd_log.txt", "a") as f:
+        assert type(log_filename) == str
+        with open(log_filename, "a") as f:
             f.write(f"{trunc_val}, {len(c_array)}, {max_num_string}, {jnp.linalg.norm(c_array) ** 2}, {time.time() - total_start_time}, {exp_val}\n")
     else:
         pass
 
+    if save_strings:
+        import pickle
+        pickle.dump([xz_array, c_array], open(f'strings_{trunc_val}.pickle','wb'))
+
     return exp_val
 
-def parse_pauli_theta(command, system_size):
-    P = ['I'] * system_size
+def parse_pauli_theta(command, padded_system_size):
+    P = ['I'] * padded_system_size
     op_type = command.op.type
     P, theta = _ROT_DISPATCH[op_type](command, P)
     return ''.join(P), theta
