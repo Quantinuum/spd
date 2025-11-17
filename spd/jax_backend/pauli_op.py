@@ -3,9 +3,9 @@ import jax.numpy as jnp
 from jax import lax
 import time
 from functools import partial
+from typing import NamedTuple
+from . import utils
 
-
-# small dtype choices
 DT_BOOL = jnp.bool_
 DT_CPLX = jnp.complex64   # or complex128 if you need double
 PHASES = jnp.array([1.0+0j, -1j, -1.0+0j, 1j], dtype=DT_CPLX)
@@ -25,166 +25,31 @@ Convention:
     The phase in Y is implicit in the formula.
 """
 
-def pack_bits_to_uint8(x: jnp.ndarray) -> jnp.ndarray:
-    """
-    Pack a 1D boolean array into uint8 values.
-    Big-endian within each uint8.
-    The first element goes into the most significant bit.
+class SparsePauliOp(NamedTuple):
+    xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
+    c_array: jnp.ndarray   # complex arrays of shape (M,)
 
-    Args:
-        x: boolean array of shape (n,)
+def create_measurement_op(measurement_dict, padded_system_size, _PACKBIT):
+    xz_list = []
+    c_list = []
+    for key, val in measurement_dict.items():
+        x_array = jnp.zeros((1, padded_system_size), dtype=bool)
+        z_array = jnp.array([1 if i in key else 0 for i in range(padded_system_size)], dtype=bool).reshape(1, -1)
+        xz_array = jnp.concatenate((x_array, z_array), axis=1)
+        xz_array = utils.pack_bits_to_uint(xz_array.flatten())
+        xz_list.append(xz_array)
+        c_list.append(val)
 
-    Returns:
-        packed: uint8 array of shape (ceil(n/8),)
-    """
-    n = x.shape[0]
-    n8 = (n + 7) // 8  # how many uint8 values we need
+    spo = SparsePauliOp(jnp.array(xz_list), jnp.array(c_list))
+    return spo
 
-    # pad to multiple of 8
-    padded = jnp.pad(x, (0, n8 * 8 - n))
-    padded = padded.reshape(n8, 8)
+def get_norm_square(sparse_pauli_op):
+    return jnp.sum(jnp.abs(sparse_pauli_op.c_array) ** 2)
 
-    # bit positions [7..0] for big-endian
-    bits = jnp.arange(7, -1, -1, dtype=jnp.uint8)
+def get_size(sparse_pauli_op):
+    return sparse_pauli_op.c_array.size
 
-    # shift and sum
-    # packed = jnp.sum((padded.astype(jnp.uint8) << bits), axis=1)
-    packed = jnp.sum((padded.astype(jnp.uint8) << bits), axis=1, dtype=jnp.uint8)
-    # packed = jnp.bitwise_or.reduce((padded.astype(jnp.uint8) << bits), axis=1)
-
-    return packed
-
-def pack_bits_to_uint32(x: jnp.ndarray) -> jnp.ndarray:
-    """
-    Pack a 1D boolean array into uint32 values.
-    Big-endian within each uint32.
-    The first element goes into the most significant bit.
-
-    Args:
-        x: boolean array of shape (n,)
-
-    Returns:
-        packed: uint32 array of shape (ceil(n/32),)
-    """
-    n = x.shape[0]
-    n32 = (n + 31) // 32  # how many uint32 values we need
-
-    # pad to multiple of 32
-    padded = jnp.pad(x, (0, n32 * 32 - n))
-    padded = padded.reshape(n32, 32)
-
-    # bit positions [31..0] for big-endian
-    bits = jnp.arange(31, -1, -1, dtype=jnp.uint32)
-
-    # shift and sum
-    packed = jnp.sum((padded.astype(jnp.uint32) << bits), axis=1)
-    return packed
-
-def pack_bits_to_uint64(x: jnp.ndarray) -> jnp.ndarray:
-    n = x.shape[0]
-    n64 = (n + 63) // 64  # how many uint64 values we need
-    padded = jnp.pad(x, (0, n64 * 64 - n))
-    padded = padded.reshape(n64, 64)
-    bits = jnp.arange(63, -1, -1, dtype=jnp.uint64)
-    packed = jnp.sum((padded.astype(jnp.uint64) << bits), axis=1)
-    return packed
-
-def unpack_uint8_to_bits(packed: jnp.ndarray, n: int) -> jnp.ndarray:
-    bits = jnp.arange(7, -1, -1, dtype=jnp.uint8)
-    unpacked = ((packed[:, None] >> bits) & 1).astype(bool)
-    return unpacked.reshape(-1)[:n]
-
-def unpack_uint32_to_bits(packed: jnp.ndarray, n: int) -> jnp.ndarray:
-    bits = jnp.arange(31, -1, -1, dtype=jnp.uint32)
-    unpacked = ((packed[:, None] >> bits) & 1).astype(bool)
-    return unpacked.reshape(-1)[:n]
-
-def unpack_uint64_to_bits(packed: jnp.ndarray, n: int) -> jnp.ndarray:
-    bits = jnp.arange(63, -1, -1, dtype=jnp.uint64)
-    unpacked = ((packed[:, None] >> bits) & 1).astype(bool)
-    return unpacked.reshape(-1)[:n]
-
-def pauli_str_to_bool(pauli_str):
-    """
-    Convert a Pauli string to (x,z) using fixed-size jnp arrays.
-    The `1j` factor in 'Y' = i X Z phase is implied.
-
-    Parameters:
-        pauli_str: string of length N, e.g. 'IXYZ'
-    Returns:
-        xz: jnp.bool_ array of shape (2N,)
-    """
-    N = len(pauli_str)
-    xz = jnp.zeros(2 * N, dtype=bool)
-
-    # Use indexing instead of append
-    for i, p in enumerate(pauli_str):
-        if p == 'I':
-            pass  # x[i]=0, z[i]=0
-        elif p == 'X':
-            xz = xz.at[i].set(True)
-        elif p == 'Y':
-            xz = xz.at[i].set(True)
-            xz = xz.at[N + i].set(True)
-        elif p == 'Z':
-            xz = xz.at[N + i].set(True)
-        else:
-            raise ValueError(f"Unknown Pauli character: {p}")
-
-    return xz
-
-def pauli_str_to_uint8(pauli_str):
-    current_len = len(pauli_str)
-    to_pad = 8 - (current_len % 8) if (current_len % 8) != 0 else 0
-    pauli_str = pauli_str + 'I' * to_pad  # pad with 'I' to multiple of 8
-    bool_array = pauli_str_to_bool(pauli_str)
-    return pack_bits_to_uint8(bool_array)
-
-def pauli_str_to_uint32(pauli_str):
-    current_len = len(pauli_str)
-    to_pad = 32 - (current_len % 32) if (current_len % 32) != 0 else 0
-    pauli_str = pauli_str + 'I' * to_pad  # pad with 'I' to multiple of 32
-    bool_array = pauli_str_to_bool(pauli_str)
-    return pack_bits_to_uint32(bool_array)
-
-def pauli_str_to_uint64(pauli_str):
-    current_len = len(pauli_str)
-    to_pad = 64 - (current_len % 64) if (current_len % 64) != 0 else 0
-    pauli_str = pauli_str + 'I' * to_pad  # pad with 'I' to multiple of 64
-    bool_array = pauli_str_to_bool(pauli_str)
-    return pack_bits_to_uint64(bool_array)
-
-def bool_to_pauli_str(xz):
-    """
-    Convert binary symplectic arrays to string.
-    Done outside JAX tracing, using Python string.
-    """
-    assert xz.ndim == 1
-    N = len(xz) // 2
-
-    pauli_chars = []
-    for i in range(N):
-        xi_int = int(xz[i])
-        zi_int = int(xz[N + i])
-        if xi_int == 0 and zi_int == 0:
-            pauli_chars.append('I')
-        elif xi_int == 1 and zi_int == 0:
-            pauli_chars.append('X')
-        elif xi_int == 0 and zi_int == 1:
-            pauli_chars.append('Z')
-        elif xi_int == 1 and zi_int == 1:
-            pauli_chars.append('Y')
-        else:
-            raise ValueError(f"Invalid combination: x={xi_int}, z={zi_int}")
-    return ''.join(pauli_chars)
-
-def uint8_to_pauli_str(packed, N):
-    bool_array = unpack_uint8_to_bits(packed, 2 * N)
-    return bool_to_pauli_str(bool_array)
-
-def uint32_to_pauli_str(packed, N):
-    bool_array = unpack_uint32_to_bits(packed, 2 * N)
-    return bool_to_pauli_str(bool_array)
+# ---------------------------------------------------------------------- #
 
 # ---------- single Pauli multiply (JAX) ----------
 def pauli_product(xz1, c1, xz2, c2):
@@ -412,7 +277,7 @@ def conjugated_pauli_batched_uint(xz_array, c_array, xzk, theta):
     return xz1, c1, xz2, c2
 
 @jax.jit
-def conjugated_pauli_batched_uint_(xz_array, c_array, xzk, theta):
+def conjugated_pauli_batched_uint_(spo, xzk, theta):
     """
     [Support uint8, uint16, uint32, uint64]
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
@@ -429,6 +294,8 @@ def conjugated_pauli_batched_uint_(xz_array, c_array, xzk, theta):
         xz_array_2: uint array of shape (M, nbytes) - Pauli strings for sigma_k sigma_j
         c_array_2: complex array of shape (M,) - coefficients for sigma_k sigma_j
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint", xz_array.shape, c_array.shape,
           xzk.shape, type(theta), theta, "\n")
     N = xz_array.shape[1] // 2
@@ -442,10 +309,13 @@ def conjugated_pauli_batched_uint_(xz_array, c_array, xzk, theta):
                                                                 xz_array, jnp.ones_like(c_array),)
     c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
 
-    return xz_array, c_array_1, xz_array_2, c_array_2
+    spo_1 = SparsePauliOp(xz_array, c_array_1)
+    spo_2 = SparsePauliOp(xz_array_2, c_array_2)
+    # return xz_array, c_array_1, xz_array_2, c_array_2
+    return spo_1, spo_2
 
 @jax.jit
-def conjugated_pauli_batched_uint32_H(xz_array, c_array, qubit):
+def conjugated_pauli_batched_uint32_H(spo, qubit):
     """
     Apply Hadamard gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -460,6 +330,8 @@ def conjugated_pauli_batched_uint32_H(xz_array, c_array, qubit):
             phase: jnp.ndarray of shape (M,), float (±1.0 per batch)
 
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_H", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
@@ -488,10 +360,12 @@ def conjugated_pauli_batched_uint32_H(xz_array, c_array, qubit):
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    return xz_updated, phase * c_array
+    new_spo = SparsePauliOp(xz_updated, phase * c_array)
+    # return xz_updated, phase * c_array
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_S(xz_array, c_array, qubit):
+def conjugated_pauli_batched_uint32_S(spo, qubit):
     """
     Apply S gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -506,6 +380,8 @@ def conjugated_pauli_batched_uint32_S(xz_array, c_array, qubit):
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
 
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_S", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
@@ -529,10 +405,12 @@ def conjugated_pauli_batched_uint32_S(xz_array, c_array, qubit):
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    return xz_updated, phase * c_array
+    new_spo = SparsePauliOp(xz_updated, phase * c_array)
+    # return xz_updated, phase * c_array
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, qubit):
+def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
     """
     Apply Sdg gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -547,7 +425,9 @@ def conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, qubit):
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
 
     """
-    print("Recompile: conjugated_pauli_batched_uint_S", xz_array.shape, c_array.shape, qubit, "\n")
+    xz_array = spo.xz_array
+    c_array = spo.c_array
+    print("Recompile: conjugated_pauli_batched_uint_Sdg", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
     z_array = xz_array[:, N:]
@@ -570,15 +450,17 @@ def conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, qubit):
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    return xz_updated, phase * c_array
+    new_spo = SparsePauliOp(xz_updated, phase * c_array)
+    # return xz_updated, phase * c_array
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_qubit):
+def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
     """
     Apply CX gate on the specified qubits for a batch of packed (x,z) representations.
     x_t <-- x_t XOR x_c
     z_c <-- z_c XOR z_t
-    phase = (-1)^{x_c z_t (z_c \oplus x_t)}
+    phase = (-1)^{x_c z_t (z_c \\oplus x_t)}
 
     Args:
         xz_in_packed_int32: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
@@ -592,6 +474,8 @@ def conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
 
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_CX", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
@@ -633,10 +517,14 @@ def conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_
     # phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    return xz_updated, phase * c_array
+    new_spo = SparsePauliOp(xz_updated, phase * c_array)
+    # return xz_updated, phase * c_array
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_CY(xz_array, c_array, control_qubit, target_qubit):
+def conjugated_pauli_batched_uint32_CY(spo, control_qubit, target_qubit):
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_CY", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
     # --- Step 1: S on target ---
     xz_array, c_array = conjugated_pauli_batched_uint32_S(xz_array, c_array, target_qubit)
@@ -646,11 +534,12 @@ def conjugated_pauli_batched_uint32_CY(xz_array, c_array, control_qubit, target_
 
     # --- Step 3: S† on target ---
     xz_array, c_array = conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, target_qubit)
-
-    return xz_array, c_array
+    new_spo = SparsePauliOp(xz_array, c_array)
+    # return xz_array, c_array
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_CZ(xz_array, c_array, control_qubit, target_qubit):
+def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
     """
     Apply CZ gate on the specified qubits for a batch of packed (x,z) representations.
     z_c' = z_c XOR x_t
@@ -668,6 +557,8 @@ def conjugated_pauli_batched_uint32_CZ(xz_array, c_array, control_qubit, target_
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_CZ", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
@@ -712,10 +603,12 @@ def conjugated_pauli_batched_uint32_CZ(xz_array, c_array, control_qubit, target_
     phase = jnp.power(-1.0, and_bit)
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    return xz_updated, phase * c_array
+    new_spo = SparsePauliOp(xz_updated, phase * c_array)
+    # return xz_updated, phase * c_array
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_X(xz_array, c_array, qubit):
+def conjugated_pauli_batched_uint32_X(spo, qubit):
     """
     Apply X gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -727,6 +620,8 @@ def conjugated_pauli_batched_uint32_X(xz_array, c_array, qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), float (1.0 per batch)
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_X", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     z_array = xz_array[:, N:]
@@ -740,10 +635,12 @@ def conjugated_pauli_batched_uint32_X(xz_array, c_array, qubit):
 
     # Compute phase = (-1)^(z_bit)
     phase = jnp.power(-1.0, z_bit)
-    return xz_array, phase * c_array
+    # return xz_array, phase * c_array
+    new_spo = SparsePauliOp(xz_array, phase * c_array)
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_Y(xz_array, c_array, qubit):
+def conjugated_pauli_batched_uint32_Y(spo, qubit):
     """
     Apply Y gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -755,6 +652,8 @@ def conjugated_pauli_batched_uint32_Y(xz_array, c_array, qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_Y", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
@@ -774,10 +673,12 @@ def conjugated_pauli_batched_uint32_Y(xz_array, c_array, qubit):
     nor_bit = x_bit ^ z_bit
     phase = jnp.power(-1.0, nor_bit)
 
-    return xz_array, phase * c_array
+    # return xz_array, phase * c_array
+    new_spo = SparsePauliOp(xz_array, phase * c_array)
+    return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_Z(xz_array, c_array, qubit):
+def conjugated_pauli_batched_uint32_Z(spo, qubit):
     """
     Apply Z gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -789,6 +690,8 @@ def conjugated_pauli_batched_uint32_Z(xz_array, c_array, qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), float (1.0 per batch)
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     print("Recompile: conjugated_pauli_batched_uint_Z", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     x_array = xz_array[:, :N]
@@ -802,7 +705,9 @@ def conjugated_pauli_batched_uint32_Z(xz_array, c_array, qubit):
 
     # Compute phase = (-1)^(x_bit)
     phase = jnp.power(-1.0, x_bit)
-    return xz_array, phase * c_array
+    # return xz_array, phase * c_array
+    new_spo = SparsePauliOp(xz_array, phase * c_array)
+    return new_spo
 
 
 
@@ -1059,7 +964,7 @@ def merge_pauli_batches_fast(x_array_1, z_array_1, c_array_1,
     mask = jnp.abs(c_merge) > trunc_val
     return x_merge[mask], z_merge[mask], c_merge[mask]
 
-def get_expectation_value(xz_array, c_array):
+def get_expectation_value(spo):
     """
     This is too slow for large arrays.
     if ( p_str.count('X') + p_str.count('Y') ) == 0:
@@ -1067,9 +972,11 @@ def get_expectation_value(xz_array, c_array):
 
     We just use a mask from x_array to select I and Z-only terms.
 
-    # This is wrong due to overflow
+    # This can be wrong due to overflow
     # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
     """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
     N = xz_array.shape[1] // 2
     mask = jnp.all(xz_array[:, :N] == 0, axis=1)
     exp_val = jnp.sum(c_array[mask])

@@ -4,6 +4,7 @@ from jax import jit
 import numpy as np
 import time
 import functools
+from .pauli_op import SparsePauliOp
 
 # Fixed configuration for N=192 (32*6 chunks)
 CHUNK_SIZE = 32
@@ -110,13 +111,15 @@ def slice_to_size(x_arr, c_arr, size):
 
 
 # @jit
-def merge_and_pad(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
+def merge_and_pad(spo_1, spo_2, trunc_val):
     """
     Complete merge pipeline using all steps.
     Pads output to the closest fixed sizes in terms of power of 2.
     Also combine the trunction step
     This avoids recompilation both in the current and the downstream.
     """
+    x_array_1, c_array_1 = spo_1.xz_array, spo_1.c_array
+    x_array_2, c_array_2 = spo_2.xz_array, spo_2.c_array
 
     t0 = time.time()
     x_concat, c_concat, final_valid_count = merge_(
@@ -132,7 +135,9 @@ def merge_and_pad(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
     t2 = time.time()
 
     # print("Merge time:", (t1 - t0) * 1000, "ms, Pad time:", (t2 - t1) * 1000, "ms, Final size:", new_size, "Valid count:", final_valid_count, "Original size:", x_array_1.shape[0] + x_array_2.shape[0])
-    return x_, c_, final_valid_count
+    new_spo = SparsePauliOp(x_, c_)
+    # return x_, c_, final_valid_count
+    return new_spo, final_valid_count
 
     # x_concat, c_concat, boundaries, group_ids = merge_(
     #     x_array_1, c_array_1, x_array_2, c_array_2)
