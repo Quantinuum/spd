@@ -43,6 +43,17 @@ def create_measurement_op(measurement_dict, padded_system_size, _PACKBIT):
     spo = SparsePauliOp(jnp.array(xz_list), jnp.array(c_list))
     return spo
 
+def create_op(pauli_dict):
+    xz_list = []
+    c_list = []
+    for key, val in pauli_dict.items():
+        xz = utils.pauli_str_to_uint(key)
+        xz_list.append(xz)
+        c_list.append(val)
+
+    spo = SparsePauliOp(jnp.array(xz_list), jnp.array(c_list))
+    return spo
+
 def get_norm_square(sparse_pauli_op):
     return jnp.sum(jnp.abs(sparse_pauli_op.c_array) ** 2)
 

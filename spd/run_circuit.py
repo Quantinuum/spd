@@ -1,24 +1,62 @@
 import math, psutil, time, sys
 from pytket.circuit import OpType
 
-# from . import numpy_backend as backend
-from . import jax_backend as backend
-from .jax_backend import utils
 
 # [TODO]: Merging the conj, merge into a single function
 # [TODO]: make sure c_array always float32
 
-_PACKBIT = 32
-utils.set_packbit(_PACKBIT)
+
+def set_backend(backend_name, _PACKBIT=32):
+    # [TODO] Make this more elegant, not using globals
+    global backend, utils, _ROT_DISPATCH, _CLIFFORD_FUNC_DISPATCH
+    if backend_name == 'numpy':
+        from . import numpy_backend as backend
+        from .numpy_backend import utils
+    elif backend_name == 'jax':
+        from . import jax_backend as backend
+        from .jax_backend import utils
+    else:
+        raise ValueError(f"Unsupported backend: {backend_name}")
+
+    utils.set_packbit(_PACKBIT)
+
+    # global dispatch table
+    _ROT_DISPATCH = {
+            OpType.Rz: lambda cmd, P: _single_pauli_rot(cmd, P, "Z"),
+            OpType.Rx: lambda cmd, P: _single_pauli_rot(cmd, P, "X"),
+            OpType.Ry: lambda cmd, P: _single_pauli_rot(cmd, P, "Y"),
+            OpType.ZZPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "Z"),
+            OpType.XXPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "X"),
+            OpType.YYPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "Y"),
+            OpType.PauliExpBox: _pauli_exp_box,
+            }
+
+    _CLIFFORD_FUNC_DISPATCH = {
+            OpType.H: backend.conjugated_pauli_batched_uint32_H,
+            OpType.S: backend.conjugated_pauli_batched_uint32_S,
+            OpType.Sdg: backend.conjugated_pauli_batched_uint32_Sdg,
+            OpType.CX: backend.conjugated_pauli_batched_uint32_CX,
+            OpType.CY: backend.conjugated_pauli_batched_uint32_CY,
+            OpType.CZ: backend.conjugated_pauli_batched_uint32_CZ,
+            OpType.X: backend.conjugated_pauli_batched_uint32_X,
+            OpType.Y: backend.conjugated_pauli_batched_uint32_Y,
+            OpType.Z: backend.conjugated_pauli_batched_uint32_Z,
+            }
+
 
 
 def run_pytket_circuit(circ,
                        measure_qubits_data,
                        trunc_val,
+                       backend_name='numpy',
                        rebase=False,
                        log_filename=None,
                        save_strings=False,
                        ):
+    _PACKBIT = 32
+    set_backend(backend_name, _PACKBIT)
+
+
     # [TODO] Separate the backend.run part from the parse circuit part.
     from pytket.circuit import OpType
 
@@ -40,7 +78,13 @@ def run_pytket_circuit(circ,
     total_num_gate = len(commands)
 
     if type(measure_qubits_data) is dict:
-        sparse_pauli_op = backend.create_measurement_op(measure_qubits_data, padded_system_size, _PACKBIT)
+        key = next(iter(measure_qubits_data))
+        if type(key) == tuple:
+            sparse_pauli_op = backend.create_measurement_op(measure_qubits_data, padded_system_size,)
+        elif type(key) == str:
+            sparse_pauli_op = backend.create_op(measure_qubits_data)
+        else:
+            raise ValueError("measure_qubits_data dict key must be tuple or str")
     elif type(measure_qubits_data) is list:
         m_dict = {tuple(measure_qubits_data): 1.0}
         sparse_pauli_op = backend.create_measurement_op(m_dict, padded_system_size, _PACKBIT)
@@ -56,11 +100,15 @@ def run_pytket_circuit(circ,
             xzk = utils.pauli_str_to_uint(P)
             # Parsing the rotation: u = exp(-i * theta * P)
 
-            sparse_pauli_op_1, sparse_pauli_op_2 = backend.conjugated_pauli_batched_uint_(sparse_pauli_op, xzk, theta)
-            sparse_pauli_op, num_string = backend.merge_and_pad(sparse_pauli_op_1,
-                                                                sparse_pauli_op_2,
-                                                                trunc_val=trunc_val,
-                                                                )
+            if backend_name == 'numpy':
+                sparse_pauli_op, num_string = backend.conjugated_pauli_batched_uint_(sparse_pauli_op, xzk, theta, trunc_val=trunc_val)
+            else:
+                sparse_pauli_op_1, sparse_pauli_op_2 = backend.conjugated_pauli_batched_uint_(sparse_pauli_op, xzk, theta)
+                sparse_pauli_op, num_string = backend.merge_and_pad(sparse_pauli_op_1,
+                                                                    sparse_pauli_op_2,
+                                                                    trunc_val=trunc_val,
+                                                                    )
+
             max_num_string = max(max_num_string, num_string)
         elif command.op.type in [OpType.H, OpType.S, OpType.Sdg, OpType.X, OpType.Y, OpType.Z]:
             func = _CLIFFORD_FUNC_DISPATCH[command.op.type]
@@ -146,25 +194,3 @@ def _pauli_exp_box(command, P):
     theta = command.op.get_phase() * math.pi # / 2
     return P, theta
 
-# global dispatch table
-_ROT_DISPATCH = {
-        OpType.Rz: lambda cmd, P: _single_pauli_rot(cmd, P, "Z"),
-        OpType.Rx: lambda cmd, P: _single_pauli_rot(cmd, P, "X"),
-        OpType.Ry: lambda cmd, P: _single_pauli_rot(cmd, P, "Y"),
-        OpType.ZZPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "Z"),
-        OpType.XXPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "X"),
-        OpType.YYPhase: lambda cmd, P: _two_pauli_rot(cmd, P, "Y"),
-        OpType.PauliExpBox: _pauli_exp_box,
-        }
-
-_CLIFFORD_FUNC_DISPATCH = {
-        OpType.H: backend.conjugated_pauli_batched_uint32_H,
-        OpType.S: backend.conjugated_pauli_batched_uint32_S,
-        OpType.Sdg: backend.conjugated_pauli_batched_uint32_Sdg,
-        OpType.CX: backend.conjugated_pauli_batched_uint32_CX,
-        OpType.CY: backend.conjugated_pauli_batched_uint32_CY,
-        OpType.CZ: backend.conjugated_pauli_batched_uint32_CZ,
-        OpType.X: backend.conjugated_pauli_batched_uint32_X,
-        OpType.Y: backend.conjugated_pauli_batched_uint32_Y,
-        OpType.Z: backend.conjugated_pauli_batched_uint32_Z,
-        }
