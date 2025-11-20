@@ -49,8 +49,12 @@ def create_op(pauli_dict):
     return spo
 
 def get_norm_square(sparse_pauli_op):
-    return np.linalg.norm(np.fromiter(sparse_pauli_op.values(), dtype=np.float32)) ** 2
-    # return jnp.sum(jnp.abs(sparse_pauli_op.c_array) ** 2)
+    val = next(iter(sparse_pauli_op.values()))
+    if type(val) == tuple:
+        # Gradient SPO
+        return sum(np.abs(v[0]) ** 2 for v in sparse_pauli_op.values())
+    else:
+        return np.linalg.norm(np.fromiter(sparse_pauli_op.values(), dtype=np.float32)) ** 2
 
 def get_size(sparse_pauli_op):
     return len(sparse_pauli_op)
@@ -76,13 +80,17 @@ def get_expectation_value(spo):
 
     return exp_val
 
-def set_gradient_spo(spo):
+def create_gradient_spo(spo):
     gradient_spo = {}
     N = len(next(iter(spo))) // 2
-    for P in spo.keys():
+    for P, P_val in spo.items():
         xz_array = np.array(P)
         if np.all(xz_array[:N] == 0):
-            gradient_spo[P] = 1
+            g_val = 1.
+        else:
+            g_val = 0.
+
+        gradient_spo[P] = (P_val, g_val)
 
     return gradient_spo
 
@@ -138,10 +146,10 @@ def pauli_product_uint(xz1, c1, xz2, c2):
     # population counts (same as JAX)
     pop = np.bitwise_count  # NumPy 2.1+ unified bit count
 
-    count = ((2 * pop(xz1[:N] & xz2[N:]).sum() +
-              pop(xz1[:N] & xz1[N:]).sum() +
-              pop(xz2[:N] & xz2[N:]).sum() -
-              pop(xz_new[:N] & xz_new[N:]).sum()) % 4)
+    count = ((2 * pop(xz1[:N] & xz2[N:]).astype(np.int32).sum() +
+              pop(xz1[:N] & xz1[N:]).astype(np.int32).sum() +
+              pop(xz2[:N] & xz2[N:]).astype(np.int32).sum() -
+              pop(xz_new[:N] & xz_new[N:]).astype(np.int32).sum()) % 4)
 
     phase = (-1j) ** count
     c_new = c1 * c2 * phase
@@ -316,12 +324,13 @@ def check_anticommute_uint(xz1, xz2):
     """
     N = xz1.shape[0] // 2
     # population count of bitwise AND
-    term1 = np.bitwise_count(xz1[:N] & xz2[N:]).sum()
-    term2 = np.bitwise_count(xz1[N:] & xz2[:N]).sum()
+    term1 = np.bitwise_count(xz1[:N] & xz2[N:]).astype(np.int32).sum()
+    term2 = np.bitwise_count(xz1[N:] & xz2[:N]).astype(np.int32).sum()
     acq = (term1 - term2) % 2  # 0 = commute, 1 = anticommute
     return acq
 
-def conjugated_pauli_batched_uint_(spo, xzk, theta, trunc_val):
+# ---------------------------------------------------------------------- #
+def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
     """
     [Support uint8, uint16, uint32, uint64]
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
@@ -359,15 +368,6 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta, trunc_val):
         else:
             raise ValueError("Unexpected phase in Pauli product: {}".format(c_phase))
 
-        # if P < Q:
-        #     # P:1, Q: c_phase
-        #     P_val, Q_val = new_spo_a_pairs.get((P, Q), (0, 0))
-        #     new_spo_a_pairs[(P, Q)] = (P_val + c_val, Q_val + 0)
-        # else:
-        #     # Q: c_phase, P:1
-        #     Q_val, P_val = new_spo_a_pairs.get((Q, P), (0, 0))
-        #     new_spo_a_pairs[(Q, P)] = (Q_val + 0, P_val + c_val)
-
     # 3. Apply the rotation to each AC pair
     for (P, Q), (c_P, c_Q) in new_spo_a_pairs.items():
         # _, c_phase = pauli_product_uint(xzk, 1., np.array(P), 1.)
@@ -386,6 +386,73 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta, trunc_val):
             new_spo_c.pop(P)
 
     return new_spo_c, len(new_spo_c)
+# ---------------------------------------------------------------------- #
+def tuple_sum(a, b):
+    return tuple(a[i] + b[i] for i in range(len(a)))
+
+def zeros_like_tuple(t):
+    return tuple(0 for _ in t)
+
+def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
+    """
+    [Support uint8, uint16, uint32, uint64]
+    Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
+    exp(-i theta/2 * sigma_k) * sigma_j * exp(i theta/2 * sigma_k)
+    """
+    new_spo_c = {}
+    old_spo_a = {}
+    # 1. Split the Op into C and AC parts
+    for xz_key, vals in spo_val_grad.items():
+        xz = np.array(xz_key)
+        acq_val = check_anticommute_uint(xz, xzk)
+        if acq_val == 0:
+            new_spo_c[xz_key] = vals  # commute
+        else:
+            old_spo_a[xz_key] = vals  # anticommute
+
+    # 2. construct the pairs of AC parts
+    old_spo_a_pairs = {}
+    for P, vals in old_spo_a.items():
+        Q_array, c_phase = pauli_product_uint(xzk, 1., np.array(P), 1.)
+        Q = tuple(Q_array)
+
+        # We want to order the pairs in [\sigma, P, Q] s.t.
+        # \sigma P = i Q, P Q = i \sigma
+        if np.isclose(c_phase, 1j):
+            P_vals, Q_vals = old_spo_a_pairs.get((P, Q), (zeros_like_tuple(vals), zeros_like_tuple(vals)))
+            old_spo_a_pairs[(P, Q)] = (tuple_sum(P_vals, vals), Q_vals)
+        elif np.isclose(c_phase, -1j):
+            Q_vals, P_vals = old_spo_a_pairs.get((Q, P), (zeros_like_tuple(vals), zeros_like_tuple(vals)))
+            old_spo_a_pairs[(Q, P)] = (Q_vals, tuple_sum(P_vals, vals))
+        else:
+            raise ValueError("Unexpected phase in Pauli product: {}".format(c_phase))
+
+    # 2.5 Get gradient with respect to theta
+    theta_grad = 0
+    for (P, Q), (P_vals, Q_vals) in old_spo_a_pairs.items():
+        P_val, P_grad = P_vals
+        Q_val, Q_grad = Q_vals
+        theta_grad += (P_val * Q_grad - Q_val * P_grad)
+
+    # 3. Apply the rotation channel-wise to each AC pair
+    cos_theta = np.cos(theta)
+    sin_theta = np.sin(theta)
+    pm = +1  # backward in time
+
+    for (P, Q), (P_vals, Q_vals) in old_spo_a_pairs.items():
+        rot_P_vals = tuple(cos_theta * P_vals[i] + pm * sin_theta * Q_vals[i] for i in range(len(P_vals)))
+        rot_Q_vals = tuple(-pm * sin_theta * P_vals[i] + cos_theta * Q_vals[i] for i in range(len(Q_vals)))
+        new_spo_c[P] = rot_P_vals
+        new_spo_c[Q] = rot_Q_vals
+
+    # 4. Truncate small values
+    for P in list(new_spo_c.keys()):
+        if np.abs(new_spo_c[P][0]) < trunc_val:
+            new_spo_c.pop(P)
+
+    return new_spo_c, len(new_spo_c), theta_grad
+# ---------------------------------------------------------------------- #
+
 
 def conjugated_pauli_batched_uint32_H(spo, qubit):
     """
