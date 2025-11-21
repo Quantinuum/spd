@@ -5,7 +5,6 @@ from pytket.circuit import OpType
 # [TODO]: Merging the conj, merge into a single function
 # [TODO]: make sure c_array always float32
 
-
 def set_backend(backend_name, _PACKBIT=32):
     # [TODO] Make this more elegant, not using globals
     global backend, utils, _ROT_DISPATCH, _CLIFFORD_FUNC_DISPATCH
@@ -46,6 +45,7 @@ def set_backend(backend_name, _PACKBIT=32):
 def run_pytket_circuit(circ,
                        measure_qubits_data,
                        trunc_val,
+                       basis='0',
                        backend_name='numpy',
                        rebase=False,
                        log_filename=None,
@@ -83,7 +83,7 @@ def run_pytket_circuit(circ,
             raise ValueError("measure_qubits_data dict key must be tuple or str")
     elif type(measure_qubits_data) is list:
         m_dict = {tuple(measure_qubits_data): 1.0}
-        sparse_pauli_op = backend.create_measurement_op(m_dict, padded_system_size, _PACKBIT)
+        sparse_pauli_op = backend.create_measurement_op(m_dict, padded_system_size,)
 
     max_num_string = 0
     initial_weight = backend.get_norm_square(sparse_pauli_op)
@@ -95,16 +95,7 @@ def run_pytket_circuit(circ,
             P, theta = parse_pauli_theta(command, padded_system_size)
             xzk = utils.pauli_str_to_uint(P)
             # Parsing the rotation: u = exp(-i * theta * P)
-
-            if backend_name == 'numpy':
-                sparse_pauli_op, num_string = backend.conjugated_pauli_forward(sparse_pauli_op, xzk, theta, trunc_val=trunc_val)
-            else:
-                sparse_pauli_op_1, sparse_pauli_op_2 = backend.conjugated_pauli_batched_uint_(sparse_pauli_op, xzk, theta)
-                sparse_pauli_op, num_string = backend.merge_and_pad(sparse_pauli_op_1,
-                                                                    sparse_pauli_op_2,
-                                                                    trunc_val=trunc_val,
-                                                                    )
-
+            sparse_pauli_op, num_string = backend.conjugated_pauli_forward(sparse_pauli_op, xzk, theta, trunc_val=trunc_val)
             max_num_string = max(max_num_string, num_string)
         elif command.op.type in [OpType.H, OpType.S, OpType.Sdg, OpType.X, OpType.Y, OpType.Z]:
             func = _CLIFFORD_FUNC_DISPATCH[command.op.type]
@@ -152,7 +143,7 @@ def run_pytket_circuit(circ,
           end='\n')
 
 
-    exp_val = backend.get_expectation_value(sparse_pauli_op)
+    exp_val = backend.get_expectation_value(sparse_pauli_op, basis=basis)
 
     if log_filename is not None:
         # We log trunc_val, final number of terms, max number string, final weight, total time, exp_val
@@ -171,6 +162,7 @@ def run_pytket_circuit(circ,
 def run_pytket_circuit_backward(circ,
                                 final_spo,
                                 trunc_val,
+                                basis='0',
                                 backend_name='numpy',
                                 rebase=False,
                                 log_filename=None,
@@ -199,7 +191,7 @@ def run_pytket_circuit_backward(circ,
     commands = circ.get_commands()
     total_num_gate = len(commands)
 
-    spo_val_grad = backend.create_gradient_spo(final_spo)
+    spo_val_grad = backend.create_gradient_spo(final_spo, basis=basis)
 
     max_num_string = 0
     initial_weight = backend.get_norm_square(spo_val_grad)
@@ -212,13 +204,8 @@ def run_pytket_circuit_backward(circ,
             P, theta = parse_pauli_theta(command, padded_system_size)
             xzk = utils.pauli_str_to_uint(P)
             # Parsing the rotation: u = exp(-i * theta * P)
-
-            if backend_name == 'numpy':
-                spo_val_grad, num_string, grad_i = backend.conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val=trunc_val)
-                grads.append(grad_i)
-            else:
-                raise NotImplementedError
-
+            spo_val_grad, num_string, grad_i = backend.conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val=trunc_val)
+            grads.append(grad_i)
             max_num_string = max(max_num_string, num_string)
         elif command.op.type in [OpType.Measure, OpType.Barrier]:
             # print("Skipping measurement/barrier")
@@ -256,23 +243,7 @@ def run_pytket_circuit_backward(circ,
           "--------",
           end='\n')
 
-    return grads
-    # exp_val = backend.get_expectation_value(sparse_pauli_op)
-
-    # if log_filename is not None:
-    #     # We log trunc_val, final number of terms, max number string, final weight, total time, exp_val
-    #     assert type(log_filename) == str
-    #     with open(log_filename, "a") as f:
-    #         f.write(f"{trunc_val}, {current_row_size}, {max_num_string}, {weight_left}, {time.time() - total_start_time}, {exp_val}\n")
-    # else:
-    #     pass
-
-    # if save_strings:
-    #     import pickle
-    #     pickle.dump(sparse_pauli_op, open(f'strings_{trunc_val}.pickle','wb'))
-
-    # return exp_val
-
+    return grads, spo_val_grad
 
 def parse_pauli_theta(command, padded_system_size):
     P = ['I'] * padded_system_size

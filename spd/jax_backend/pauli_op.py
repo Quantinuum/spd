@@ -2,13 +2,14 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 import time
-from functools import partial
+import functools
 from typing import NamedTuple
 from . import utils
 
 DT_BOOL = jnp.bool_
 DT_CPLX = jnp.complex64   # or complex128 if you need double
 PHASES = jnp.array([1.0+0j, -1j, -1.0+0j, 1j], dtype=DT_CPLX)
+PAD_VAL = jnp.uint32(jnp.iinfo(jnp.uint32).max)
 
 """
 Convention:
@@ -27,9 +28,14 @@ Convention:
 
 class SparsePauliOp(NamedTuple):
     xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
-    c_array: jnp.ndarray   # complex arrays of shape (M,)
+    c_array: jnp.ndarray   # real arrays of shape (M,)
 
-def create_measurement_op(measurement_dict, padded_system_size, _PACKBIT):
+class SparsePauliGradientOp(NamedTuple):
+    xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
+    c_array: jnp.ndarray   # real arrays of shape (M,)
+    grad_c_array: jnp.ndarray   # real arrays of shape (M,)
+
+def create_measurement_op(measurement_dict, padded_system_size,):
     xz_list = []
     c_list = []
     for key, val in measurement_dict.items():
@@ -60,7 +66,215 @@ def get_norm_square(sparse_pauli_op):
 def get_size(sparse_pauli_op):
     return sparse_pauli_op.c_array.size
 
+def get_expectation_value(spo, basis='0'):
+    """
+    This is too slow for large arrays.
+    if ( p_str.count('X') + p_str.count('Y') ) == 0:
+        exp_val += pauli_dict[key]
+
+    We just use a mask from x_array to select I and Z-only terms.
+
+    # This can be wrong due to overflow
+    # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
+    """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
+    N = xz_array.shape[1] // 2
+    if basis in ['0', 'Z']:
+        mask = jnp.all(xz_array[:, :N] == 0, axis=1)
+    elif basis in ['+', 'X']:
+        mask = jnp.all(xz_array[:, N:] == 0, axis=1)
+    else:
+        raise NotImplementedError(f"Expectation value in basis {basis} not implemented.")
+
+    exp_val = jnp.sum(c_array[mask])
+    return jnp.real(exp_val)
+
+def create_gradient_spo(spo, basis='0'):
+    """
+    Create a SparsePauliOp for gradient calculation.
+    Only keep the terms that contribute to the expectation value
+    in the specified basis.
+
+    Parameters:
+        spo: SparsePauliOp
+        basis: '0'/'Z' or '+'/'X'
+
+    Returns:
+        gradient_spo: SparsePauliOp
+    """
+    xz_array = spo.xz_array
+    c_array = spo.c_array
+    N = xz_array.shape[1] // 2
+
+    # create a 1, 0 array if the term contributes to the expectation value
+    if basis in ['0', 'Z']:
+        mask = jnp.all(xz_array[:, :N] == 0, axis=1)
+    elif basis in ['+', 'X']:
+        mask = jnp.all(xz_array[:, N:] == 0, axis=1)
+    else:
+        raise NotImplementedError(f"Expectation value in basis {basis} not implemented.")
+
+    grad_c_array = jnp.where(mask, jnp.ones_like(c_array), jnp.zeros_like(c_array))
+    gradient_spo = SparsePauliGradientOp(xz_array, c_array, grad_c_array)
+    return gradient_spo
 # ---------------------------------------------------------------------- #
+
+# Need to provide a single function to merge
+# sparse_pauli_op_1, sparse_pauli_op_2 = backend.conjugated_pauli_batched_uint_(sparse_pauli_op, xzk, theta)
+# sparse_pauli_op, num_string = backend.merge_and_pad(sparse_pauli_op_1, sparse_pauli_op_2, trunc_val=trunc_val,)
+# So that the memory cost can be saved under XLA compilation.
+
+# Ideally something like:
+# sparse_pauli_op, num_string = backend.conjugated_pauli_forward(sparse_pauli_op, xzk, theta, trunc_val=trunc_val)
+
+def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
+    """
+    Conjugate a batch of Pauli strings by rotation R_k(theta):
+    exp(i theta/2 * sigma_k) * sigma_j * exp(-i theta/2 * sigma_k)
+
+    Parameters:
+        spo: SparsePauliOp
+        xzk: uint arrays of shape (nbytes,) - Pauli string for rotation
+        theta: float scalar - rotation angle
+        trunc_val: float scalar - truncation value for coefficients
+
+    Returns:
+        new_spo: SparsePauliOp
+    """
+    t0 = time.time()
+    x_concat, c_concat, new_size, final_valid_count = forward_jitted(spo, xzk, theta, trunc_val)
+    jax.block_until_ready(new_size)
+    t1 = time.time()
+
+    x_ = slice_to_size_x_arr(x_concat, int(new_size))
+    c_ = slice_to_size_c_arr(c_concat, int(new_size))
+    jax.block_until_ready(c_)
+    t2 = time.time()
+
+    # print("Merge time:", (t1 - t0) * 1000, "ms, Pad time:", (t2 - t1) * 1000, "ms, Final size:", new_size, "Valid count:", final_valid_count, "Original size:", x_array_1.shape[0] + x_array_2.shape[0])
+    new_spo = SparsePauliOp(x_, c_)
+    return new_spo, final_valid_count
+
+@jax.jit
+def forward_jitted(spo, xzk, theta, trunc_val):
+    print("Recompile: forward_jitted", spo.xz_array.shape,)
+    spo_1, spo_2 = conjugated_pauli_batched_uint_(spo, xzk, theta)
+
+    x_concat, c_concat, final_valid_count = merge_(
+        spo_1.xz_array, spo_1.c_array,
+        spo_2.xz_array, spo_2.c_array,
+        trunc_val)
+
+    new_size = next_pow2(final_valid_count)
+    return x_concat, c_concat, new_size, final_valid_count
+
+def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
+    """
+    Backward pass for conjugated_pauli.
+
+    Parameters:
+        spo_val_grad: SparsePauliGradientOp
+        xzk: uint arrays of shape (nbytes,) - Pauli string for rotation
+        theta: float scalar - rotation angle
+        trunc_val: float scalar - truncation value for coefficients
+
+    Returns:
+        new_spo_val_grad: SparsePauliGradientOp
+        num_string: int - number of Pauli strings after truncation
+        grad_i: float - gradient value
+    """
+    grad_i = get_gradient(spo_val_grad, xzk, theta)
+
+    x_concat, c_concat, grad_c_concat, new_size, final_valid_count = backward_jitted(spo_val_grad, xzk, theta, trunc_val)
+    x_ = slice_to_size_x_arr(x_concat, int(new_size))
+    c_ = slice_to_size_c_arr(c_concat, int(new_size))
+    grad_c_ = slice_to_size_c_arr(grad_c_concat, int(new_size))
+    new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
+
+    return new_spo_val_grad, final_valid_count, -grad_i
+
+@jax.jit
+def backward_jitted(spo_val_grad, xzk, theta, trunc_val):
+    print("Recompile: backward_jitted", spo_val_grad.xz_array.shape,)
+    spo_val_grad_1, spo_val_grad_2 = conjugated_pauli_backward_batched_uint_(spo_val_grad, xzk, theta)
+    x_concat, c_concat, grad_c_concat, final_valid_count = merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val)
+    new_size = next_pow2(final_valid_count)
+    return x_concat, c_concat, grad_c_concat, new_size, final_valid_count
+
+def get_gradient(spo_val_grad, xzk, theta):
+    """
+    Get gradient value from SparsePauliGradientOp.
+
+    Parameters:
+        spo_val_grad: SparsePauliGradientOp
+        xzk: uint arrays of shape (nbytes,) - Pauli string for rotation
+        theta: float scalar - rotation angle
+
+    Returns:
+        grad_i: float - gradient value
+    """
+    xz_array = spo_val_grad.xz_array
+    c_array = spo_val_grad.c_array
+    grad_c_array = spo_val_grad.grad_c_array
+    N = xz_array.shape[1] // 2
+
+    acq_val = jnp.sum(jax.lax.population_count(xz_array[:, N:] & xzk[:N]), axis=1) - \
+                jnp.sum(jax.lax.population_count(xz_array[:, :N] & xzk[N:]), axis=1)
+    acq_val = acq_val % 2  # 0 = commute, 1 = anticommute
+
+    # [not jittable]    sub-routine1. Select anticommute subset and padded to next_power_2 -> xz_array_p, c_array_p, grad_c_array_p
+    anticommute_size = jnp.sum(acq_val)
+    if anticommute_size == 0:
+        return 0
+
+    max_size = next_pow2(anticommute_size)
+    pad_size = max_size - anticommute_size
+    xz_array_p = jnp.pad(xz_array[acq_val.astype(bool)], ((0, pad_size), (0, 0)), constant_values=PAD_VAL)
+    c_array_p = jnp.pad(c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
+    grad_c_array_p = jnp.pad(grad_c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
+
+    # [jittable]        sub-routine2. Get conjugated xz_array_q, phase_array; copy c_array_q, grad_c_array_q
+    xz_array_q, phase_array_p = pauli_product_batched_second_uint(xzk, 1.,
+                                                                  xz_array_p, jnp.ones_like(c_array_p),)
+    # phase_array is an indication of the relation between sigma and p
+    phase_array_p = jnp.real(phase_array_p * (-1j))
+    c_array_q = c_array_p.copy()
+    grad_c_array_q = grad_c_array_p.copy()
+
+    # [jittable]        sub-routine3. Argsort xz_array_q -> apply on phase_array, c_array_copy, grad_c_array_copy
+    sort_indices = jnp.lexsort(xz_array_q.T[::-1])  # sort by rows
+    xz_array_q_sorted = xz_array_q[sort_indices]
+    c_array_q_sorted = c_array_q[sort_indices]
+    grad_c_array_q_sorted = grad_c_array_q[sort_indices]
+
+    # [jittable]        sub-routine4. Obtain is_duplicate, indices_in_b from xz_array_p, xz_array_q
+    is_duplicate, indices_in_q = find_row_duplications(xz_array_p, xz_array_q_sorted)
+
+    # [jittable]        sub-routine5. Obtain gradient from the cross terms only
+    # Formula = \sum ( a_P * grad_Q - a_Q * grad_P )
+    safe_indices = jnp.minimum(indices_in_q, xz_array_q.shape[0] - 1)
+
+    # Gather the coefficients using the discovered indices
+    # Shape: (M,)
+    c_array_q_aligned = c_array_q_sorted[safe_indices]
+    grad_c_array_q_aligned = grad_c_array_q_sorted[safe_indices]
+
+    # Use the formula
+    raw_products = phase_array_p * ( c_array_p * grad_c_array_q_aligned - c_array_q_aligned * grad_c_array_p )
+    # print(raw_products)
+    # import pdb; pdb.set_trace()
+
+    # Apply Mask:
+    # If is_duplicate is False, we multiply by 0.
+    # If is_duplicate is True (even for PAD_VAL rows), we multiply by the product.
+    # Note: Since we pad coefficients with 0.0, the PAD_VAL matches result in 0.0 anyway.
+    valid_products = jnp.where(is_duplicate, raw_products, 0.0)
+
+    total_sum = jnp.sum(valid_products)
+    return jnp.real(total_sum / 2.)
+
+
 
 # ---------- single Pauli multiply (JAX) ----------
 def pauli_product(xz1, c1, xz2, c2):
@@ -287,7 +501,7 @@ def conjugated_pauli_batched_uint(xz_array, c_array, xzk, theta):
     xz1, c1, xz2, c2 = conjugated_pauli_batched_uint_(xz_padded, c_padded, xzk, theta)
     return xz1, c1, xz2, c2
 
-@jax.jit
+# @jax.jit
 def conjugated_pauli_batched_uint_(spo, xzk, theta):
     """
     [Support uint8, uint16, uint32, uint64]
@@ -307,8 +521,8 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta):
     """
     xz_array = spo.xz_array
     c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint", xz_array.shape, c_array.shape,
-          xzk.shape, type(theta), theta, "\n")
+    print("Recompile: conjugated_pauli_batched_uint", xz_array.shape, c_array.shape)
+
     N = xz_array.shape[1] // 2
     acq_val = jnp.sum(jax.lax.population_count(xz_array[:, N:] & xzk[:N]), axis=1) - \
                 jnp.sum(jax.lax.population_count(xz_array[:, :N] & xzk[N:]), axis=1)
@@ -324,6 +538,32 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta):
     spo_2 = SparsePauliOp(xz_array_2, c_array_2)
     # return xz_array, c_array_1, xz_array_2, c_array_2
     return spo_1, spo_2
+
+def conjugated_pauli_backward_batched_uint_(spo_val_grad, xzk, theta):
+    xz_array = spo_val_grad.xz_array
+    c_array = spo_val_grad.c_array
+    grad_c_array = spo_val_grad.grad_c_array
+    print("Recompile: conjugated_pauli_backward_batched_uint", xz_array.shape, c_array.shape)
+
+    N = xz_array.shape[1] // 2
+    acq_val = jnp.sum(jax.lax.population_count(xz_array[:, N:] & xzk[:N]), axis=1) - \
+                jnp.sum(jax.lax.population_count(xz_array[:, :N] & xzk[N:]), axis=1)
+    acq_val = acq_val % 2  # 0 = commute, 1 = anticommute
+    theta = theta * acq_val
+
+    # Going backward
+    theta = -theta
+
+    c_array_1 = c_array * jnp.cos(theta)
+    grad_c_array_1 = grad_c_array * jnp.cos(theta)
+    xz_array_2, phase_array = pauli_product_batched_second_uint(xzk, 1.,
+                                                                xz_array, jnp.ones_like(c_array),)
+    c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
+    grad_c_array_2 = 1j * grad_c_array * jnp.sin(theta) * phase_array
+
+    spo_val_grad_1 = SparsePauliGradientOp(xz_array, c_array_1, grad_c_array_1)
+    spo_val_grad_2 = SparsePauliGradientOp(xz_array_2, c_array_2, grad_c_array_2)
+    return spo_val_grad_1, spo_val_grad_2
 
 @jax.jit
 def conjugated_pauli_batched_uint32_H(spo, qubit):
@@ -975,23 +1215,10 @@ def merge_pauli_batches_fast(x_array_1, z_array_1, c_array_1,
     mask = jnp.abs(c_merge) > trunc_val
     return x_merge[mask], z_merge[mask], c_merge[mask]
 
-def get_expectation_value(spo):
-    """
-    This is too slow for large arrays.
-    if ( p_str.count('X') + p_str.count('Y') ) == 0:
-        exp_val += pauli_dict[key]
 
-    We just use a mask from x_array to select I and Z-only terms.
-
-    # This can be wrong due to overflow
-    # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
-    """
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    N = xz_array.shape[1] // 2
-    mask = jnp.all(xz_array[:, :N] == 0, axis=1)
-    exp_val = jnp.sum(c_array[mask])
-    return exp_val
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 def benchmark_pauli_product_batched():
     M, N = 300000, 96
@@ -1070,6 +1297,274 @@ def benchmark_merge_pauli_batched():
     print("Output shapes:", x_new.shape, z_new.shape, c_new.shape)
 
 
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+# @jax.jit
+def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
+    print("Recompiling merge_...", x_array_1.shape, x_array_2.shape)
+    x_concat = jnp.concatenate([x_array_1, x_array_2], axis=0)
+    c_concat = jnp.concatenate([c_array_1, c_array_2], axis=0)
+    # Don't need to hash as we are using uint8 array
+    total_size = x_concat.shape[0]
+
+    # sort_keys = [multi_hash[:, i] for i in reversed(range(N_CHUNKS))]
+    # Lexicographic sort
+    sort_indices = jnp.lexsort([x_concat[:, i] for i in range(x_concat.shape[1]-1, -1, -1)])
+
+    c_concat = c_concat[sort_indices]
+    x_concat = x_concat[sort_indices]
+    # return sorted_c, sorted_hashes, sort_indices
+
+    hash_changes = jnp.any(x_concat[1:] != x_concat[:-1],
+                           axis=1)
+
+    # Boundaries: first row is always a boundary, then where hashes change
+    boundaries = jnp.concatenate([jnp.array([True]), hash_changes])
+
+    # Assign group IDs: cumulative sum gives unique ID to each group
+    group_ids = jnp.cumsum(boundaries) - 1
+    # return boundaries, group_ids
+
+    # Use total_size as num_segments (safe, concrete int)
+    c_concat = jax.ops.segment_sum(c_concat, group_ids,
+                                   num_segments=total_size,
+                                   indices_are_sorted=True)
+    # Automatic padding to total_size
+    # Array([ 3,  7, 18,  8,  9], dtype=int32)
+    # Array([ 3,  7, 18,  8,  9,  0,  0,  0,  0,  0], dtype=int32)
+
+    # Now sorted according to c_concat before truncation
+    c_sort_indices = jnp.argsort(-jnp.abs(c_concat))  # Descending order))
+    c_concat = c_concat[c_sort_indices]
+
+    mask = jnp.abs(c_concat) > trunc_val
+    final_valid_count = jnp.sum(mask.astype(jnp.int32))
+    c_concat = c_concat * mask.astype(c_concat.dtype)
+
+    """
+    # ---------------------------------------------------------------
+    # [version 1]
+    # Representatives for x (aligned with c_concat)
+    x_concat = x_concat * boundaries[:, None].astype(x_concat.dtype)
+    x_concat = jax.ops.segment_sum(x_concat, group_ids,
+                                   num_segments=x_concat.shape[0],
+                                   indices_are_sorted=True)
+    # ---------------------------------------------------------------
+    """
+    # ---------------------------------------------------------------
+    # [version 2]
+    # Use scatter with boundaries as a mask
+    x_concat = x_concat * boundaries[:, None].astype(x_concat.dtype)
+    # Then use advanced indexing which might be more JIT-friendly
+    x_concat = jnp.zeros_like(x_concat).at[group_ids].add(x_concat)
+    # ---------------------------------------------------------------
+
+    # x_concat = x_concat[c_sort_indices]
+    # x_concat = x_concat * mask[:, None].astype(x_concat.dtype)
+    # ---------------------------------------------------------------
+    # x_final = jnp.zeros_like(x_concat)
+    # valid_indices = c_sort_indices[mask]  # Only the indices we actually want
+    # x_concat = x_final.at[:jnp.sum(mask)].set(x_concat[valid_indices])
+    x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
+
+    return x_concat, c_concat, final_valid_count
+
+def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
+    x_array_1, c_array_1, grad_c_array_1 = spo_val_grad_1.xz_array, spo_val_grad_1.c_array, spo_val_grad_1.grad_c_array
+    x_array_2, c_array_2, grad_c_array_2 = spo_val_grad_2.xz_array, spo_val_grad_2.c_array, spo_val_grad_2.grad_c_array
+    print("Recompiling merge_val_grad_ ...", x_array_1.shape, x_array_2.shape)
+    x_concat = jnp.concatenate([x_array_1, x_array_2], axis=0)
+    c_concat = jnp.concatenate([c_array_1, c_array_2], axis=0)
+    grad_c_concat = jnp.concatenate([grad_c_array_1, grad_c_array_2], axis=0)
+    # Don't need to hash as we are using uint8 array
+    total_size = x_concat.shape[0]
+
+    # sort_keys = [multi_hash[:, i] for i in reversed(range(N_CHUNKS))]
+    # Lexicographic sort
+    sort_indices = jnp.lexsort([x_concat[:, i] for i in range(x_concat.shape[1]-1, -1, -1)])
+
+    c_concat = c_concat[sort_indices]
+    x_concat = x_concat[sort_indices]
+    grad_c_concat = grad_c_concat[sort_indices]
+    # return sorted_c, sorted_hashes, sort_indices
+
+    hash_changes = jnp.any(x_concat[1:] != x_concat[:-1],
+                           axis=1)
+
+    # Boundaries: first row is always a boundary, then where hashes change
+    boundaries = jnp.concatenate([jnp.array([True]), hash_changes])
+
+    # Assign group IDs: cumulative sum gives unique ID to each group
+    group_ids = jnp.cumsum(boundaries) - 1
+    # return boundaries, group_ids
+
+    # Use total_size as num_segments (safe, concrete int)
+    c_concat = jax.ops.segment_sum(c_concat, group_ids,
+                                   num_segments=total_size,
+                                   indices_are_sorted=True)
+    # Automatic padding to total_size
+    # Array([ 3,  7, 18,  8,  9], dtype=int32)
+    # Array([ 3,  7, 18,  8,  9,  0,  0,  0,  0,  0], dtype=int32)
+    grad_c_concat = jax.ops.segment_sum(grad_c_concat, group_ids,
+                                        num_segments=total_size,
+                                        indices_are_sorted=True)
+
+    # Now sorted according to c_concat before truncation
+    c_sort_indices = jnp.argsort(-jnp.abs(c_concat))  # Descending order))
+    c_concat = c_concat[c_sort_indices]
+    grad_c_concat = grad_c_concat[c_sort_indices]
+
+    mask = jnp.abs(c_concat) > trunc_val
+    final_valid_count = jnp.sum(mask.astype(jnp.int32))
+    c_concat = c_concat * mask.astype(c_concat.dtype)
+    grad_c_concat = grad_c_concat * mask.astype(grad_c_concat.dtype)
+
+    # ---------------------------------------------------------------
+    # [version 2]
+    # Use scatter with boundaries as a mask
+    x_concat = x_concat * boundaries[:, None].astype(x_concat.dtype)
+    # Then use advanced indexing which might be more JIT-friendly
+    x_concat = jnp.zeros_like(x_concat).at[group_ids].add(x_concat)
+    # ---------------------------------------------------------------
+    x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
+
+    return x_concat, c_concat, grad_c_concat, final_valid_count
+
+
+
+def merge_all(x_array_1, c_array_1, x_array_2, c_array_2):
+    """
+    Complete merge pipeline using all steps.
+    """
+    x_concat, c_concat, boundaries, group_ids = merge_(
+        x_array_1, c_array_1, x_array_2, c_array_2)
+
+    valid_count = jnp.max(group_ids) + 1
+
+    return x_concat[boundaries], c_concat[:valid_count]
+
+
+def next_pow2(x):
+    """Return next power of 2 >= x (x is a JAX scalar)."""
+    return (1 << jnp.ceil(jnp.log2(x)).astype(int))
+
+@functools.partial(jax.jit, static_argnums=1)
+def slice_to_size_x_arr(x_arr, size):
+    """Slice arrays to the given size."""
+    print("recompiling slice_to_size...", x_arr.shape, size, type(size))
+    x_ = jax.lax.dynamic_slice(x_arr, (0, 0), (size, x_arr.shape[1]))
+    return x_
+
+@functools.partial(jax.jit, static_argnums=1)
+def slice_to_size_c_arr(c_arr, size):
+    """Slice arrays to the given size."""
+    print("recompiling slice_to_size...", c_arr.shape, size, type(size))
+    c_ = jax.lax.dynamic_slice(c_arr, (0,), (size,))
+    return c_
+
+def merge_and_pad(spo_1, spo_2, trunc_val):
+    """
+    Complete merge pipeline using all steps.
+    Pads output to the closest fixed sizes in terms of power of 2.
+    Also combine the trunction step
+    This avoids recompilation both in the current and the downstream.
+    """
+    x_array_1, c_array_1 = spo_1.xz_array, spo_1.c_array
+    x_array_2, c_array_2 = spo_2.xz_array, spo_2.c_array
+
+    t0 = time.time()
+    x_concat, c_concat, final_valid_count = merge_(
+        x_array_1, c_array_1, x_array_2, c_array_2, trunc_val)
+
+    jax.block_until_ready((x_concat, c_concat))
+    t1 = time.time()
+
+    new_size = next_pow2(final_valid_count)
+
+    x_, c_ = slice_to_size(x_concat, c_concat, int(new_size))
+    jax.block_until_ready((x_, c_))
+    t2 = time.time()
+
+    # print("Merge time:", (t1 - t0) * 1000, "ms, Pad time:", (t2 - t1) * 1000, "ms, Final size:", new_size, "Valid count:", final_valid_count, "Original size:", x_array_1.shape[0] + x_array_2.shape[0])
+    new_spo = SparsePauliOp(x_, c_)
+    # return x_, c_, final_valid_count
+    return new_spo, final_valid_count
+
+@jax.jit
+def find_row_duplications(a, b):
+    """
+    Finds rows in 'a' that also exist in 'b'.
+    Assumes 'a' and 'b' are lexically sorted (M, N) int32 arrays.
+    """
+
+    # 1. Define Lexical Comparison Logic
+    # We need to determine if row1 > row2 lexically.
+    def lexical_gt(row1, row2):
+        # Find where elements differ
+        not_eq = row1 != row2
+
+        # Find the first index where they differ.
+        # If rows are identical, argmax returns 0 (but we handle equality later).
+        first_diff_idx = jnp.argmax(not_eq)
+
+        # Check the value at that differing index
+        is_gt = row1[first_diff_idx] > row2[first_diff_idx]
+
+        # If rows are exactly equal, is_gt might be False/True based on index 0.
+        # We ensure strict inequality: if they are equal, it is NOT greater.
+        are_equal = jnp.all(row1 == row2)
+        return is_gt & (~are_equal)
+
+    # 2. Define Binary Search (Lower Bound)
+    # Finds the first index in 'haystack' where 'needle' could be inserted.
+    def binary_search_row(needle, haystack):
+        m = haystack.shape[0]
+
+        def cond_fun(state):
+            low, high = state
+            return low < high
+
+        def body_fun(state):
+            low, high = state
+            mid = (low + high) // 2
+            mid_row = haystack[mid]
+
+            # If mid_row < needle, we search the right half (low = mid + 1)
+            # This is equivalent to: needle > mid_row
+            go_right = lexical_gt(needle, mid_row)
+
+            low = jnp.where(go_right, mid + 1, low)
+            high = jnp.where(go_right, high, mid)
+
+            return (low, high)
+
+        # Run the loop
+        idx, _ = jax.lax.while_loop(cond_fun, body_fun, (0, m))
+        return idx
+
+    # 3. Vectorize the search over all rows of 'a'
+    # in_axes=(0, None) means: iterate over rows of 'a', keep 'b' fixed.
+    indices_in_b = jax.vmap(binary_search_row, in_axes=(0, None))(a, b)
+
+    # 4. Verify matches
+    # The binary search gives us the insertion point. We must check if
+    # the row at that point in 'b' is actually equal to the row in 'a'.
+
+    # Handle out of bounds (if insertion point is at the end of b)
+    indices_in_b = jnp.minimum(indices_in_b, b.shape[0] - 1)
+
+    potential_matches = b[indices_in_b]
+    is_duplicate = jnp.all(a == potential_matches, axis=1)
+
+    # If the insertion index was out of bounds (size of b), it's not a match.
+    # (Though our minimum clamp handles the crash, we need logic correctness).
+    # If a row is greater than all rows in b, idx will be len(b).
+    # With the clamp, we compare to the last element. If that's not equal, is_duplicate is False.
+
+    return is_duplicate, indices_in_b
+
 if __name__ == "__main__":
     print(" ==== Benchmarking Pauli Operations ==== ")
     benchmark_pauli_product_batched()
@@ -1078,8 +1573,6 @@ if __name__ == "__main__":
 
     print(" ==== Benchmarking Merge ==== ")
     benchmark_merge_pauli_batched()
-
-
 
     # pauli_str_1 = "XIII"
     # pauli_str_2 = "YIII"
