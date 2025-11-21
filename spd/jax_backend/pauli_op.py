@@ -234,6 +234,13 @@ def get_gradient(spo_val_grad, xzk, theta):
     c_array_p = jnp.pad(c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
     grad_c_array_p = jnp.pad(grad_c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
 
+    # Move all jittable into a single function and jit it!
+    grad_i = get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk)
+    return grad_i
+
+@jax.jit
+def get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk):
+    print("Recompile: get_gradient_jitted", xz_array_p.shape, c_array_p.shape, grad_c_array_p.shape, xzk.shape)
     # [jittable]        sub-routine2. Get conjugated xz_array_q, phase_array; copy c_array_q, grad_c_array_q
     xz_array_q, phase_array_p = pauli_product_batched_second_uint(xzk, 1.,
                                                                   xz_array_p, jnp.ones_like(c_array_p),)
