@@ -5,6 +5,7 @@ import time
 import functools
 from typing import NamedTuple
 from . import utils
+import math
 
 DT_BOOL = jnp.bool_
 DT_CPLX = jnp.complex64   # or complex128 if you need double
@@ -202,6 +203,7 @@ def backward_jitted(spo_val_grad, xzk, theta, trunc_val):
     new_size = next_pow2(final_valid_count)
     return x_concat, c_concat, grad_c_concat, new_size, final_valid_count
 
+@jax.jit
 def get_gradient(spo_val_grad, xzk, theta):
     """
     Get gradient value from SparsePauliGradientOp.
@@ -223,24 +225,29 @@ def get_gradient(spo_val_grad, xzk, theta):
                 jnp.sum(jax.lax.population_count(xz_array[:, :N] & xzk[N:]), axis=1)
     acq_val = acq_val % 2  # 0 = commute, 1 = anticommute
 
-    # [not jittable]    sub-routine1. Select anticommute subset and padded to next_power_2 -> xz_array_p, c_array_p, grad_c_array_p
-    anticommute_size = jnp.sum(acq_val)
-    if anticommute_size == 0:
-        return 0
+    xz_array_p = xz_array
+    c_array_p = c_array
+    grad_c_array_p = grad_c_array
 
-    max_size = next_pow2(anticommute_size)
-    pad_size = max_size - anticommute_size
-    xz_array_p = jnp.pad(xz_array[acq_val.astype(bool)], ((0, pad_size), (0, 0)), constant_values=PAD_VAL)
-    c_array_p = jnp.pad(c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
-    grad_c_array_p = jnp.pad(grad_c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
+#     # [not jittable]    sub-routine1. Select anticommute subset and padded to next_power_2 -> xz_array_p, c_array_p, grad_c_array_p
+#     anticommute_size = jnp.sum(acq_val)
+#     if anticommute_size == 0:
+#         return 0
+#
+#     max_size = next_pow2(anticommute_size)
+#     pad_size = max_size - anticommute_size
+#     xz_array_p = jnp.pad(xz_array[acq_val.astype(bool)], ((0, pad_size), (0, 0)), constant_values=PAD_VAL)
+#     c_array_p = jnp.pad(c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
+#     grad_c_array_p = jnp.pad(grad_c_array[acq_val.astype(bool)], ((0, pad_size),), constant_values=0.0)
 
-    # Move all jittable into a single function and jit it!
-    grad_i = get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk)
-    return grad_i
+#     # Move all jittable into a single function and jit it!
+#     grad_i = get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk)
+#     return grad_i
+#
+# @jax.jit
+# def get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk):
+#     print("Recompile: get_gradient_jitted", xz_array_p.shape, c_array_p.shape, grad_c_array_p.shape, xzk.shape)
 
-@jax.jit
-def get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk):
-    print("Recompile: get_gradient_jitted", xz_array_p.shape, c_array_p.shape, grad_c_array_p.shape, xzk.shape)
     # [jittable]        sub-routine2. Get conjugated xz_array_q, phase_array; copy c_array_q, grad_c_array_q
     xz_array_q, phase_array_p = pauli_product_batched_second_uint(xzk, 1.,
                                                                   xz_array_p, jnp.ones_like(c_array_p),)
@@ -272,11 +279,14 @@ def get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk):
     # print(raw_products)
     # import pdb; pdb.set_trace()
 
-    # Apply Mask:
-    # If is_duplicate is False, we multiply by 0.
-    # If is_duplicate is True (even for PAD_VAL rows), we multiply by the product.
-    # Note: Since we pad coefficients with 0.0, the PAD_VAL matches result in 0.0 anyway.
-    valid_products = jnp.where(is_duplicate, raw_products, 0.0)
+    # # Apply Mask:
+    # # If is_duplicate is False, we multiply by 0.
+    # # If is_duplicate is True (even for PAD_VAL rows), we multiply by the product.
+    # # Note: Since we pad coefficients with 0.0, the PAD_VAL matches result in 0.0 anyway.
+    # valid_products = jnp.where(is_duplicate, raw_products, 0.0)
+
+    combined_mask = is_duplicate & (acq_val.astype(bool))
+    valid_products = jnp.where(combined_mask, raw_products, 0.0)
 
     total_sum = jnp.sum(valid_products)
     return jnp.real(total_sum / 2.)
@@ -1457,6 +1467,10 @@ def next_pow2(x):
     """Return next power of 2 >= x (x is a JAX scalar)."""
     return (1 << jnp.ceil(jnp.log2(x)).astype(int))
 
+def next_pow2_min16(x):
+    num = (1 << jnp.ceil(jnp.log2(x)).astype(int))
+    return jnp.maximum(num, 16)
+
 @functools.partial(jax.jit, static_argnums=1)
 def slice_to_size_x_arr(x_arr, size):
     """Slice arrays to the given size."""
@@ -1502,9 +1516,74 @@ def merge_and_pad(spo_1, spo_2, trunc_val):
 @jax.jit
 def find_row_duplications(a, b):
     """
+    Optimized Binary Search for Static Shapes.
+    Replaces while_loop with a fixed unrolled loop for GPU efficiency.
+    """
+    # Assumes 'b' is the haystack.
+    # M is the size of the haystack (b).
+    M = b.shape[0]
+
+    # # Calculate max iterations needed: log2(M) + buffer
+    # # For M=4096, this is 12. We can just use a safe constant like 32
+    # # or compute it dynamically if M is static.
+    # num_steps = int(jnp.ceil(jnp.log2(M))) + 2
+    # --- FIX IS HERE ---
+    # Use Python's math library to calculate this at compile-time.
+    # jnp.log2 creates a tracer; math.log2 creates a concrete int.
+    num_steps = int(math.ceil(math.log2(M))) + 2
+    # -------------------
+
+    def lexical_gt(row1, row2):
+        not_eq = row1 != row2
+        first_diff_idx = jnp.argmax(not_eq)
+        is_gt = row1[first_diff_idx] > row2[first_diff_idx]
+        are_equal = jnp.all(row1 == row2)
+        return is_gt & (~are_equal)
+
+    def binary_search_row(needle, haystack):
+        # Unrolled Binary Search
+        # Instead of while(low < high), we iterate fixed times.
+
+        def body_fun(i, state):
+            low, high = state
+
+            # Standard Binary Search logic
+            mid = (low + high) // 2
+            mid_row = haystack[mid]
+
+            # Check condition
+            go_right = lexical_gt(needle, mid_row)
+
+            # Update bounds
+            # Note: logic must ensure high doesn't get stuck if low=mid
+            new_low = jnp.where(go_right, mid + 1, low)
+            new_high = jnp.where(go_right, high, mid)
+
+            return (new_low, new_high)
+
+        # Use fori_loop (which JAX unrolls better than while_loop)
+        # or simple python loop if num_steps is small constant.
+        final_low, final_high = jax.lax.fori_loop(0, num_steps, body_fun, (0, M))
+
+        return final_low
+
+    # 3. Vectorize
+    indices_in_b = jax.vmap(binary_search_row, in_axes=(0, None))(a, b)
+
+    # 4. Verify matches (Same as your code)
+    indices_in_b = jnp.minimum(indices_in_b, M - 1)
+    potential_matches = b[indices_in_b]
+    is_duplicate = jnp.all(a == potential_matches, axis=1)
+
+    return is_duplicate, indices_in_b
+
+@jax.jit
+def find_row_duplications_old(a, b):
+    """
     Finds rows in 'a' that also exist in 'b'.
     Assumes 'a' and 'b' are lexically sorted (M, N) int32 arrays.
     """
+    print("Recompiling find_row_duplications...", a.shape, b.shape)
 
     # 1. Define Lexical Comparison Logic
     # We need to determine if row1 > row2 lexically.
