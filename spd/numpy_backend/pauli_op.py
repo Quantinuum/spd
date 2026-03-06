@@ -175,6 +175,33 @@ def pauli_product_uint(xz1, c1, xz2, c2):
     c_new = c1 * c2 * phase
     return xz_new, c_new
 
+def pauli_product_batched_second_uint(xz1, c1, xz2_array, c2_array):
+    """
+    Batched version of pauli_product_uint (NumPy).
+    xz1: uint arrays of shape (nwords,)
+    c1: complex scalar
+    xz2_array: uint arrays of shape (M, nwords)
+    c2_array: complex array of shape (M,)
+
+    Returns:
+        xz_new_array: uint arrays of shape (M, nwords)
+        c_new_array: complex array of shape (M,)
+    """
+    N = xz2_array.shape[1] // 2
+    xz_new_array = xz1 ^ xz2_array
+
+    pop = np.bitwise_count
+    count = (
+        2 * pop(xz1[:N] & xz2_array[:, N:]).astype(np.int32).sum(axis=1)
+        + pop(xz1[:N] & xz1[N:]).astype(np.int32).sum()
+        + pop(xz2_array[:, :N] & xz2_array[:, N:]).astype(np.int32).sum(axis=1)
+        - pop(xz_new_array[:, :N] & xz_new_array[:, N:]).astype(np.int32).sum(axis=1)
+    ) % 4
+
+    phase = np.take(PHASES, count)
+    c_new_array = c1 * c2_array * phase
+    return xz_new_array, c_new_array
+
 # # ---------- per-row/batched Pauli multiply (JAX) ----------
 # @jax.jit
 # def pauli_product_batched(xz1_array, c1_array, xz2, c2):
@@ -378,7 +405,7 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
         Q = tuple(Q_array)
 
         # We want to order the pairs in [\sigma, P, Q] s.t.
-        # \sigma P = i Q, P Q = i \sigma
+        # \sigma P = i Q, or equivalently P Q = i \sigma
         if np.isclose(c_phase, 1j):
             P_val, Q_val = new_spo_a_pairs.get((P, Q), (0, 0))
             new_spo_a_pairs[(P, Q)] = (P_val + c_val, Q_val + 0)
@@ -392,7 +419,7 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
     for (P, Q), (c_P, c_Q) in new_spo_a_pairs.items():
         # _, c_phase = pauli_product_uint(xzk, 1., np.array(P), 1.)
         # plus_or_minus = np.sign(c_phase * 1j)  # ±1
-        plus_or_minus = -1
+        plus_or_minus = 1
         cos_theta = np.cos(theta)
         sin_theta = np.sin(theta)
         # Update P
@@ -452,12 +479,12 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
     for (P, Q), (P_vals, Q_vals) in old_spo_a_pairs.items():
         P_val, P_grad = P_vals
         Q_val, Q_grad = Q_vals
-        theta_grad += (P_val * Q_grad - Q_val * P_grad)
+        theta_grad += (-P_val * Q_grad + Q_val * P_grad)
 
     # 3. Apply the rotation channel-wise to each AC pair
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
-    pm = +1  # backward in time
+    pm = -1  # backward in time
 
     for (P, Q), (P_vals, Q_vals) in old_spo_a_pairs.items():
         rot_P_vals = tuple(cos_theta * P_vals[i] + pm * sin_theta * Q_vals[i] for i in range(len(P_vals)))
@@ -489,39 +516,26 @@ def conjugated_pauli_batched_uint32_H(spo, qubit):
             phase: jnp.ndarray of shape (M,), float (±1.0 per batch)
 
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_H", xz_array.shape, c_array.shape, qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-    z_array = xz_array[:, N:]
-
     site = qubit // 32
     bit = qubit % 32
-    bit_mask = jnp.uint32(1 << (31 - bit))  # big-endian
+    bit_mask = np.uint32(1 << (31 - bit))
 
-    x_word = x_array[:, site]
-    z_word = z_array[:, site]
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
 
-    x_bit = x_word & bit_mask
-    z_bit = z_word & bit_mask
-    diff = x_bit ^ z_bit
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        diff = (x_word & bit_mask) ^ (z_word & bit_mask)
+        x_word ^= diff
+        z_word ^= diff
+        xz[site] = x_word
+        xz[n_words + site] = z_word
 
-    x_word_updated = x_word ^ diff
-    z_word_updated = z_word ^ diff
+        phase = -1.0 if ((x_word & bit_mask) and (z_word & bit_mask)) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    x_array = x_array.at[:, site].set(x_word_updated)
-    z_array = z_array.at[:, site].set(z_word_updated)
-
-    x_bit = x_word_updated & bit_mask
-    z_bit = z_word_updated & bit_mask
-    and_bit = x_bit & z_bit
-    phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
-
-    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    new_spo = SparsePauliOp(xz_updated, phase * c_array)
-    # return xz_updated, phase * c_array
     return new_spo
 
 def conjugated_pauli_batched_uint32_S(spo, qubit):
@@ -539,34 +553,24 @@ def conjugated_pauli_batched_uint32_S(spo, qubit):
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
 
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_S", xz_array.shape, c_array.shape, qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-    z_array = xz_array[:, N:]
-
     site = qubit // 32
     bit = qubit % 32
-    bit_mask = jnp.uint32(1 << (31 - bit))
+    bit_mask = np.uint32(1 << (31 - bit))
 
-    x_word = x_array[:, site]
-    z_word = z_array[:, site]
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
 
-    x_bit = x_word & bit_mask
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        x_bit = x_word & bit_mask
+        z_word ^= x_bit
+        xz[n_words + site] = z_word
 
-    # Update
-    z_word_updated = z_word ^ x_bit
-    z_array = z_array.at[:, site].set(z_word_updated)
+        phase = -1.0 if (x_bit and (z_word & bit_mask)) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    # Compute phase: (-1) ^ (x_bit & z_bit)
-    and_bit = x_bit & z_word_updated
-    phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
-
-    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    new_spo = SparsePauliOp(xz_updated, phase * c_array)
-    # return xz_updated, phase * c_array
     return new_spo
 
 def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
@@ -584,34 +588,24 @@ def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
 
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_Sdg", xz_array.shape, c_array.shape, qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-    z_array = xz_array[:, N:]
-
     site = qubit // 32
     bit = qubit % 32
-    bit_mask = jnp.uint32(1 << (31 - bit))
+    bit_mask = np.uint32(1 << (31 - bit))
 
-    x_word = x_array[:, site]
-    z_word = z_array[:, site]
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
 
-    x_bit = x_word & bit_mask
-    # Compute phase: (-1) ^ (x_bit & z_bit)
-    and_bit = x_bit & z_word
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        x_bit = x_word & bit_mask
+        phase = -1.0 if (x_bit and (z_word & bit_mask)) else 1.0
+        z_word ^= x_bit
+        xz[n_words + site] = z_word
 
-    # Update
-    z_word_updated = z_word ^ x_bit
-    z_array = z_array.at[:, site].set(z_word_updated)
+        new_spo[tuple(xz)] = phase * coeff
 
-    phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
-
-    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    new_spo = SparsePauliOp(xz_updated, phase * c_array)
-    # return xz_updated, phase * c_array
     return new_spo
 
 def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
@@ -633,70 +627,44 @@ def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
 
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_CX", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-    z_array = xz_array[:, N:]
-
-    # --- Bit/word locations ---
     control_site = control_qubit // 32
     control_bit = control_qubit % 32
     target_site = target_qubit // 32
     target_bit = target_qubit % 32
 
-    c_bit_mask = jnp.uint32(1 << (31 - control_bit))
-    t_bit_mask = jnp.uint32(1 << (31 - target_bit))
+    c_bit_mask = np.uint32(1 << (31 - control_bit))
+    t_bit_mask = np.uint32(1 << (31 - target_bit))
 
-    # --- Extract words ---
-    x_c_word = x_array[:, control_site]
-    z_c_word = z_array[:, control_site]
-    x_t_word = x_array[:, target_site]
-    z_t_word = z_array[:, target_site]
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
 
-    # --- Extract bits (0/1 values) ---
-    x_c_bit = (x_c_word & c_bit_mask) >> (31 - control_bit)
-    z_c_bit = (z_c_word & c_bit_mask) >> (31 - control_bit)
-    x_t_bit = (x_t_word & t_bit_mask) >> (31 - target_bit)
-    z_t_bit = (z_t_word & t_bit_mask) >> (31 - target_bit)
+        x_c_word = xz[control_site]
+        x_t_word = xz[target_site]
+        z_c_word = xz[n_words + control_site]
+        z_t_word = xz[n_words + target_site]
 
-    # --- Update rule ---
-    # X_t ← X_t XOR X_c
-    x_t_word_updated = x_t_word ^ (x_c_bit << (31 - target_bit))
-    # Z_c ← Z_c XOR Z_t
-    z_c_word_updated = z_c_word ^ (z_t_bit << (31 - control_bit))
+        x_c_bit = int((x_c_word & c_bit_mask) != 0)
+        z_c_bit = int((z_c_word & c_bit_mask) != 0)
+        x_t_bit = int((x_t_word & t_bit_mask) != 0)
+        z_t_bit = int((z_t_word & t_bit_mask) != 0)
 
-    x_array = x_array.at[:, target_site].set(x_t_word_updated)
-    z_array = z_array.at[:, control_site].set(z_c_word_updated)
+        if x_c_bit:
+            xz[target_site] = x_t_word ^ t_bit_mask
+        if z_t_bit:
+            xz[n_words + control_site] = z_c_word ^ c_bit_mask
 
-    # Compute phase: (-1)^(x_control_bit & z_target_bit & (x_target_bit ^ z_control_bit ^ 1))
-    and_bit = (x_c_bit & z_t_bit) & (z_c_bit == x_t_bit)
-    phase = jnp.power(-1.0, and_bit)
-    # phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
+        phase = -1.0 if (x_c_bit and z_t_bit and (z_c_bit == x_t_bit)) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    new_spo = SparsePauliOp(xz_updated, phase * c_array)
-    # return xz_updated, phase * c_array
     return new_spo
 
 def conjugated_pauli_batched_uint32_CY(spo, control_qubit, target_qubit):
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_CY", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
-    # --- Step 1: S on target ---
-    xz_array, c_array = conjugated_pauli_batched_uint32_S(xz_array, c_array, target_qubit)
-
-    # --- Step 2: CX ---
-    xz_array, c_array = conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_qubit)
-
-    # --- Step 3: S† on target ---
-    xz_array, c_array = conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, target_qubit)
-    new_spo = SparsePauliOp(xz_array, c_array)
-    # return xz_array, c_array
-    return new_spo
+    spo = conjugated_pauli_batched_uint32_S(spo, target_qubit)
+    spo = conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit)
+    spo = conjugated_pauli_batched_uint32_Sdg(spo, target_qubit)
+    return spo
 
 def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
     """
@@ -716,55 +684,38 @@ def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_CZ", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-    z_array = xz_array[:, N:]
-
-    # --- Bit/word locations ---
     control_site = control_qubit // 32
     control_bit = control_qubit % 32
     target_site = target_qubit // 32
     target_bit = target_qubit % 32
 
-    c_bit_mask = jnp.uint32(1 << (31 - control_bit))
-    t_bit_mask = jnp.uint32(1 << (31 - target_bit))
+    c_bit_mask = np.uint32(1 << (31 - control_bit))
+    t_bit_mask = np.uint32(1 << (31 - target_bit))
 
-    # --- Extract words ---
-    x_c_word = x_array[:, control_site]
-    z_c_word = z_array[:, control_site]
-    x_t_word = x_array[:, target_site]
-    z_t_word = z_array[:, target_site]
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
 
-    # --- Extract bits (0/1 values) ---
-    x_c_bit = (x_c_word & c_bit_mask) >> (31 - control_bit)
-    z_c_bit = (z_c_word & c_bit_mask) >> (31 - control_bit)
-    x_t_bit = (x_t_word & t_bit_mask) >> (31 - target_bit)
-    z_t_bit = (z_t_word & t_bit_mask) >> (31 - target_bit)
+        x_c_word = xz[control_site]
+        x_t_word = xz[target_site]
+        z_c_word = xz[n_words + control_site]
+        z_t_word = xz[n_words + target_site]
 
-    # --- Update rule ---
-    # Z_c ← Z_c XOR X_t
-    z_c_word_updated = z_c_word ^ (x_t_bit << (31 - control_bit))
-    # Z_t ← Z_t XOR X_c
-    z_t_word_updated = z_t_word ^ (x_c_bit << (31 - target_bit))
+        x_c_bit = int((x_c_word & c_bit_mask) != 0)
+        z_c_bit = int((z_c_word & c_bit_mask) != 0)
+        x_t_bit = int((x_t_word & t_bit_mask) != 0)
+        z_t_bit = int((z_t_word & t_bit_mask) != 0)
 
-    z_array = z_array.at[:, control_site].set(z_c_word_updated)
-    # We need to reextract z_t_word, otherwise if control_site == target_site,
-    # we would erase the previous update.
-    z_t_word = z_array[:, target_site]
-    z_t_word_updated = z_t_word ^ (x_c_bit << (31 - target_bit))
-    z_array = z_array.at[:, target_site].set(z_t_word_updated)
+        if x_t_bit:
+            xz[n_words + control_site] = z_c_word ^ c_bit_mask
+        if x_c_bit:
+            z_t_word = xz[n_words + target_site]
+            xz[n_words + target_site] = z_t_word ^ t_bit_mask
 
-    # Compute phase: (-1)^(x_control_bit & x_target_bit & (z_control_bit ^ z_target_bit))
-    and_bit = (x_c_bit & x_t_bit) & (z_c_bit ^ z_t_bit)
-    phase = jnp.power(-1.0, and_bit)
+        phase = -1.0 if (x_c_bit and x_t_bit and (z_c_bit ^ z_t_bit)) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
-    new_spo = SparsePauliOp(xz_updated, phase * c_array)
-    # return xz_updated, phase * c_array
     return new_spo
 
 def conjugated_pauli_batched_uint32_X(spo, qubit):
@@ -779,24 +730,18 @@ def conjugated_pauli_batched_uint32_X(spo, qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), float (1.0 per batch)
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_X", xz_array.shape, c_array.shape, qubit, "\n")
-    N = xz_array.shape[1] // 2
-    z_array = xz_array[:, N:]
-
     site = qubit // 32
     bit = qubit % 32
-    bit_mask = jnp.uint32(1 << (31 - bit))
+    bit_mask = np.uint32(1 << (31 - bit))
 
-    z_word = z_array[:, site]
-    z_bit = (z_word & bit_mask) >> (31 - bit)
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+        z_word = xz[n_words + site]
+        phase = -1.0 if (z_word & bit_mask) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    # Compute phase = (-1)^(z_bit)
-    phase = jnp.power(-1.0, z_bit)
-    # return xz_array, phase * c_array
-    new_spo = SparsePauliOp(xz_array, phase * c_array)
     return new_spo
 
 def conjugated_pauli_batched_uint32_Y(spo, qubit):
@@ -811,30 +756,20 @@ def conjugated_pauli_batched_uint32_Y(spo, qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), complex (±1, ±i per batch)
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_Y", xz_array.shape, c_array.shape, qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-    z_array = xz_array[:, N:]
-
     site = qubit // 32
     bit = qubit % 32
-    bit_mask = jnp.uint32(1 << (31 - bit))
+    bit_mask = np.uint32(1 << (31 - bit))
 
-    x_word = x_array[:, site]
-    z_word = z_array[:, site]
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
 
-    x_bit = (x_word & bit_mask) >> (31 - bit)
-    z_bit = (z_word & bit_mask) >> (31 - bit)
+        x_bit = int((xz[site] & bit_mask) != 0)
+        z_bit = int((xz[n_words + site] & bit_mask) != 0)
+        phase = -1.0 if (x_bit ^ z_bit) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    # Compute phase = i * (-1)^(x_bit & z_bit)
-    nor_bit = x_bit ^ z_bit
-    phase = jnp.power(-1.0, nor_bit)
-
-    # return xz_array, phase * c_array
-    new_spo = SparsePauliOp(xz_array, phase * c_array)
     return new_spo
 
 def conjugated_pauli_batched_uint32_Z(spo, qubit):
@@ -849,28 +784,17 @@ def conjugated_pauli_batched_uint32_Z(spo, qubit):
             updated_xz: jnp.ndarray of shape (M, 2N), dtype=jnp.int32
             phase: jnp.ndarray of shape (M,), float (1.0 per batch)
     """
-    raise NotImplementedError("numpy version not ready yet.")
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_Z", xz_array.shape, c_array.shape, qubit, "\n")
-    N = xz_array.shape[1] // 2
-    x_array = xz_array[:, :N]
-
     site = qubit // 32
     bit = qubit % 32
-    bit_mask = jnp.uint32(1 << (31 - bit))
+    bit_mask = np.uint32(1 << (31 - bit))
 
-    x_word = x_array[:, site]
-    x_bit = (x_word & bit_mask) >> (31 - bit)
+    new_spo = SparsePauliOp()
+    for xz_key, coeff in spo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        phase = -1.0 if (xz[site] & bit_mask) else 1.0
+        new_spo[tuple(xz)] = phase * coeff
 
-    # Compute phase = (-1)^(x_bit)
-    phase = jnp.power(-1.0, x_bit)
-    # return xz_array, phase * c_array
-    new_spo = SparsePauliOp(xz_array, phase * c_array)
     return new_spo
-
-
-
 
 
 
