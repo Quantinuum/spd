@@ -8,23 +8,30 @@ import tfi_setup
 
 if __name__ == "__main__":
 
-    system_size_x = 4
-    system_size_y = 4
+    backend_name = 'jax'
+    system_size_x = 10
+    system_size_y = 10
     system_size = system_size_x * system_size_y
-    number_of_parameters = 3
+    number_of_parameters = 9
+    basis = '+'
 
     # system_size = 36
     # number_of_parameters = 18
     # data_dict = {}
 
-    random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
+    random_thetas = (np.random.rand(number_of_parameters) - 0.5)
+    random_thetas[:6] = np.array([0.2653, 0.73664796, 0.1287, 0.385, 0.0623, -0.178,])
+    # random_thetas[:6] = [-2.73849968e-02, 1.14894080e-03, 4.75105253e-02, 2.74527440e-02,
+    #                      2.50015058e-01, 7.22616242e-06]
+    # random_thetas[-6:] = [-0.00903, -0.003, 0.0476,
+    #                      0.00902,  0.245, -0.00146]
     # random_thetas = np.array([0.1655667, 0.20199909, 0.2995168, 0.10819875])
     run_dim = 2
     if run_dim == 1:
         circ = tfi_setup.gen_1d_TFI_ansatz_circuit(random_thetas,
                                                    system_size,
                                                    )
-        ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=1.0)
+        ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=1.3)
     else:
         circ = tfi_setup.gen_2d_TFI_ansatz_circuit(random_thetas,
                                                    system_size_x,
@@ -32,17 +39,20 @@ if __name__ == "__main__":
                                                    )
         ham_dict = tfi_setup.gen_2d_Hamiltonian_dict(system_size_x,
                                                      system_size_y,
-                                                     g=3.1)
+                                                     g=3.04438)
 
 
     trunc_val = 1e-3
     print("\n Truncation Value:", trunc_val)
 
-    exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val, backend_name='numpy')
+    exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val,
+                                                basis=basis, backend_name=backend_name)
     print("\n Expectation Value:", exp_val)
 
-    grads = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val, backend_name='numpy')
+    grads, backward_final_spo = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val,
+                                                                basis=basis, backend_name=backend_name)
     print("\n SPD Computed Gradients:", grads)
+
 
     def combine_grads(grads, run_dim, number_of_parameters, system_size):
         combine_grads = []
@@ -72,24 +82,46 @@ if __name__ == "__main__":
                                              system_size_y,
                                              )
 
-        exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val, backend_name='numpy')
-        raw_grads = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val, backend_name='numpy')
+        exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val,
+                                                    basis=basis, backend_name=backend_name)
+        raw_grads, backward_final_spo = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val,
+                                                                        basis=basis, backend_name=backend_name)
         grads = combine_grads(raw_grads, run_dim, number_of_parameters, system_size)
 
-        print("\n Current Thetas:", thetas, " Expectation Value:", exp_val, " Gradients:", grads)
+        # Add weight regularization
+        lambda_reg = 0.00
+        cost = exp_val + lambda_reg * np.sum(thetas**2)
+        grad_reg = 2 * lambda_reg * thetas
+        print(f"cost: {cost}, <E>: {exp_val}, Reg: {0.03 * np.sum(thetas**2)}")
+        print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
+        grads[:6] = 0
         return exp_val, grads
 
 
+    import optax
+    optimizer = optax.adam(learning_rate=3e-2)
+    opt_state = optimizer.init(random_thetas)
+    thetas = random_thetas.copy()
+    for _ in range(500):
+        print("===="*30)
+        print(f"Thetas[{_}]: ", thetas)
+        print("===="*30)
+        f, g = get_f_g(thetas)
+        updates, opt_state = optimizer.update(g, opt_state)
+        thetas = optax.apply_updates(thetas, updates)
+
+
+    """
     import scipy.optimize
-    # minimizer_kwargs = {"method":"L-BFGS-B", "jac":True}
-    # from scipy.optimize import basinhopping
-    # ret = basinhopping(get_f_g,
-    #                    random_thetas,
-    #                    minimizer_kwargs=minimizer_kwargs,
-    #                    niter=200,
-    #                    )
-    # print(ret)
-    # exit()
+    minimizer_kwargs = {"method":"L-BFGS-B", "jac":True}
+    from scipy.optimize import basinhopping
+    ret = basinhopping(get_f_g,
+                       random_thetas,
+                       minimizer_kwargs=minimizer_kwargs,
+                       niter=200,
+                       )
+    print(ret)
+    exit()
 
 
     result = scipy.optimize.minimize(get_f_g,
@@ -99,4 +131,5 @@ if __name__ == "__main__":
                                      options={'disp': True, 'gtol': 1e-4, 'maxiter': 100}
                                      )
     print(result)
+    """
 

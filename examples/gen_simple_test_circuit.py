@@ -10,13 +10,17 @@ def gen_simple_test_circuit() -> Circuit:
     for i in range(64):
         circ.Rx(np.random.rand(), i)
 
-    # for i in range(64):
-    #     q1 = np.random.randint(0, 63)
-    #     q2 = (q1 + np.random.randint(1, 63)) % 64
-    #     circ.ZZPhase(np.random.rand(), q1, q2)
+    """
+    """
+    for i in range(64):
+        q1 = np.random.randint(0, 63)
+        q2 = (q1 + np.random.randint(1, 63)) % 64
+        circ.ZZPhase(np.random.rand(), q1, q2)
 
-    # for i in range(63):
-    #     circ.H(i)
+    """
+    for i in range(63):
+        circ.H(i)
+    """
 
     for i in range(64):
         q1 = np.random.randint(0, 63)

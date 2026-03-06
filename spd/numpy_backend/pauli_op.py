@@ -59,7 +59,7 @@ def get_norm_square(sparse_pauli_op):
 def get_size(sparse_pauli_op):
     return len(sparse_pauli_op)
 
-def get_expectation_value(spo):
+def get_expectation_value(spo, basis='0'):
     """
     This is too slow for large arrays.
     if ( p_str.count('X') + p_str.count('Y') ) == 0:
@@ -72,25 +72,45 @@ def get_expectation_value(spo):
     """
     exp_val = 0
     N = len(next(iter(spo))) // 2
-    for P, P_val in spo.items():
-        xz_array = np.array(P)
-        # N = xz_array.shape[0] // 2
-        if np.all(xz_array[:N] == 0):
-            exp_val += P_val
+    if basis in ['0', 'Z']:
+        for P, P_val in spo.items():
+            xz_array = np.array(P)
+            # N = xz_array.shape[0] // 2
+            if np.all(xz_array[:N] == 0):
+                exp_val += P_val
+    elif basis in ['+', 'X']:
+        for P, P_val in spo.items():
+            xz_array = np.array(P)
+            if np.all(xz_array[N:] == 0):
+                exp_val += P_val
+    else:
+        raise ValueError("Unsupported basis: {}".format(basis))
 
     return exp_val
 
-def create_gradient_spo(spo):
+def create_gradient_spo(spo, basis='0'):
     gradient_spo = {}
     N = len(next(iter(spo))) // 2
-    for P, P_val in spo.items():
-        xz_array = np.array(P)
-        if np.all(xz_array[:N] == 0):
-            g_val = 1.
-        else:
-            g_val = 0.
+    if basis in ['0', 'Z']:
+        for P, P_val in spo.items():
+            xz_array = np.array(P)
+            if np.all(xz_array[:N] == 0):
+                g_val = 1.
+            else:
+                g_val = 0.
 
-        gradient_spo[P] = (P_val, g_val)
+            gradient_spo[P] = (P_val, g_val)
+    elif basis in ['+', 'X']:
+        for P, P_val in spo.items():
+            xz_array = np.array(P)
+            if np.all(xz_array[N:] == 0):
+                g_val = 1.
+            else:
+                g_val = 0.
+
+            gradient_spo[P] = (P_val, g_val)
+    else:
+        raise ValueError("Unsupported basis: {}".format(basis))
 
     return gradient_spo
 
