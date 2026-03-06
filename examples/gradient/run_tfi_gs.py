@@ -12,7 +12,7 @@ if __name__ == "__main__":
     system_size_x = 10
     system_size_y = 10
     system_size = system_size_x * system_size_y
-    number_of_parameters = 15
+    number_of_parameters = 9
     basis = '+'
 
     # system_size = 36

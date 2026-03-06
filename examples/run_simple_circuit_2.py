@@ -13,5 +13,5 @@ if __name__ == "__main__":
     for trunc_val in [3e-5]:
         print("\n Truncation Value:", trunc_val)
 
-        exp_val = spd.run_pytket_circuit(circ, m_qubits, trunc_val)
+        exp_val, spo = spd.run_pytket_circuit(circ, m_qubits, trunc_val, backend_name='jax')
         print("\n Expectation Value:", exp_val)
