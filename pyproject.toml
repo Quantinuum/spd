@@ -10,6 +10,6 @@ dependencies = [
     "jax>=0.4.0",  # Replace with the version you need
     'optax',
     "pytket>=2.7.0",
-    "numpy>=1.23.0"
+    "numpy>=1.23.0",
+    "psutil"
 ]
-
