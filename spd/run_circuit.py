@@ -94,7 +94,7 @@ def run_pytket_circuit(circ,
         if command.op.type in _ROT_DISPATCH:
             P, theta = parse_pauli_theta(command, padded_system_size)
             xzk = utils.pauli_str_to_uint(P)
-            # Parsing the rotation: u = exp(-i * theta * P)
+            # Parsing the rotation: u = exp(-i * theta * P / 2)
             sparse_pauli_op, num_string = backend.conjugated_pauli_forward(sparse_pauli_op, xzk, theta, trunc_val=trunc_val)
             max_num_string = max(max_num_string, num_string)
         elif command.op.type in [OpType.H, OpType.S, OpType.Sdg, OpType.X, OpType.Y, OpType.Z]:
@@ -203,7 +203,7 @@ def run_pytket_circuit_backward(circ,
         if command.op.type in _ROT_DISPATCH:
             P, theta = parse_pauli_theta(command, padded_system_size)
             xzk = utils.pauli_str_to_uint(P)
-            # Parsing the rotation: u = exp(-i * theta * P)
+            # Parsing the rotation: u = exp(-i * theta * P / 2)
             spo_val_grad, num_string, grad_i = backend.conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val=trunc_val)
             grads.append(grad_i)
             max_num_string = max(max_num_string, num_string)

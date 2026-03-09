@@ -193,7 +193,7 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
     grad_c_ = slice_to_size_c_arr(grad_c_concat, int(new_size))
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
 
-    return new_spo_val_grad, final_valid_count, -grad_i
+    return new_spo_val_grad, final_valid_count, grad_i
 
 @jax.jit
 def backward_jitted(spo_val_grad, xzk, theta, trunc_val):
@@ -253,6 +253,7 @@ def get_gradient(spo_val_grad, xzk, theta):
                                                                   xz_array_p, jnp.ones_like(c_array_p),)
     # phase_array is an indication of the relation between sigma and p
     phase_array_p = jnp.real(phase_array_p * (-1j))
+    # This is the c_array_p_of_the_corresponding_q from (sigma, p, q). It is not the coefficient of q itself.
     c_array_q = c_array_p.copy()
     grad_c_array_q = grad_c_array_p.copy()
 
@@ -271,11 +272,12 @@ def get_gradient(spo_val_grad, xzk, theta):
 
     # Gather the coefficients using the discovered indices
     # Shape: (M,)
+    # The q_aligned now points to the corresponding q for each p, if exists. If not exists, it points to the last row, which will be filtered out.
     c_array_q_aligned = c_array_q_sorted[safe_indices]
     grad_c_array_q_aligned = grad_c_array_q_sorted[safe_indices]
 
     # Use the formula
-    raw_products = phase_array_p * ( c_array_p * grad_c_array_q_aligned - c_array_q_aligned * grad_c_array_p )
+    raw_products = phase_array_p * ( -c_array_p * grad_c_array_q_aligned + c_array_q_aligned * grad_c_array_p )
     # print(raw_products)
     # import pdb; pdb.set_trace()
 
@@ -1516,8 +1518,26 @@ def merge_and_pad(spo_1, spo_2, trunc_val):
 @jax.jit
 def find_row_duplications(a, b):
     """
-    Optimized Binary Search for Static Shapes.
-    Replaces while_loop with a fixed unrolled loop for GPU efficiency.
+    Checks which rows of 'a' exist in 'b' using an optimized binary search.
+
+    This function performs a vectorized, lexically-aware binary search. It is
+    designed for JAX JIT-compilation by using a fixed number of iterations
+    (based on the log2 size of 'b') to avoid dynamic branching on the GPU.
+
+    # Old Doc-String - Optimized Binary Search for Static Shapes.
+    # Replaces while_loop with a fixed unrolled loop for GPU efficiency.
+
+    Args:
+        a: jax.Array of shape (N, D). The rows to search for (needles).
+        b: jax.Array of shape (M, D). The search space (haystack).
+           MUST be lexically sorted.
+
+    Returns:
+        is_duplicate: A boolean array of shape (N,) where True indicates the
+            row in 'a' exists in 'b'.
+        indices_in_b: An int32 array of shape (N,) containing the indices in 'b'
+            where the rows of 'a' are located (or where they would be inserted).
+
     """
     # Assumes 'b' is the haystack.
     # M is the size of the haystack (b).
