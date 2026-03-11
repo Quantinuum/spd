@@ -6,16 +6,22 @@ def gen_1d_TFI_ansatz_circuit(thetas,
                               ) -> Circuit:
     circ = Circuit(system_size, system_size)
 
-    depth = len(thetas) // 2
+    assert len(thetas) % 3 == 0, "The length of thetas should be a multiple of 3."
+    depth = len(thetas) // 3
 
     for d in range(depth):
         for i in range(system_size):
-            circ.Rx(thetas[2*d], i)
+            circ.ZZPhase(thetas[3*d], i, (i + 1) % system_size)
 
         circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
 
         for i in range(system_size):
-            circ.ZZPhase(thetas[2*d+1], i, (i + 1) % system_size)
+            circ.Rx(thetas[3*d + 1], i)
+
+        circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
+
+        for i in range(system_size):
+            circ.Rz(thetas[3*d + 2], i)
 
         circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
 

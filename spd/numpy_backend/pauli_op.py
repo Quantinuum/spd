@@ -20,7 +20,22 @@ Convention:
 """
 
 class SparsePauliOp(dict):
-    pass
+    def __str__(self):
+        return utils.sparse_pauli_op_to_str(self)
+
+    __repr__ = __str__
+
+    def get_Pauli_weight_distribution(self):
+        distribution = {}
+        pop = np.bitwise_count
+
+        for packed in self.keys():
+            xz = np.asarray(packed)
+            n_words = xz.shape[0] // 2
+            weight = int(pop(xz[:n_words] | xz[n_words:]).astype(np.int32).sum())
+            distribution[weight] = distribution.get(weight, 0) + 1
+
+        return distribution
 
 def create_measurement_op(measurement_dict, padded_system_size):
     """
@@ -383,8 +398,8 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
     exp(i theta/2 * sigma_k) * sigma_j * exp(-i theta/2 * sigma_k)
     """
-    new_spo_c = {}
-    new_spo_a = {}
+    new_spo_c = SparsePauliOp()
+    new_spo_a = SparsePauliOp()
     # 1. Split the Op into C and AC parts
     for xz_key, c_val in spo.items():
         xz = np.array(xz_key)
@@ -397,7 +412,7 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
             new_spo_a[xz_key] = new_spo_a.get(xz_key, 0) + c_val
 
     # 2. construct the pairs of AC parts
-    new_spo_a_pairs = {}
+    new_spo_a_pairs = SparsePauliOp()
     for xz_key, c_val in new_spo_a.items():
         P = xz_key
         P_array = np.array(P)
@@ -446,8 +461,8 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
     exp(-i theta/2 * sigma_k) * sigma_j * exp(i theta/2 * sigma_k)
     """
-    new_spo_c = {}
-    old_spo_a = {}
+    new_spo_c = SparsePauliOp()
+    old_spo_a = SparsePauliOp()
     # 1. Split the Op into C and AC parts
     for xz_key, vals in spo_val_grad.items():
         xz = np.array(xz_key)
@@ -458,7 +473,7 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
             old_spo_a[xz_key] = vals  # anticommute
 
     # 2. construct the pairs of AC parts
-    old_spo_a_pairs = {}
+    old_spo_a_pairs = SparsePauliOp()
     for P, vals in old_spo_a.items():
         Q_array, c_phase = pauli_product_uint(xzk, 1., np.array(P), 1.)
         Q = tuple(Q_array)
@@ -795,8 +810,6 @@ def conjugated_pauli_batched_uint32_Z(spo, qubit):
         new_spo[tuple(xz)] = phase * coeff
 
     return new_spo
-
-
 
 
 

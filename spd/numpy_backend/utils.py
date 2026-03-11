@@ -173,6 +173,32 @@ def uint32_to_pauli_str(packed, N):
     bool_array = unpack_uint32_to_bits(packed, 2 * N)
     return bool_to_pauli_str(bool_array)
 
+def uint64_to_pauli_str(packed, N):
+    bool_array = unpack_uint64_to_bits(packed, 2 * N)
+    return bool_to_pauli_str(bool_array)
+
+def _format_coeff(coeff) -> str:
+    coeff_arr = np.asarray(coeff)
+    coeff_scalar = coeff_arr.item() if coeff_arr.shape == () else coeff
+
+    if isinstance(coeff_scalar, complex) or np.iscomplexobj(coeff_scalar):
+        coeff_complex = complex(coeff_scalar)
+        if abs(coeff_complex.imag) < 1e-12:
+            return repr(float(coeff_complex.real))
+        return repr(coeff_complex)
+
+    return repr(float(coeff_scalar))
+
+def sparse_pauli_op_to_str(spo) -> str:
+    lines = ["SparsePauliOp["]
+    for packed, coeff in spo.items():
+        if np.abs(coeff) <= 1e-6:
+            continue
+        pauli_str = uint_to_pauli_str(np.asarray(packed), _PACKBIT)
+        lines.append(f"  {pauli_str} => {_format_coeff(coeff)}")
+    lines.append("]")
+    return "\n".join(lines)
+
 def set_packbit(n):
     global _PACKBIT
     if n not in [8, 32, 64]:
@@ -201,5 +227,16 @@ def pack_bits_to_uint(x: np.ndarray) -> np.ndarray:
     elif _PACKBIT == 64:
         raise NotImplementedError("64-bit version has error")
         # return pack_bits_to_uint64(x)
+    else:
+        raise ValueError("Packbit not set. Use set_packbit(n) with n in [8,32,64].")
+
+def uint_to_pauli_str(*args, **kwargs):
+    assert _PACKBIT is not None, "Packbit not set. Use set_packbit(n) with n in [8,32,64]."
+    if _PACKBIT == 8:
+        return uint8_to_pauli_str(*args, **kwargs)
+    elif _PACKBIT == 32:
+        return uint32_to_pauli_str(*args, **kwargs)
+    elif _PACKBIT == 64:
+        return uint64_to_pauli_str(*args, **kwargs)
     else:
         raise ValueError("Packbit not set. Use set_packbit(n) with n in [8,32,64].")
