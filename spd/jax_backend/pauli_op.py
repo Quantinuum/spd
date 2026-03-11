@@ -6,6 +6,7 @@ import functools
 from typing import NamedTuple
 from . import utils
 import math
+import numpy as np
 
 DT_BOOL = jnp.bool_
 DT_CPLX = jnp.complex64   # or complex128 if you need double
@@ -30,6 +31,23 @@ Convention:
 class SparsePauliOp(NamedTuple):
     xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
     c_array: jnp.ndarray   # real arrays of shape (M,)
+
+    def __str__(self):
+        return utils.sparse_pauli_op_to_str(self)
+
+    __repr__ = __str__
+
+    def get_Pauli_weight_distribution(self):
+        distribution = {}
+        pop = np.bitwise_count
+        xz_rows = np.asarray(self.xz_array)
+
+        for xz in xz_rows:
+            n_words = xz.shape[0] // 2
+            weight = int(pop(xz[:n_words] | xz[n_words:]).astype(np.int32).sum())
+            distribution[weight] = distribution.get(weight, 0) + 1
+
+        return distribution
 
 class SparsePauliGradientOp(NamedTuple):
     xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
@@ -1699,4 +1717,3 @@ if __name__ == "__main__":
     # theta = np.pi / 4
     # x_k, z_k, c_k = conjugate_pauli(x1, z1, c_1, x2, z2, theta)
     # print("Conjugated:", x_k, z_k, c_k)
-
