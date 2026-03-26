@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax import lax
 import time
 import functools
-from typing import NamedTuple
+from .sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 from . import utils
 import math
 import numpy as np
@@ -27,32 +27,6 @@ Convention:
     Z = (0,1)
     The phase in Y is implicit in the formula.
 """
-
-class SparsePauliOp(NamedTuple):
-    xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
-    c_array: jnp.ndarray   # real arrays of shape (M,)
-
-    def __str__(self):
-        return utils.sparse_pauli_op_to_str(self)
-
-    __repr__ = __str__
-
-    def get_Pauli_weight_distribution(self):
-        distribution = {}
-        pop = np.bitwise_count
-        xz_rows = np.asarray(self.xz_array)
-
-        for xz in xz_rows:
-            n_words = xz.shape[0] // 2
-            weight = int(pop(xz[:n_words] | xz[n_words:]).astype(np.int32).sum())
-            distribution[weight] = distribution.get(weight, 0) + 1
-
-        return distribution
-
-class SparsePauliGradientOp(NamedTuple):
-    xz_array: jnp.ndarray  # int arrays of shape (M, 2N)
-    c_array: jnp.ndarray   # real arrays of shape (M,)
-    grad_c_array: jnp.ndarray   # real arrays of shape (M,)
 
 def create_measurement_op(measurement_dict, padded_system_size,):
     xz_list = []
@@ -80,10 +54,10 @@ def create_op(pauli_dict):
     return spo
 
 def get_norm_square(sparse_pauli_op):
-    return jnp.sum(jnp.abs(sparse_pauli_op.c_array) ** 2)
+    return sparse_pauli_op.get_norm_square()
 
 def get_size(sparse_pauli_op):
-    return sparse_pauli_op.c_array.size
+    return sparse_pauli_op.get_size()
 
 def get_expectation_value(spo, basis='0'):
     """
@@ -96,18 +70,7 @@ def get_expectation_value(spo, basis='0'):
     # This can be wrong due to overflow
     # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
     """
-    xz_array = spo.xz_array
-    c_array = spo.c_array
-    N = xz_array.shape[1] // 2
-    if basis in ['0', 'Z']:
-        mask = jnp.all(xz_array[:, :N] == 0, axis=1)
-    elif basis in ['+', 'X']:
-        mask = jnp.all(xz_array[:, N:] == 0, axis=1)
-    else:
-        raise NotImplementedError(f"Expectation value in basis {basis} not implemented.")
-
-    exp_val = jnp.sum(c_array[mask])
-    return jnp.real(exp_val)
+    return spo.get_expectation_value(basis=basis)
 
 def create_gradient_spo(spo, basis='0'):
     """

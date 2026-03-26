@@ -217,6 +217,23 @@ def sparse_pauli_op_to_str(spo) -> str:
     lines.append("]")
     return "\n".join(lines)
 
+def sparse_pauli_grad_op_to_str(spo) -> str:
+    lines = ["SparsePauliGradientOp["]
+    xz_rows = np.asarray(spo.xz_array)
+    c_vals = np.asarray(spo.c_array)
+    grad_vals = np.asarray(spo.grad_c_array)
+    mask = (np.abs(c_vals) > 1e-6) | (np.abs(grad_vals) > 1e-6)
+    xz_rows = xz_rows[mask]
+    c_vals = c_vals[mask]
+    grad_vals = grad_vals[mask]
+    for packed, coeff, grad in zip(xz_rows, c_vals, grad_vals):
+        pauli_str = uint_to_pauli_str(jnp.asarray(packed), _PACKBIT)
+        lines.append(
+            f"  {pauli_str} => coeff={_format_coeff(coeff)}, grad={_format_coeff(grad)}"
+        )
+    lines.append("]")
+    return "\n".join(lines)
+
 def set_packbit(n):
     global _PACKBIT
     if n not in [8, 32, 64]:
