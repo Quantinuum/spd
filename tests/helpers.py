@@ -27,6 +27,31 @@ def to_term_dict(backend_name, module, spo, n_qubits=8):
     return terms
 
 
+def to_grad_term_dict(backend_name, module, spgo, n_qubits=8):
+    terms = {}
+
+    if backend_name == "jax":
+        xz_rows = np.asarray(spgo.xz_array)
+        c_vals = np.asarray(spgo.c_array)
+        grad_vals = np.asarray(spgo.grad_c_array)
+        for xz, c, grad in zip(xz_rows, c_vals, grad_vals):
+            pstr = module.utils.uint32_to_pauli_str(np.asarray(xz), 32)[:n_qubits]
+            terms[pstr] = (
+                terms.get(pstr, (0.0, 0.0))[0] + float(np.real(c)),
+                terms.get(pstr, (0.0, 0.0))[1] + float(np.real(grad)),
+            )
+        return terms
+
+    for xz_key, value_grad in spgo.items():
+        coeff, grad = value_grad
+        pstr = module.utils.uint32_to_pauli_str(np.asarray(xz_key), 32)[:n_qubits]
+        terms[pstr] = (
+            terms.get(pstr, (0.0, 0.0))[0] + float(np.real(coeff)),
+            terms.get(pstr, (0.0, 0.0))[1] + float(np.real(grad)),
+        )
+    return terms
+
+
 def anticommutes(p_u, sigma_u):
     n_words = p_u.shape[0] // 2
     term1 = np.bitwise_count(p_u[:n_words] & sigma_u[n_words:]).astype(np.int32).sum()

@@ -1,5 +1,6 @@
 import time
 import numpy as np
+from .sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 from . import utils
 
 PHASES = np.array([1.0+0j, -1j, -1.0+0j, 1j])
@@ -18,24 +19,6 @@ Convention:
     Z = (0,1)
     The phase in Y is implicit in the formula.
 """
-
-class SparsePauliOp(dict):
-    def __str__(self):
-        return utils.sparse_pauli_op_to_str(self)
-
-    __repr__ = __str__
-
-    def get_Pauli_weight_distribution(self):
-        distribution = {}
-        pop = np.bitwise_count
-
-        for packed in self.keys():
-            xz = np.asarray(packed)
-            n_words = xz.shape[0] // 2
-            weight = int(pop(xz[:n_words] | xz[n_words:]).astype(np.int32).sum())
-            distribution[weight] = distribution.get(weight, 0) + 1
-
-        return distribution
 
 def create_measurement_op(measurement_dict, padded_system_size):
     """
@@ -64,15 +47,10 @@ def create_op(pauli_dict):
     return spo
 
 def get_norm_square(sparse_pauli_op):
-    val = next(iter(sparse_pauli_op.values()))
-    if type(val) == tuple:
-        # Gradient SPO
-        return sum(np.abs(v[0]) ** 2 for v in sparse_pauli_op.values())
-    else:
-        return np.linalg.norm(np.fromiter(sparse_pauli_op.values(), dtype=np.float32)) ** 2
+    return sparse_pauli_op.get_norm_square()
 
 def get_size(sparse_pauli_op):
-    return len(sparse_pauli_op)
+    return sparse_pauli_op.get_size()
 
 def get_expectation_value(spo, basis='0'):
     """
@@ -85,26 +63,10 @@ def get_expectation_value(spo, basis='0'):
     # This can be wrong due to overflow
     # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
     """
-    exp_val = 0
-    N = len(next(iter(spo))) // 2
-    if basis in ['0', 'Z']:
-        for P, P_val in spo.items():
-            xz_array = np.array(P)
-            # N = xz_array.shape[0] // 2
-            if np.all(xz_array[:N] == 0):
-                exp_val += P_val
-    elif basis in ['+', 'X']:
-        for P, P_val in spo.items():
-            xz_array = np.array(P)
-            if np.all(xz_array[N:] == 0):
-                exp_val += P_val
-    else:
-        raise ValueError("Unsupported basis: {}".format(basis))
-
-    return exp_val
+    return spo.get_expectation_value(basis=basis)
 
 def create_gradient_spo(spo, basis='0'):
-    gradient_spo = {}
+    gradient_spo = SparsePauliGradientOp()
     N = len(next(iter(spo))) // 2
     if basis in ['0', 'Z']:
         for P, P_val in spo.items():
@@ -461,8 +423,8 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
     exp(-i theta/2 * sigma_k) * sigma_j * exp(i theta/2 * sigma_k)
     """
-    new_spo_c = SparsePauliOp()
-    old_spo_a = SparsePauliOp()
+    new_spo_c = SparsePauliGradientOp()
+    old_spo_a = SparsePauliGradientOp()
     # 1. Split the Op into C and AC parts
     for xz_key, vals in spo_val_grad.items():
         xz = np.array(xz_key)
@@ -810,8 +772,6 @@ def conjugated_pauli_batched_uint32_Z(spo, qubit):
         new_spo[tuple(xz)] = phase * coeff
 
     return new_spo
-
-
 
 
 

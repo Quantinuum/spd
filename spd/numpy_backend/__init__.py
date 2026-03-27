@@ -1,3 +1,3 @@
-from .pauli_op import *
-# from .merge_func import *
+from .kernels import *
+from .sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 from . import utils
