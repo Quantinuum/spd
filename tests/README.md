@@ -26,11 +26,12 @@ Current coverage includes:
 - `get_expectation_value`
 - `create_gradient_spo`
 - a simple `conjugated_pauli_forward` rotation case
+- runner-level `max_num_str` behavior for both backends
 
 Design notes:
 
 - NumPy and JAX store `SPO` / `SPGO` differently, so tests normalize both into Pauli-string keyed dictionaries before comparison.
-- Rotation outputs are compared with tolerance because the JAX path uses `float32` in places where NumPy may keep higher precision.
+- Rotation outputs are compared with tolerance because the JAX path defaults to `float32`, while NumPy may keep higher precision.
 - These tests protect interface cleanup around the backend, adapter, and runner layers.
 
 ## Fixtures And Helpers

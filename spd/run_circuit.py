@@ -5,6 +5,7 @@ backend adapter. It prepares the run, delegates operation execution, and handles
 progress/logging for forward and backward circuit evaluation.
 """
 
+import math
 import psutil, time, sys
 
 from .backend_adapter import BackendAdapter
@@ -12,12 +13,20 @@ from .pytket_frontend import maybe_rebase_pytket_circuit, parse_pytket_circuit
 
 
 # [TODO]: Merging the conj, merge into a single function
-# [TODO]: make sure c_array always float32
 
 
-def _setup_run(circ, backend_name, rebase, packbit=32):
+def _normalize_max_num_str(backend_name, max_num_str):
+    max_num_str = int(max_num_str)
+    if max_num_str < 1:
+        raise ValueError("max_num_str must be a positive integer.")
+    if backend_name == "jax":
+        return 1 if max_num_str == 1 else 1 << math.ceil(math.log2(max_num_str))
+    return max_num_str
+
+
+def _setup_run(circ, backend_name, rebase, packbit=32, precision="single"):
     """Prepare backend, padded system size, and parsed operations."""
-    backend = BackendAdapter.from_name(backend_name, packbit=packbit)
+    backend = BackendAdapter.from_name(backend_name, packbit=packbit, precision=precision)
 
     if rebase:
         maybe_rebase_pytket_circuit(circ)
@@ -118,8 +127,10 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
 def run_pytket_circuit(circ,
                        measure_qubits_data,
                        trunc_val,
+                       max_num_str,
                        basis='0',
                        backend_name='numpy',
+                       precision='single',
                        rebase=False,
                        log_filename=None,
                        save_strings=False,
@@ -127,13 +138,24 @@ def run_pytket_circuit(circ,
     """Run a static pytket circuit forward on the selected backend."""
     total_start_time = time.time()
     _PACKBIT = 32
-    backend, padded_system_size, operations = _setup_run(circ, backend_name, rebase, packbit=_PACKBIT)
+    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend, padded_system_size, operations = _setup_run(
+        circ, backend_name, rebase, packbit=_PACKBIT, precision=precision
+    )
 
     sparse_pauli_op = backend.create_initial_spo(measure_qubits_data, padded_system_size)
     sparse_pauli_op, max_num_string, last_stats = _run_operation_loop(
         operations[::-1],
         sparse_pauli_op,
-        lambda state, operation: (*backend.apply_forward(state, operation, trunc_val=trunc_val), None),
+        lambda state, operation: (
+            *backend.apply_forward(
+                state,
+                operation,
+                trunc_val=trunc_val,
+                max_num_str=max_num_str,
+            ),
+            None,
+        ),
         total_start_time,
     )
 
@@ -159,8 +181,10 @@ def run_pytket_circuit(circ,
 def run_pytket_circuit_backward(circ,
                                 final_spo,
                                 trunc_val,
+                                max_num_str,
                                 basis='0',
                                 backend_name='numpy',
+                                precision='single',
                                 rebase=False,
                                 log_filename=None,
                                 save_strings=False,
@@ -168,7 +192,10 @@ def run_pytket_circuit_backward(circ,
     """Run the backward pass for a static pytket circuit on the selected backend."""
     total_start_time = time.time()
     _PACKBIT = 32
-    backend, padded_system_size, operations = _setup_run(circ, backend_name, rebase, packbit=_PACKBIT)
+    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend, padded_system_size, operations = _setup_run(
+        circ, backend_name, rebase, packbit=_PACKBIT, precision=precision
+    )
 
     spo_val_grad = backend.create_gradient_spo(final_spo, basis=basis)
     grads = []
@@ -177,6 +204,7 @@ def run_pytket_circuit_backward(circ,
             state,
             operation,
             trunc_val=trunc_val,
+            max_num_str=max_num_str,
         )
         if num_string is not None:
             grads.append(grad_i)

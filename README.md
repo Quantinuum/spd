@@ -61,6 +61,7 @@ exp_val, final_spo = spd.run_pytket_circuit(
     circ,
     [0],          # measure Z on qubit 0
     trunc_val=1e-12,
+    max_num_str=1000,
     backend_name="numpy",
 )
 ```
@@ -72,9 +73,19 @@ grads, backward_final_spo = spd.run_pytket_circuit_backward(
     circ,
     final_spo,
     trunc_val=1e-12,
+    max_num_str=1000,
     backend_name="numpy",
 )
 ```
+
+`max_num_str` is the maximum number of Pauli strings retained during
+simulation. Both backends treat it as an upper bound. For the JAX backend this
+cap is rounded up to the next power of two before slicing the post-merge
+arrays.
+
+Both backends also support `precision="single"` and `precision="double"` for
+real-valued sparse-Pauli coefficients.
+
 
 ## Tests
 

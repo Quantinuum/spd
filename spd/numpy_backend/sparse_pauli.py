@@ -5,6 +5,9 @@ from . import utils
 
 
 class SparsePauliOp(dict, BaseSparsePauliOp):
+    def __setitem__(self, key, value):
+        super().__setitem__(key, utils.as_real_scalar(value))
+
     def __str__(self):
         return utils.sparse_pauli_op_to_str(self)
 
@@ -14,7 +17,8 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
         return len(self)
 
     def get_norm_square(self):
-        return np.linalg.norm(np.fromiter(self.values(), dtype=np.complex64)) ** 2
+        vals = np.fromiter(self.values(), dtype=utils.get_real_dtype())
+        return np.linalg.norm(vals) ** 2
 
     def get_expectation_value(self, basis: str = "0"):
         exp_val = 0
@@ -52,6 +56,9 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
 
 
 class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
+    def __setitem__(self, key, value):
+        super().__setitem__(key, utils.as_real_pair(value))
+
     def __str__(self):
         return utils.sparse_pauli_grad_op_to_str(self)
 
@@ -61,4 +68,5 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
         return len(self)
 
     def get_norm_square(self):
-        return sum(np.abs(val[0]) ** 2 for val in self.values())
+        vals = np.fromiter((value_grad[0] for value_grad in self.values()), dtype=utils.get_real_dtype())
+        return np.sum(vals ** 2, dtype=utils.get_real_dtype())

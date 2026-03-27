@@ -5,10 +5,14 @@ import time
 from functools import partial
 import numpy as np
 
-# small dtype choices
+if hasattr(jax, "config"):
+    jax.config.update("jax_enable_x64", True)
+
 DT_BOOL = jnp.bool_
-DT_CPLX = jnp.complex64   # or complex128 if you need double
-PHASES = jnp.array([1.0+0j, -1j, -1.0+0j, 1j], dtype=DT_CPLX)
+_PRECISION = "single"
+_REAL_DTYPE = jnp.float32
+PHASES = jnp.array([1.0 + 0j, -1j, -1.0 + 0j, 1j], dtype=jnp.complex64)
+CONJUGATION_SIGNS = jnp.array([0, 1, 0, -1], dtype=jnp.int8)
 
 _PACKBIT = None
 
@@ -26,6 +30,41 @@ Convention:
     Z = (0,1)
     The phase in Y is implicit in the formula.
 """
+
+
+def set_precision(precision: str):
+    global _PRECISION, _REAL_DTYPE
+
+    if precision == "single":
+        _REAL_DTYPE = jnp.float32
+    elif precision == "double":
+        _REAL_DTYPE = jnp.float64
+    else:
+        raise ValueError("precision must be one of ['single', 'double']")
+
+    _PRECISION = precision
+
+
+def get_precision() -> str:
+    return _PRECISION
+
+
+def get_real_dtype():
+    return _REAL_DTYPE
+
+
+def as_real_array(values):
+    arr = jnp.asarray(values)
+    if jnp.iscomplexobj(arr):
+        raise ValueError("JAX SparsePauli coefficients must be real-valued.")
+    return arr.astype(_REAL_DTYPE)
+
+
+def real_scalar(value):
+    arr = as_real_array(value)
+    if arr.shape != ():
+        raise ValueError("Expected a scalar value.")
+    return arr
 
 def pack_bits_to_uint8(x: jnp.ndarray) -> jnp.ndarray:
     """

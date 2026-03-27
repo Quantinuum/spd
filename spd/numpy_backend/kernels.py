@@ -20,12 +20,20 @@ Convention:
     The phase in Y is implicit in the formula.
 """
 
+
+def set_precision(precision: str):
+    utils.set_precision(precision)
+
+
+def get_precision() -> str:
+    return utils.get_precision()
+
 def create_measurement_op(measurement_dict, padded_system_size):
     """
     Create a SparsePauliOp from a measurement dict.
     measurement_dict: dict
         key: tuple of int - qubit indices measured in Z basis
-        val: complex - coefficient
+        val: real coefficient
     padded_system_size: int - total number of qubits (after padding)
     """
     spo = SparsePauliOp()
@@ -76,7 +84,7 @@ def create_gradient_spo(spo, basis='0'):
             else:
                 g_val = 0.
 
-            gradient_spo[P] = (P_val, g_val)
+            gradient_spo[P] = (P_val, utils.as_real_scalar(g_val))
     elif basis in ['+', 'X']:
         for P, P_val in spo.items():
             xz_array = np.array(P)
@@ -85,7 +93,7 @@ def create_gradient_spo(spo, basis='0'):
             else:
                 g_val = 0.
 
-            gradient_spo[P] = (P_val, g_val)
+            gradient_spo[P] = (P_val, utils.as_real_scalar(g_val))
     else:
         raise ValueError("Unsupported basis: {}".format(basis))
 
@@ -354,7 +362,7 @@ def check_anticommute_uint(xz1, xz2):
     return acq
 
 # ---------------------------------------------------------------------- #
-def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
+def conjugated_pauli_forward(spo, xzk, theta, trunc_val, max_num_str=None):
     """
     [Support uint8, uint16, uint32, uint64]
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
@@ -374,7 +382,7 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
             new_spo_a[xz_key] = new_spo_a.get(xz_key, 0) + c_val
 
     # 2. construct the pairs of AC parts
-    new_spo_a_pairs = SparsePauliOp()
+    new_spo_a_pairs = {}
     for xz_key, c_val in new_spo_a.items():
         P = xz_key
         P_array = np.array(P)
@@ -404,10 +412,21 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
         # Update Q
         new_spo_c[Q] = -plus_or_minus * sin_theta * c_P + cos_theta * c_Q
 
+    if max_num_str is not None and max_num_str < len(new_spo_c):
+        vals = np.abs(np.array(list(new_spo_c.values())))
+        vals.sort()
+        additional_cutoff = vals[-max_num_str]
+        trunc_val = max([additional_cutoff, trunc_val])
+
     # 4. Truncate small values
     for P in list(new_spo_c.keys()):
         if np.abs(new_spo_c[P]) < trunc_val:
             new_spo_c.pop(P)
+
+    if max_num_str is not None and len(new_spo_c) > max_num_str:
+        ranked_keys = sorted(new_spo_c, key=lambda key: np.abs(new_spo_c[key]), reverse=True)
+        for key in ranked_keys[max_num_str:]:
+            new_spo_c.pop(key)
 
     return new_spo_c, len(new_spo_c)
 # ---------------------------------------------------------------------- #
@@ -417,7 +436,7 @@ def tuple_sum(a, b):
 def zeros_like_tuple(t):
     return tuple(0 for _ in t)
 
-def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
+def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str=None):
     """
     [Support uint8, uint16, uint32, uint64]
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
@@ -435,7 +454,7 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
             old_spo_a[xz_key] = vals  # anticommute
 
     # 2. construct the pairs of AC parts
-    old_spo_a_pairs = SparsePauliOp()
+    old_spo_a_pairs = {}
     for P, vals in old_spo_a.items():
         Q_array, c_phase = pauli_product_uint(xzk, 1., np.array(P), 1.)
         Q = tuple(Q_array)
@@ -469,10 +488,21 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
         new_spo_c[P] = rot_P_vals
         new_spo_c[Q] = rot_Q_vals
 
+    if max_num_str is not None and max_num_str < len(new_spo_c):
+        vals = np.abs(np.array([value_grad[0] for value_grad in new_spo_c.values()]))
+        vals.sort()
+        additional_cutoff = vals[-max_num_str]
+        trunc_val = max([additional_cutoff, trunc_val])
+
     # 4. Truncate small values
     for P in list(new_spo_c.keys()):
         if np.abs(new_spo_c[P][0]) < trunc_val:
             new_spo_c.pop(P)
+
+    if max_num_str is not None and len(new_spo_c) > max_num_str:
+        ranked_keys = sorted(new_spo_c, key=lambda key: np.abs(new_spo_c[key][0]), reverse=True)
+        for key in ranked_keys[max_num_str:]:
+            new_spo_c.pop(key)
 
     return new_spo_c, len(new_spo_c), theta_grad
 # ---------------------------------------------------------------------- #
@@ -772,9 +802,3 @@ def conjugated_pauli_batched_uint32_Z(spo, qubit):
         new_spo[tuple(xz)] = phase * coeff
 
     return new_spo
-
-
-
-
-
-

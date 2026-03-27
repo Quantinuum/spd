@@ -14,6 +14,7 @@ def test_backend_adapter_applies_rotation_and_clifford(backend):
         spo,
         PauliRotation(gate_name="OpType.Rz", pauli="ZIII" + "I" * 28, theta=np.pi / 3),
         trunc_val=1e-12,
+        max_num_str=1000,
     )
     terms = to_term_dict(backend_name, module, spo, n_qubits=4)
     assert np.isclose(terms["XIII"], 0.5, atol=1e-6)
@@ -24,6 +25,7 @@ def test_backend_adapter_applies_rotation_and_clifford(backend):
         spo,
         SingleQubitClifford(gate_name="OpType.H", qubit=0),
         trunc_val=1e-12,
+        max_num_str=1000,
     )
     terms = to_term_dict(backend_name, module, spo, n_qubits=4)
     assert terms == {"ZIII": 1.0}

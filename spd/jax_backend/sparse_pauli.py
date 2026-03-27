@@ -9,8 +9,8 @@ from . import utils
 @jax.tree_util.register_pytree_node_class
 class SparsePauliOp(BaseSparsePauliOp):
     def __init__(self, xz_array: jnp.ndarray, c_array: jnp.ndarray):
-        self.xz_array = xz_array
-        self.c_array = c_array
+        self.xz_array = jnp.asarray(xz_array)
+        self.c_array = utils.as_real_array(c_array)
 
     def tree_flatten(self):
         return ((self.xz_array, self.c_array), None)
@@ -65,9 +65,9 @@ class SparsePauliOp(BaseSparsePauliOp):
 @jax.tree_util.register_pytree_node_class
 class SparsePauliGradientOp(BaseSparsePauliGradientOp):
     def __init__(self, xz_array: jnp.ndarray, c_array: jnp.ndarray, grad_c_array: jnp.ndarray):
-        self.xz_array = xz_array
-        self.c_array = c_array
-        self.grad_c_array = grad_c_array
+        self.xz_array = jnp.asarray(xz_array)
+        self.c_array = utils.as_real_array(c_array)
+        self.grad_c_array = utils.as_real_array(grad_c_array)
 
     def tree_flatten(self):
         return ((self.xz_array, self.c_array, self.grad_c_array), None)

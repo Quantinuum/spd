@@ -88,6 +88,7 @@ def test_rotation_examples_8q(backend, case):
         sigma_u,
         case["theta"],
         trunc_val=1e-12,
+        max_num_str=1000,
     )
 
     terms_out = to_term_dict(backend_name, module, spo_out)

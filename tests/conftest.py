@@ -13,6 +13,7 @@ BACKENDS = {
 def backend(request):
     module = BACKENDS[request.param]
     module.utils.set_packbit(32)
+    module.set_precision("single")
     return request.param, module
 
 

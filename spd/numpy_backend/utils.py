@@ -1,5 +1,7 @@
 import numpy as np
 _PACKBIT = None
+_PRECISION = "single"
+_REAL_DTYPE = np.float32
 
 """
 Convention:
@@ -15,6 +17,42 @@ Convention:
     Z = (0,1)
     The phase in Y is implicit in the formula.
 """
+
+
+def set_precision(precision: str):
+    global _PRECISION, _REAL_DTYPE
+
+    if precision == "single":
+        _REAL_DTYPE = np.float32
+    elif precision == "double":
+        _REAL_DTYPE = np.float64
+    else:
+        raise ValueError("precision must be one of ['single', 'double']")
+
+    _PRECISION = precision
+
+
+def get_precision() -> str:
+    return _PRECISION
+
+
+def get_real_dtype():
+    return _REAL_DTYPE
+
+
+def as_real_scalar(value):
+    arr = np.asarray(value)
+    if np.iscomplexobj(arr):
+        raise ValueError("NumPy SparsePauli coefficients must be real-valued.")
+    cast_arr = arr.astype(_REAL_DTYPE, copy=False)
+    if cast_arr.shape == ():
+        return cast_arr[()]
+    raise ValueError("Expected a scalar coefficient.")
+
+
+def as_real_pair(value_grad):
+    coeff, grad = value_grad
+    return as_real_scalar(coeff), as_real_scalar(grad)
 
 def pack_bits_to_uint8(x: np.ndarray) -> np.ndarray:
     """

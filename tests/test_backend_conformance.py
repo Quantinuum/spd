@@ -13,6 +13,7 @@ BACKENDS = {
 def _set_packbit():
     for module in BACKENDS.values():
         module.utils.set_packbit(32)
+    jax_backend.set_precision("single")
 
 
 def _build_ops(builder, *args, **kwargs):
@@ -131,7 +132,9 @@ def test_single_rotation_semantics_match_between_backends():
 
     outputs = {
         backend_name: BACKENDS[backend_name].conjugated_pauli_forward(
-            spo_in[backend_name], sigma_u[backend_name], np.pi / 3, trunc_val=1e-12
+            spo_in[backend_name], sigma_u[backend_name], np.pi / 3,
+            trunc_val=1e-12,
+            max_num_str=1000,
         )[0]
         for backend_name in BACKENDS
     }
