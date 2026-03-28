@@ -9,8 +9,6 @@ import math
 import numpy as np
 
 DT_BOOL = jnp.bool_
-DT_CPLX = jnp.complex64   # or complex128 if you need double
-PHASES = jnp.array([1.0+0j, -1j, -1.0+0j, 1j], dtype=DT_CPLX)
 PAD_VAL = jnp.uint32(jnp.iinfo(jnp.uint32).max)
 
 """
@@ -28,6 +26,13 @@ Convention:
     The phase in Y is implicit in the formula.
 """
 
+
+def set_precision(precision: str):
+    utils.set_precision(precision)
+
+def get_precision() -> str:
+    return utils.get_precision()
+
 def create_measurement_op(measurement_dict, padded_system_size,):
     xz_list = []
     c_list = []
@@ -39,7 +44,7 @@ def create_measurement_op(measurement_dict, padded_system_size,):
         xz_list.append(xz_array)
         c_list.append(val)
 
-    spo = SparsePauliOp(jnp.array(xz_list), jnp.array(c_list))
+    spo = SparsePauliOp(jnp.asarray(xz_list), utils.as_real_array(c_list))
     return spo
 
 def create_op(pauli_dict):
@@ -50,7 +55,7 @@ def create_op(pauli_dict):
         xz_list.append(xz)
         c_list.append(val)
 
-    spo = SparsePauliOp(jnp.array(xz_list), jnp.array(c_list))
+    spo = SparsePauliOp(jnp.asarray(xz_list), utils.as_real_array(c_list))
     return spo
 
 def get_norm_square(sparse_pauli_op):
@@ -110,7 +115,7 @@ def create_gradient_spo(spo, basis='0'):
 # Ideally something like:
 # sparse_pauli_op, num_string = backend.conjugated_pauli_forward(sparse_pauli_op, xzk, theta, trunc_val=trunc_val)
 
-def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
+def conjugated_pauli_forward(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a batch of Pauli strings by rotation R_k(theta):
     exp(i theta/2 * sigma_k) * sigma_j * exp(-i theta/2 * sigma_k)
@@ -129,8 +134,11 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val):
     jax.block_until_ready(new_size)
     t1 = time.time()
 
-    x_ = slice_to_size_x_arr(x_concat, int(new_size))
-    c_ = slice_to_size_c_arr(c_concat, int(new_size))
+    slice_size = min(int(new_size), max_num_str)
+    final_valid_count = min(int(final_valid_count), slice_size)
+
+    x_ = slice_to_size_x_arr(x_concat, slice_size)
+    c_ = slice_to_size_c_arr(c_concat, slice_size)
     jax.block_until_ready(c_)
     t2 = time.time()
 
@@ -151,7 +159,7 @@ def forward_jitted(spo, xzk, theta, trunc_val):
     new_size = next_pow2(final_valid_count)
     return x_concat, c_concat, new_size, final_valid_count
 
-def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
+def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     """
     Backward pass for conjugated_pauli.
 
@@ -168,10 +176,15 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val):
     """
     grad_i = get_gradient(spo_val_grad, xzk, theta)
 
-    x_concat, c_concat, grad_c_concat, new_size, final_valid_count = backward_jitted(spo_val_grad, xzk, theta, trunc_val)
-    x_ = slice_to_size_x_arr(x_concat, int(new_size))
-    c_ = slice_to_size_c_arr(c_concat, int(new_size))
-    grad_c_ = slice_to_size_c_arr(grad_c_concat, int(new_size))
+    x_concat, c_concat, grad_c_concat, new_size, final_valid_count = backward_jitted(
+        spo_val_grad, xzk, theta, trunc_val
+    )
+    slice_size = min(int(new_size), max_num_str)
+    final_valid_count = min(int(final_valid_count), slice_size)
+
+    x_ = slice_to_size_x_arr(x_concat, slice_size)
+    c_ = slice_to_size_c_arr(c_concat, slice_size)
+    grad_c_ = slice_to_size_c_arr(grad_c_concat, slice_size)
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
 
     return new_spo_val_grad, final_valid_count, grad_i
@@ -229,11 +242,17 @@ def get_gradient(spo_val_grad, xzk, theta):
 # def get_gradient_jitted(xz_array_p, c_array_p, grad_c_array_p, xzk):
 #     print("Recompile: get_gradient_jitted", xz_array_p.shape, c_array_p.shape, grad_c_array_p.shape, xzk.shape)
 
-    # [jittable]        sub-routine2. Get conjugated xz_array_q, phase_array; copy c_array_q, grad_c_array_q
-    xz_array_q, phase_array_p = pauli_product_batched_second_uint(xzk, 1.,
-                                                                  xz_array_p, jnp.ones_like(c_array_p),)
-    # phase_array is an indication of the relation between sigma and p
-    phase_array_p = jnp.real(phase_array_p * (-1j))
+
+    #- # [jittable]        sub-routine2. Get conjugated xz_array_q, phase_array; copy c_array_q, grad_c_array_q
+    #- xz_array_q, phase_array_p = pauli_product_batched_second_uint(xzk, 1.,
+    #-                                                               xz_array_p, jnp.ones_like(c_array_p),)
+    #- # phase_array is an indication of the relation between sigma and p
+    #- phase_array_p = jnp.real(phase_array_p * (-1j))
+
+    # [jittable]        sub-routine2. Get conjugated xz_array_q, sign_array_p; copy c_array_q, grad_c_array_q
+    xz_array_q, sign_array_p = pauli_product_phase_sign_second_uint(xzk, xz_array_p)
+    # Here sign_array_p = phase_array_p * (1j), still miss one minus sign for the formula, so we negate it here.
+    sign_array_p = -sign_array_p
     # This is the c_array_p_of_the_corresponding_q from (sigma, p, q). It is not the coefficient of q itself.
     c_array_q = c_array_p.copy()
     grad_c_array_q = grad_c_array_p.copy()
@@ -258,7 +277,7 @@ def get_gradient(spo_val_grad, xzk, theta):
     grad_c_array_q_aligned = grad_c_array_q_sorted[safe_indices]
 
     # Use the formula
-    raw_products = phase_array_p * ( -c_array_p * grad_c_array_q_aligned + c_array_q_aligned * grad_c_array_p )
+    raw_products = sign_array_p * ( -c_array_p * grad_c_array_q_aligned + c_array_q_aligned * grad_c_array_p )
     # print(raw_products)
     # import pdb; pdb.set_trace()
 
@@ -364,7 +383,7 @@ def pauli_product_batched(xz1_array, c1_array, xz2, c2):
     count = jnp.sum((2 * xz1_array[:, :N] * xz2[N:] + xz1_array[:, :N] * xz1_array[:, N:] +
                     xz2[:N] * xz2[N:] - xz_new_array[:, :N] * xz_new_array[:, N:]),
                     axis=1) % 4
-    phase = jnp.take(PHASES, count)   # vectorized lookup
+    phase = jnp.take(utils.PHASES, count)   # vectorized lookup
     c_new_array = c1_array * c2 * phase
     return xz_new_array, c_new_array
 
@@ -388,9 +407,46 @@ def pauli_product_batched_first_uint(xz1_array, c1_array, xz2, c2):
                      jax.lax.population_count(xz2[:N] & xz2[N:]) -
                      jax.lax.population_count(xz_new_array[:, :N] & xz_new_array[:, N:])),
                     axis=1) % 4
-    phase = jnp.take(PHASES, count)   # vectorized lookup
+    phase = jnp.take(utils.PHASES, count)   # vectorized lookup
     c_new_array = c1_array * c2 * phase
     return xz_new_array, c_new_array
+
+
+@jax.jit
+def pauli_product_phase_sign_second_uint(xz1, xz2_array):
+    """
+    Return the product Pauli string together with the real sign used by
+    conjugation updates.
+
+    Pauli multiplication may produce phases in {1, -i, -1, i}. For
+    anti-commuting terms, the conjugation formula multiplies that phase by an
+    extra i, so the effective coefficient update is always real (+1 or -1).
+    """
+    N = xz2_array.shape[1] // 2
+    xz_new_array = xz1 ^ xz2_array
+    count = jnp.sum((2 * jax.lax.population_count(xz1[:N] & xz2_array[:, N:]) +
+                     jax.lax.population_count(xz1[:N] & xz1[N:]) +
+                     jax.lax.population_count(xz2_array[:, :N] & xz2_array[:, N:]) -
+                     jax.lax.population_count(xz_new_array[:, :N] & xz_new_array[:, N:])),
+                    axis=1) % 4
+    sign = jnp.take(utils.CONJUGATION_SIGNS, count)
+    return xz_new_array, sign
+
+
+@jax.jit
+def pauli_product_phase_sign_first(xz1_array, xz2):
+    """
+    Batched first-argument version of the real sign used by conjugation updates.
+    """
+    N = xz1_array.shape[1] // 2
+    xz_new_array = jnp.bitwise_xor(xz1_array, xz2)
+    count = jnp.sum((2 * xz1_array[:, :N] * xz2[N:] +
+                     xz1_array[:, :N] * xz1_array[:, N:] +
+                     xz2[:N] * xz2[N:] -
+                     xz_new_array[:, :N] * xz_new_array[:, N:]),
+                    axis=1) % 4
+    sign = jnp.take(utils.CONJUGATION_SIGNS, count)
+    return xz_new_array, sign
 
 @jax.jit
 def pauli_product_batched_second_uint(xz1, c1, xz2_array, c2_array):
@@ -412,7 +468,7 @@ def pauli_product_batched_second_uint(xz1, c1, xz2_array, c2_array):
                      jax.lax.population_count(xz2_array[:, :N] & xz2_array[:, N:]) -
                      jax.lax.population_count(xz_new_array[:, :N] & xz_new_array[:, N:])),
                     axis=1) % 4
-    phase = jnp.take(PHASES, count)   # vectorized lookup
+    phase = jnp.take(utils.PHASES, count)   # vectorized lookup
     c_new_array = c1 * c2_array * phase
     return xz_new_array, c_new_array
 
@@ -465,14 +521,14 @@ def conjugated_pauli_batched_(xz_array, c_array, xzk, theta):
 
     Parameters:
         xz_array: bool arrays of shape (M, 2N) - M Pauli strings on N qubits
-        c_array: complex array of shape (M,) - coefficients
+        c_array: real array of shape (M,) - coefficients
         xzk: bool arrays of shape (2N,) - Pauli string for rotation
         theta: float scalar - rotation angle
     Returns:
         xz_array: bool array of shape (M, 2N) - unchanged Pauli strings
-        c_array_1: complex array of shape (M,) - coefficients for sigma_j
+        c_array_1: real array of shape (M,) - coefficients for sigma_j
         xz_array_2: bool array of shape (M, 2N) - Pauli strings for sigma_k sigma_j
-        c_array_2: complex array of shape (M,) - coefficients for sigma_k sigma_j
+        c_array_2: real array of shape (M,) - coefficients for sigma_k sigma_j
 
     """
     print("Recompile: conjugated_pauli_batched", xz_array.shape, c_array.shape, xzk.shape, type(theta), theta, "\n")
@@ -483,9 +539,14 @@ def conjugated_pauli_batched_(xz_array, c_array, xzk, theta):
     theta = theta * acq_val
 
     c_array_1 = c_array * jnp.cos(theta)
-    xz_array_2, phase_array = pauli_product_batched(xz_array, jnp.ones_like(c_array),
-                                                    xzk, 1.)
-    c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
+
+    # -    xz_array_2, phase_array = pauli_product_batched(xz_array, jnp.ones_like(c_array),
+    # -                                                    xzk, 1.)
+    # -    c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
+    # Keep the original batching order here: this path batches over xz_array
+    # in the first argument, so its sign convention must match P * sigma_k.
+    xz_array_2, sign_array = pauli_product_phase_sign_first(xz_array, xzk)
+    c_array_2 = c_array * jnp.sin(theta) * sign_array
 
     return xz_array, c_array_1, xz_array_2, c_array_2
 
@@ -510,14 +571,14 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta):
 
     Parameters:
         xz_array: uint arrays of shape (M, nbytes) - M Pauli strings on N qubits
-        c_array: complex array of shape (M,) - coefficients
+        c_array: real array of shape (M,) - coefficients
         xzk: uint arrays of shape (nbytes,) - Pauli string for rotation
         theta: float scalar - rotation angle
     Returns:
         xz_array: uint array of shape (M, nbytes) - unchanged Pauli strings
-        c_array_1: complex array of shape (M,) - coefficients for sigma_j
+        c_array_1: real array of shape (M,) - coefficients for sigma_j
         xz_array_2: uint array of shape (M, nbytes) - Pauli strings for sigma_k sigma_j
-        c_array_2: complex array of shape (M,) - coefficients for sigma_k sigma_j
+        c_array_2: real array of shape (M,) - coefficients for sigma_k sigma_j
     """
     xz_array = spo.xz_array
     c_array = spo.c_array
@@ -530,9 +591,14 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta):
     theta = theta * acq_val
 
     c_array_1 = c_array * jnp.cos(theta)
-    xz_array_2, phase_array = pauli_product_batched_second_uint(xzk, 1.,
-                                                                xz_array, jnp.ones_like(c_array),)
-    c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
+# -    xz_array_2, phase_array = pauli_product_batched_second_uint(xzk, 1.,
+# -                                                                xz_array, jnp.ones_like(c_array),)
+# -    c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
+# -    grad_c_array_2 = 1j * grad_c_array * jnp.sin(theta) * phase_array
+
+    # sign_array = phase_array * (1j)
+    xz_array_2, sign_array = pauli_product_phase_sign_second_uint(xzk, xz_array)
+    c_array_2 = c_array * jnp.sin(theta) * sign_array
 
     spo_1 = SparsePauliOp(xz_array, c_array_1)
     spo_2 = SparsePauliOp(xz_array_2, c_array_2)
@@ -556,10 +622,15 @@ def conjugated_pauli_backward_batched_uint_(spo_val_grad, xzk, theta):
 
     c_array_1 = c_array * jnp.cos(theta)
     grad_c_array_1 = grad_c_array * jnp.cos(theta)
-    xz_array_2, phase_array = pauli_product_batched_second_uint(xzk, 1.,
-                                                                xz_array, jnp.ones_like(c_array),)
-    c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
-    grad_c_array_2 = 1j * grad_c_array * jnp.sin(theta) * phase_array
+
+    # [old convention]
+    # xz_array_2, phase_array = pauli_product_batched_second_uint(xzk, 1.,
+    #                                                             xz_array, jnp.ones_like(c_array),)
+    # c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
+    # grad_c_array_2 = 1j * grad_c_array * jnp.sin(theta) * phase_array
+    xz_array_2, sign_array = pauli_product_phase_sign_second_uint(xzk, xz_array)
+    c_array_2 = c_array * jnp.sin(theta) * sign_array
+    grad_c_array_2 = grad_c_array * jnp.sin(theta) * sign_array
 
     spo_val_grad_1 = SparsePauliGradientOp(xz_array, c_array_1, grad_c_array_1)
     spo_val_grad_2 = SparsePauliGradientOp(xz_array_2, c_array_2, grad_c_array_2)
@@ -984,7 +1055,7 @@ def merge_pauli_batched_part_1(x_array_1, z_array_1, c_array_1,
     # concatenate
     x_array_merge = jnp.concatenate([x_array_1, x_array_2], axis=0).astype(jnp.uint8)
     z_array_merge = jnp.concatenate([z_array_1, z_array_2], axis=0).astype(jnp.uint8)
-    c_array_merge = jnp.concatenate([c_array_1, c_array_2], axis=0).astype(DT_CPLX)
+    c_array_merge = jnp.concatenate([c_array_1, c_array_2], axis=0).astype(utils.get_real_dtype())
 
 
     """
@@ -1047,14 +1118,14 @@ def merge_pauli_batched(x_array_1, z_array_1, c_array_1,
 
     Parameters:
         x_array_1, z_array_1: bool arrays of shape (M1,N)
-        c_array_1: complex array of shape (M1,)
+        c_array_1: real array of shape (M1,)
         x_array_2, z_array_2: bool arrays of shape (M2,N)
-        c_array_2: complex array of shape (M2,)
+        c_array_2: real array of shape (M2,)
         trunc_val: float, minimum coefficient magnitude to keep
 
     Returns:
         x_array_merge, z_array_merge: bool arrays of shape (M1+M2,N)
-        c_array_merge: complex array of shape (M1+M2,)
+        c_array_merge: real array of shape (M1+M2,)
     """
     N = x_array_1.shape[1]
     t0 = time.time()
@@ -1086,7 +1157,7 @@ def merge_pauli_batched_2_part1(x_array_1, z_array_1, c_array_1,
     # ---- 1. concatenate ----
     x_array = jnp.concatenate([x_array_1, x_array_2], axis=0).astype(jnp.uint8)
     z_array = jnp.concatenate([z_array_1, z_array_2], axis=0).astype(jnp.uint8)
-    c_array = jnp.concatenate([c_array_1, c_array_2], axis=0).astype(DT_CPLX)
+    c_array = jnp.concatenate([c_array_1, c_array_2], axis=0).astype(utils.get_real_dtype())
 
     # M, N are static shapes known to JAX at compile time
     M = x_array.shape[0]
@@ -1144,13 +1215,13 @@ def merge_pauli_batched_2(x_array_1, z_array_1, c_array_1,
     JAX-friendly version with static shapes. Returns compacted arrays.
     Parameters:
         x_array_1, z_array_1: bool arrays of shape (M1,N)
-        c_array_1: complex array of shape (M1,)
+        c_array_1: real array of shape (M1,)
         x_array_2, z_array_2: bool arrays of shape (M2,N)
-        c_array_2: complex array of shape (M2,)
+        c_array_2: real array of shape (M2,)
         trunc_val: float, minimum coefficient magnitude to keep
     Returns:
         x_array_merge, z_array_merge: bool arrays of shape (M_merge,N)
-        c_array_merge: complex array of shape (M_merge,)
+        c_array_merge: real array of shape (M_merge,)
     """
     x_new, z_new, c_new = merge_pauli_batched_2_part1(
         x_array_1, z_array_1, c_array_1,
@@ -1169,14 +1240,14 @@ def merge_pauli_batches_fast(x_array_1, z_array_1, c_array_1,
 
     Parameters:
         x_array_1, z_array_1: bool arrays of shape (M1,N)
-        c_array_1: complex array of shape (M1,)
+        c_array_1: real array of shape (M1,)
         x_array_2, z_array_2: bool arrays of shape (M2,N)
-        c_array_2: complex array of shape (M2,)
+        c_array_2: real array of shape (M2,)
         trunc_val: float, minimum coefficient magnitude to keep
 
     Returns:
         x_array_merge, z_array_merge: bool arrays of shape (M_merge,N)
-        c_array_merge: complex array of shape (M_merge,)
+        c_array_merge: real array of shape (M_merge,)
     """
     # Concatenate batches
     x_all = jnp.concatenate([x_array_1, x_array_2], axis=0)

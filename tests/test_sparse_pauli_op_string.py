@@ -1,8 +1,17 @@
-def test_sparse_pauli_op_string_rendering(backend):
-    _, module = backend
+import pytest
+
+from spd import jax_backend, numpy_backend
+
+
+@pytest.mark.parametrize("backend_name,module", [("numpy", numpy_backend), ("jax", jax_backend)])
+def test_sparse_pauli_op_string_rendering_real_coefficients(backend_name, module):
+    module.utils.set_packbit(32)
+    if backend_name == "jax":
+        module.set_precision("single")
+
     spo = module.create_op({
         "XIZY": 1.5,
-        "ZZ": -0.25j,
+        "ZZ": -0.25,
         "IIII": 2.0,
     })
 
@@ -13,8 +22,18 @@ def test_sparse_pauli_op_string_rendering(backend):
     assert "ZZ" in rendered
     assert "IIII" in rendered
     assert "=> 1.5" in rendered
-    assert "=> (-0-0.25j)" in rendered or "=> -0.25j" in rendered
+    assert "=> -0.25" in rendered
     assert "=> 2.0" in rendered
+
+
+def test_jax_sparse_pauli_op_rejects_complex_coefficients():
+    jax_backend.utils.set_packbit(32)
+    jax_backend.set_precision("single")
+
+    with pytest.raises(ValueError, match="real-valued"):
+        jax_backend.create_op({
+            "ZZ": -0.25j,
+        })
 
 
 def test_sparse_pauli_op_weight_distribution(backend):

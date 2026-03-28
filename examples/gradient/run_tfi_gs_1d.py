@@ -2,7 +2,7 @@ import pickle
 import pytket
 from pytket import Circuit
 import numpy as np
-# np.random.seed(0)
+np.random.seed(0)
 import spd
 import tfi_setup
 import sys
@@ -24,25 +24,30 @@ if __name__ == "__main__":
     base_filename = f'L_{system_size}_np_{number_of_parameters}_g_{g}_basis_{basis}'
 
     random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
+    print(random_thetas)
 
 
     circ = tfi_setup.gen_1d_TFI_ansatz_circuit(random_thetas,
                                                system_size,
                                                basis,
                                                )
-    ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g)
 
-    trunc_val = 1e-12
+    precision = 'double'
+    full_H = True
+    ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=full_H)
+    factor = system_size if full_H else 1
+
+    trunc_val = 1e-14
     max_num_str = 1e5
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
 
     exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val,
-                                                max_num_str=max_num_str,
+                                                max_num_str=max_num_str, precision=precision,
                                                 basis=basis, backend_name=backend_name)
-    print("\n Expectation Value:", exp_val)
+    print("\n Expectation Value:", exp_val / factor)
 
     grads, backward_final_spo = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val,
-                                                                max_num_str=max_num_str,
+                                                                max_num_str=max_num_str, precision=precision,
                                                                 basis=basis, backend_name=backend_name)
     print("\n SPD Computed Gradients:", grads)
 
@@ -62,12 +67,14 @@ if __name__ == "__main__":
                                                    )
 
         exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val,
-                                                    max_num_str=max_num_str,
+                                                    max_num_str=max_num_str, precision=precision,
                                                     basis=basis, backend_name=backend_name)
         raw_grads, backward_final_spo = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val,
-                                                                        max_num_str=max_num_str,
+                                                                        max_num_str=max_num_str, precision=precision,
                                                                         basis=basis, backend_name=backend_name)
         grads = combine_grads(raw_grads, number_of_parameters, system_size)
+        exp_val /= factor
+        grads /= factor
 
         # Add weight regularization
         lambda_reg = 0.00

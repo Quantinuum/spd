@@ -19,14 +19,15 @@ from .circuit_ir import PauliRotation, SingleQubitClifford, SkippedOperation, Tw
 class BackendModule(Protocol):
     utils: object
 
+    def set_precision(self, precision: str): ...
     def create_measurement_op(self, measurement_dict, padded_system_size): ...
     def create_op(self, pauli_dict): ...
     def create_gradient_spo(self, spo, basis="0"): ...
     def get_norm_square(self, obj): ...
     def get_size(self, obj): ...
     def get_expectation_value(self, spo, basis="0"): ...
-    def conjugated_pauli_forward(self, spo, xzk, theta, trunc_val): ...
-    def conjugated_pauli_backward(self, spgo, xzk, theta, trunc_val): ...
+    def conjugated_pauli_forward(self, spo, xzk, theta, trunc_val, max_num_str): ...
+    def conjugated_pauli_backward(self, spgo, xzk, theta, trunc_val, max_num_str): ...
     def conjugated_pauli_batched_uint32_H(self, spo, qubit): ...
     def conjugated_pauli_batched_uint32_S(self, spo, qubit): ...
     def conjugated_pauli_batched_uint32_Sdg(self, spo, qubit): ...
@@ -43,9 +44,11 @@ class BackendAdapter:
     name: str
     module: BackendModule
     packbit: int
+    precision: str = "single"
 
     def __post_init__(self):
         self.module.utils.set_packbit(self.packbit)
+        self.module.set_precision(self.precision)
         self.utils = self.module.utils
         self._clifford_dispatch = {
             "OpType.H": self.module.conjugated_pauli_batched_uint32_H,
@@ -60,7 +63,7 @@ class BackendAdapter:
         }
 
     @classmethod
-    def from_name(cls, backend_name, packbit=32):
+    def from_name(cls, backend_name, packbit=32, precision="single"):
         if backend_name == "numpy":
             from . import numpy_backend as backend_module
         elif backend_name == "jax":
@@ -68,7 +71,7 @@ class BackendAdapter:
         else:
             raise ValueError(f"Unsupported backend: {backend_name}")
 
-        return cls(name=backend_name, module=backend_module, packbit=packbit)
+        return cls(name=backend_name, module=backend_module, packbit=packbit, precision=precision)
 
     def create_initial_spo(self, measure_qubits_data, padded_system_size):
         if isinstance(measure_qubits_data, dict):
@@ -88,10 +91,12 @@ class BackendAdapter:
     def create_gradient_spo(self, spo, basis="0"):
         return self.module.create_gradient_spo(spo, basis=basis)
 
-    def apply_forward(self, spo, operation, trunc_val):
+    def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
-            return self.module.conjugated_pauli_forward(spo, xzk, operation.theta, trunc_val)
+            return self.module.conjugated_pauli_forward(
+                spo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
+            )
 
         if isinstance(operation, SingleQubitClifford):
             return self._clifford_dispatch[operation.gate_name](spo, operation.qubit), None
@@ -111,10 +116,12 @@ class BackendAdapter:
 
         raise ValueError(f"Unsupported operation: {operation}")
 
-    def apply_backward(self, spgo, operation, trunc_val):
+    def apply_backward(self, spgo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
-            return self.module.conjugated_pauli_backward(spgo, xzk, operation.theta, trunc_val)
+            return self.module.conjugated_pauli_backward(
+                spgo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
+            )
 
         if isinstance(operation, SkippedOperation):
             return spgo, None, None
