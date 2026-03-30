@@ -30,6 +30,13 @@ def _assert_term_dicts_close(actual, expected, atol=1e-6):
         assert np.isclose(actual[key], expected[key], atol=atol)
 
 
+def _assert_grad_term_dicts_close(actual, expected, atol=1e-6):
+    assert set(actual.keys()) == set(expected.keys())
+    for key in actual:
+        assert np.isclose(actual[key][0], expected[key][0], atol=atol)
+        assert np.isclose(actual[key][1], expected[key][1], atol=atol)
+
+
 def test_create_op_semantics_match_between_backends():
     pauli_dict = {
         "XIZY": 1.5,
@@ -97,7 +104,52 @@ def test_size_norm_and_expectation_match_between_backends():
     assert np.isclose(exp_x["numpy"], exp_x["jax"], atol=1e-6)
 
 
-def test_create_gradient_spo_semantics_match_between_backends():
+def test_operator_stabilizer_entropy_matches_between_backends():
+    pauli_dict = {
+        "IIII": 2.0,
+        "ZIII": -0.5,
+        "XIII": 0.75,
+        "IIIX": 1.25,
+    }
+
+    ops = _build_ops(lambda module, payload: module.create_op(payload), pauli_dict)
+
+    ose_alpha_1 = {
+        backend_name: float(np.asarray(ops[backend_name].get_operator_stabilizer_entropy(alpha=1.0)))
+        for backend_name in BACKENDS
+    }
+    ose_alpha_2 = {
+        backend_name: float(np.asarray(ops[backend_name].get_operator_stabilizer_entropy(alpha=2.0)))
+        for backend_name in BACKENDS
+    }
+
+    assert np.isclose(ose_alpha_1["numpy"], ose_alpha_1["jax"], atol=1e-6)
+    assert np.isclose(ose_alpha_2["numpy"], ose_alpha_2["jax"], atol=1e-6)
+
+
+def test_sparse_pauli_arithmetic_matches_between_backends():
+    ops_a = _build_ops(lambda module: module.create_op({"IIII": 1.0, "ZIII": -0.5, "XIII": 0.25}))
+    ops_b = _build_ops(lambda module: module.create_op({"ZIII": 0.5, "IIIX": 1.25}))
+
+    sum_terms = {
+        backend_name: to_term_dict(backend_name, BACKENDS[backend_name], ops_a[backend_name] + ops_b[backend_name], n_qubits=4)
+        for backend_name in BACKENDS
+    }
+    diff_terms = {
+        backend_name: to_term_dict(backend_name, BACKENDS[backend_name], ops_a[backend_name] - ops_b[backend_name], n_qubits=4)
+        for backend_name in BACKENDS
+    }
+    scaled_terms = {
+        backend_name: to_term_dict(backend_name, BACKENDS[backend_name], 2.0 * ops_a[backend_name], n_qubits=4)
+        for backend_name in BACKENDS
+    }
+
+    _assert_term_dicts_close(sum_terms["numpy"], sum_terms["jax"])
+    _assert_term_dicts_close(diff_terms["numpy"], diff_terms["jax"])
+    _assert_term_dicts_close(scaled_terms["numpy"], scaled_terms["jax"])
+
+
+def test_init_gradient_spo_basis_expectation_semantics_match_between_backends():
     pauli_dict = {
         "IIII": 2.0,
         "ZIII": -0.5,
@@ -106,7 +158,11 @@ def test_create_gradient_spo_semantics_match_between_backends():
     }
     ops = _build_ops(lambda module, payload: module.create_op(payload), pauli_dict)
     grads = {
-        backend_name: BACKENDS[backend_name].create_gradient_spo(spo, basis="Z")
+        backend_name: BACKENDS[backend_name].init_gradient_spo(
+            spo,
+            loss_type="basis_expectation",
+            basis="Z",
+        )
         for backend_name, spo in ops.items()
     }
 
@@ -121,6 +177,165 @@ def test_create_gradient_spo_semantics_match_between_backends():
         float(np.asarray(BACKENDS["jax"].get_norm_square(grads["jax"]))),
         atol=1e-6,
     )
+    assert np.isclose(
+        float(np.asarray(grads["numpy"].get_operator_stabilizer_entropy(alpha=1.0))),
+        float(np.asarray(grads["jax"].get_operator_stabilizer_entropy(alpha=1.0))),
+        atol=1e-6,
+    )
+    assert np.isclose(
+        float(np.asarray(grads["numpy"].get_operator_stabilizer_entropy(alpha=2.0))),
+        float(np.asarray(grads["jax"].get_operator_stabilizer_entropy(alpha=2.0))),
+        atol=1e-6,
+    )
+
+
+def test_create_gradient_spo_remains_basis_expectation_compatibility_alias():
+    pauli_dict = {
+        "IIII": 2.0,
+        "ZIII": -0.5,
+        "XIII": 0.75,
+        "YIIX": -1.25,
+    }
+    ops = _build_ops(lambda module, payload: module.create_op(payload), pauli_dict)
+    alias_grads = {
+        backend_name: BACKENDS[backend_name].create_gradient_spo(spo, basis="Z")
+        for backend_name, spo in ops.items()
+    }
+    canonical_grads = {
+        backend_name: BACKENDS[backend_name].init_gradient_spo(
+            spo,
+            loss_type="basis_expectation",
+            basis="Z",
+        )
+        for backend_name, spo in ops.items()
+    }
+
+    for backend_name in BACKENDS:
+        alias_terms = to_grad_term_dict(
+            backend_name,
+            BACKENDS[backend_name],
+            alias_grads[backend_name],
+            n_qubits=4,
+        )
+        canonical_terms = to_grad_term_dict(
+            backend_name,
+            BACKENDS[backend_name],
+            canonical_grads[backend_name],
+            n_qubits=4,
+        )
+        assert alias_terms == canonical_terms
+
+
+def test_sparse_pauli_gradient_op_arithmetic_matches_between_backends():
+    ops = _build_ops(
+        lambda module: module.init_gradient_spo(
+            module.create_op({"IIII": 1.0, "ZIII": -0.5, "XIII": 0.25}),
+            loss_type="basis_expectation",
+            basis="Z",
+        )
+    )
+    ose_ops = _build_ops(
+        lambda module: module.init_gradient_from_ose(
+            module.create_op({"IIII": 1.0, "ZIII": -0.5, "XIII": 0.25}),
+            alpha=1.0,
+        )
+    )
+
+    sum_terms = {
+        backend_name: to_grad_term_dict(
+            backend_name,
+            BACKENDS[backend_name],
+            ops[backend_name] + 0.25 * ose_ops[backend_name],
+            n_qubits=4,
+        )
+        for backend_name in BACKENDS
+    }
+
+    _assert_grad_term_dicts_close(sum_terms["numpy"], sum_terms["jax"])
+
+
+def test_init_gradient_spo_composition_matches_between_backends():
+    ops = _build_ops(lambda module: module.create_op({"IIII": 1.0, "ZIII": -0.5, "XIII": 0.25}))
+    target_ops = _build_ops(lambda module: module.create_op({"IIII": 0.5, "YIII": -0.125}))
+
+    basis_grads = {
+        backend_name: BACKENDS[backend_name].init_gradient_spo(
+            ops[backend_name],
+            loss_type="basis_expectation",
+            basis="Z",
+            lambda_ose=0.5,
+            alpha=2.0,
+        )
+        for backend_name in BACKENDS
+    }
+    l2_grads = {
+        backend_name: BACKENDS[backend_name].init_gradient_spo(
+            ops[backend_name],
+            loss_type="l2_difference",
+            target_spo=target_ops[backend_name],
+            lambda_ose=0.0,
+            alpha=1.0,
+        )
+        for backend_name in BACKENDS
+    }
+
+    basis_terms = {
+        backend_name: to_grad_term_dict(backend_name, BACKENDS[backend_name], basis_grads[backend_name], n_qubits=4)
+        for backend_name in BACKENDS
+    }
+    l2_terms = {
+        backend_name: to_grad_term_dict(backend_name, BACKENDS[backend_name], l2_grads[backend_name], n_qubits=4)
+        for backend_name in BACKENDS
+    }
+
+    _assert_grad_term_dicts_close(basis_terms["numpy"], basis_terms["jax"])
+    _assert_grad_term_dicts_close(l2_terms["numpy"], l2_terms["jax"])
+
+
+def test_init_gradient_spo_rejects_invalid_loss_type():
+    ops = _build_ops(lambda module: module.create_op({"IIII": 1.0}))
+
+    for backend_name, module in BACKENDS.items():
+        try:
+            module.init_gradient_spo(
+                ops[backend_name],
+                loss_type="not_a_loss",
+            )
+        except ValueError as exc:
+            assert "Unsupported loss_type" in str(exc)
+        else:
+            raise AssertionError("Expected invalid loss_type to raise ValueError")
+
+
+def test_init_gradient_spo_requires_target_for_l2_difference():
+    ops = _build_ops(lambda module: module.create_op({"IIII": 1.0}))
+
+    for backend_name, module in BACKENDS.items():
+        try:
+            module.init_gradient_spo(
+                ops[backend_name],
+                loss_type="l2_difference",
+            )
+        except ValueError as exc:
+            assert "target_spo must be provided" in str(exc)
+        else:
+            raise AssertionError("Expected missing target_spo to raise ValueError")
+
+
+def test_init_gradient_spo_rejects_invalid_basis_for_basis_expectation():
+    ops = _build_ops(lambda module: module.create_op({"IIII": 1.0}))
+
+    for backend_name, module in BACKENDS.items():
+        try:
+            module.init_gradient_spo(
+                ops[backend_name],
+                loss_type="basis_expectation",
+                basis="Y",
+            )
+        except (ValueError, NotImplementedError) as exc:
+            assert "basis" in str(exc)
+        else:
+            raise AssertionError("Expected invalid basis to raise an error")
 
 
 def test_single_rotation_semantics_match_between_backends():

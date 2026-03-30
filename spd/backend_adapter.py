@@ -18,11 +18,24 @@ from .circuit_ir import PauliRotation, SingleQubitClifford, SkippedOperation, Tw
 
 class BackendModule(Protocol):
     utils: object
+    SparsePauliOp: type
+    SparsePauliGradientOp: type
 
     def set_precision(self, precision: str): ...
     def create_measurement_op(self, measurement_dict, padded_system_size): ...
     def create_op(self, pauli_dict): ...
+    # Legacy compatibility alias; prefer init_gradient_spo(...).
     def create_gradient_spo(self, spo, basis="0"): ...
+    def init_gradient_spo(
+        self,
+        spo,
+        *,
+        loss_type="basis_expectation",
+        basis="0",
+        target_spo=None,
+        lambda_ose=0.0,
+        alpha=1.0,
+    ): ...
     def get_norm_square(self, obj): ...
     def get_size(self, obj): ...
     def get_expectation_value(self, spo, basis="0"): ...
@@ -91,6 +104,25 @@ class BackendAdapter:
     def create_gradient_spo(self, spo, basis="0"):
         return self.module.create_gradient_spo(spo, basis=basis)
 
+    def init_gradient_spo(
+        self,
+        spo,
+        *,
+        loss_type="basis_expectation",
+        basis="0",
+        target_spo=None,
+        lambda_ose=0.0,
+        alpha=1.0,
+    ):
+        return self.module.init_gradient_spo(
+            spo,
+            loss_type=loss_type,
+            basis=basis,
+            target_spo=target_spo,
+            lambda_ose=lambda_ose,
+            alpha=alpha,
+        )
+
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
@@ -127,3 +159,9 @@ class BackendAdapter:
             return spgo, None, None
 
         raise ValueError(f"Unsupported operation in backward pass: {operation}")
+
+    def is_spo_instance(self, obj) -> bool:
+        return isinstance(obj, self.module.SparsePauliOp)
+
+    def is_spgo_instance(self, obj) -> bool:
+        return isinstance(obj, self.module.SparsePauliGradientOp)

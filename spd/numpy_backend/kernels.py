@@ -73,7 +73,7 @@ def get_expectation_value(spo, basis='0'):
     """
     return spo.get_expectation_value(basis=basis)
 
-def create_gradient_spo(spo, basis='0'):
+def init_gradient_from_basis_expectation(spo, basis='0'):
     gradient_spo = SparsePauliGradientOp()
     N = len(next(iter(spo))) // 2
     if basis in ['0', 'Z']:
@@ -98,6 +98,69 @@ def create_gradient_spo(spo, basis='0'):
         raise ValueError("Unsupported basis: {}".format(basis))
 
     return gradient_spo
+
+def init_gradient_from_ose(spo, alpha=1.0):
+    gradient_spo = SparsePauliGradientOp()
+    vals = np.fromiter(spo.values(), dtype=utils.get_real_dtype())
+    probabilities = np.abs(vals) ** 2
+    eps = utils.as_real_scalar(1e-12)
+
+    if alpha == 1:
+        grad_vals = np.array(
+            [-2.0 * coeff * (np.log(coeff * coeff + eps) + 1.0) for coeff in vals],
+            dtype=utils.get_real_dtype(),
+        )
+    else:
+        denom = np.sum((probabilities + eps) ** alpha) + eps
+        grad_vals = np.array(
+            [
+                2.0 * alpha * coeff * (coeff * coeff + eps) ** (alpha - 1.0)
+                / ((1.0 - alpha) * denom)
+                for coeff in vals
+            ],
+            dtype=utils.get_real_dtype(),
+        )
+
+    for (packed, coeff), grad in zip(spo.items(), grad_vals):
+        gradient_spo[packed] = (coeff, grad)
+
+    return gradient_spo
+
+def init_gradient_from_l2_difference(spo, target_spo):
+    gradient_spo = SparsePauliGradientOp()
+    for packed in set(spo.keys()) | set(target_spo.keys()):
+        coeff = spo.get(packed, 0.0)
+        target_coeff = target_spo.get(packed, 0.0)
+        gradient_spo[packed] = (coeff, 2.0 * (coeff - target_coeff))
+    return gradient_spo
+
+def init_gradient_spo(
+    spo,
+    *,
+    loss_type='basis_expectation',
+    basis='0',
+    target_spo=None,
+    lambda_ose=0.0,
+    alpha=1.0,
+):
+    """Canonical gradient initializer for terminal losses on the NumPy backend."""
+    if loss_type == 'basis_expectation':
+        gradient_spo = init_gradient_from_basis_expectation(spo, basis=basis)
+    elif loss_type == 'l2_difference':
+        if target_spo is None:
+            raise ValueError("target_spo must be provided when loss_type='l2_difference'.")
+        gradient_spo = init_gradient_from_l2_difference(spo, target_spo)
+    else:
+        raise ValueError(f"Unsupported loss_type: {loss_type}")
+
+    if lambda_ose != 0.0:
+        gradient_spo = gradient_spo + lambda_ose * init_gradient_from_ose(spo, alpha=alpha)
+
+    return gradient_spo
+
+def create_gradient_spo(spo, basis='0'):
+    """Legacy compatibility alias for basis-expectation initialization only."""
+    return init_gradient_from_basis_expectation(spo, basis=basis)
 
 # ---------------------------------------------------------------------- #
 

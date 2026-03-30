@@ -41,6 +41,7 @@ def _print_progress(
     gate_name,
     weight_left,
     current_row_size,
+    ose,
     command_idx,
     total_num_gate,
     step_time,
@@ -55,6 +56,7 @@ def _print_progress(
         process.memory_info().rss / 1e6,
         "MB",
         f"Size: {current_row_size}",
+        f"OSE: {float(ose):.6f}" if ose is not None else "OSE: N/A",
         "Progress: {:.2f}%".format(100 * (command_idx + 1) / total_num_gate),
         "gates:",
         (command_idx + 1),
@@ -90,12 +92,14 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
         current_weight = state.get_norm_square()
         weight_left = current_weight / initial_weight
         current_row_size = state.get_size()
+        ose = state.get_OSE()
         step_time = t1 - t0
 
         _print_progress(
             operation.gate_name,
             weight_left,
             current_row_size,
+            ose,
             command_idx,
             total_num_gate,
             step_time,
@@ -106,6 +110,7 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
             "gate_name": operation.gate_name,
             "weight_left": weight_left,
             "current_row_size": current_row_size,
+            "ose": ose,
             "command_idx": command_idx,
             "step_time": step_time,
         }
@@ -115,6 +120,7 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
             last_stats["gate_name"],
             last_stats["weight_left"],
             last_stats["current_row_size"],
+            last_stats["ose"],
             last_stats["command_idx"],
             total_num_gate,
             last_stats["step_time"],
@@ -178,26 +184,60 @@ def run_pytket_circuit(circ,
 
     return exp_val, sparse_pauli_op
 
-def run_pytket_circuit_backward(circ,
-                                final_spo,
-                                trunc_val,
-                                max_num_str,
-                                basis='0',
-                                backend_name='numpy',
-                                precision='single',
-                                rebase=False,
-                                log_filename=None,
-                                save_strings=False,
-                                ):
-    """Run the backward pass for a static pytket circuit on the selected backend."""
+def init_gradient_spo(final_spo,
+                      *,
+                      loss_type='basis_expectation',
+                      basis='0',
+                      target_spo=None,
+                      lambda_ose=0.0,
+                      alpha=1.0,
+                      backend_name='numpy',
+                      precision='single',
+                      ):
+    """Construct the initial backward SPGO for the requested terminal loss.
+
+    This is the canonical public initializer for backward propagation.
+    """
+    backend = BackendAdapter.from_name(backend_name, packbit=32, precision=precision)
+    if not backend.is_spo_instance(final_spo):
+        raise TypeError(
+            f"final_spo must be a {backend_name} SparsePauliOp when backend_name='{backend_name}'."
+        )
+    if target_spo is not None and not backend.is_spo_instance(target_spo):
+        raise TypeError(
+            f"target_spo must be a {backend_name} SparsePauliOp when backend_name='{backend_name}'."
+        )
+    return backend.init_gradient_spo(
+        final_spo,
+        loss_type=loss_type,
+        basis=basis,
+        target_spo=target_spo,
+        lambda_ose=lambda_ose,
+        alpha=alpha,
+    )
+
+def run_pytket_backward_from_spgo(circ,
+                                  initial_spgo,
+                                  trunc_val,
+                                  max_num_str,
+                                  backend_name='numpy',
+                                  precision='single',
+                                  rebase=False,
+                                  save_strings=False,
+                                  ):
+    """Propagate a pre-built gradient SPGO backward through a pytket circuit."""
     total_start_time = time.time()
     _PACKBIT = 32
     max_num_str = _normalize_max_num_str(backend_name, max_num_str)
     backend, padded_system_size, operations = _setup_run(
         circ, backend_name, rebase, packbit=_PACKBIT, precision=precision
     )
+    if not backend.is_spgo_instance(initial_spgo):
+        raise TypeError(
+            f"initial_spgo must be a {backend_name} SparsePauliGradientOp when backend_name='{backend_name}'."
+        )
 
-    spo_val_grad = backend.create_gradient_spo(final_spo, basis=basis)
+    spo_val_grad = initial_spgo
     grads = []
     def _apply_backward(state, operation):
         next_state, num_string, grad_i = backend.apply_backward(
@@ -217,4 +257,45 @@ def run_pytket_circuit_backward(circ,
         total_start_time,
     )
 
+    if save_strings:
+        import pickle
+        pickle.dump(spo_val_grad, open(f'grad_strings_{trunc_val}.pickle','wb'))
+
     return grads, spo_val_grad
+
+def run_pytket_circuit_backward(circ,
+                                final_spo,
+                                trunc_val,
+                                max_num_str,
+                                basis='0',
+                                backend_name='numpy',
+                                precision='single',
+                                rebase=False,
+                                log_filename=None,
+                                save_strings=False,
+                                loss_type='basis_expectation',
+                                target_spo=None,
+                                lambda_ose=0.0,
+                                alpha=1.0,
+                                ):
+    """Run backward propagation by initializing a terminal loss then propagating it."""
+    initial_spgo = init_gradient_spo(
+        final_spo,
+        loss_type=loss_type,
+        basis=basis,
+        target_spo=target_spo,
+        lambda_ose=lambda_ose,
+        alpha=alpha,
+        backend_name=backend_name,
+        precision=precision,
+    )
+    return run_pytket_backward_from_spgo(
+        circ,
+        initial_spgo,
+        trunc_val,
+        max_num_str,
+        backend_name=backend_name,
+        precision=precision,
+        rebase=rebase,
+        save_strings=save_strings,
+    )

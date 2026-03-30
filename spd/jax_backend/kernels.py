@@ -77,24 +77,11 @@ def get_expectation_value(spo, basis='0'):
     """
     return spo.get_expectation_value(basis=basis)
 
-def create_gradient_spo(spo, basis='0'):
-    """
-    Create a SparsePauliOp for gradient calculation.
-    Only keep the terms that contribute to the expectation value
-    in the specified basis.
-
-    Parameters:
-        spo: SparsePauliOp
-        basis: '0'/'Z' or '+'/'X'
-
-    Returns:
-        gradient_spo: SparsePauliOp
-    """
+def init_gradient_from_basis_expectation(spo, basis='0'):
     xz_array = spo.xz_array
     c_array = spo.c_array
     N = xz_array.shape[1] // 2
 
-    # create a 1, 0 array if the term contributes to the expectation value
     if basis in ['0', 'Z']:
         mask = jnp.all(xz_array[:, :N] == 0, axis=1)
     elif basis in ['+', 'X']:
@@ -105,6 +92,101 @@ def create_gradient_spo(spo, basis='0'):
     grad_c_array = jnp.where(mask, jnp.ones_like(c_array), jnp.zeros_like(c_array))
     gradient_spo = SparsePauliGradientOp(xz_array, c_array, grad_c_array)
     return gradient_spo
+
+def init_gradient_from_ose(spo, alpha=1.0):
+    c_array = spo.c_array
+    probabilities = jnp.abs(c_array) ** 2
+    eps = utils.as_real_array(1e-12)
+
+    if alpha == 1:
+        grad_c_array = -2.0 * c_array * (jnp.log(probabilities + eps) + 1.0)
+    else:
+        denom = jnp.sum((probabilities + eps) ** alpha) + eps
+        grad_c_array = (
+            2.0
+            * alpha
+            * c_array
+            * (probabilities + eps) ** (alpha - 1.0)
+            / ((1.0 - alpha) * denom)
+        )
+
+    return SparsePauliGradientOp(spo.xz_array, c_array, grad_c_array)
+
+def _sort_rows_and_coeffs(xz_array, c_array):
+    if xz_array.shape[0] == 0:
+        return xz_array, c_array
+    sort_indices = jnp.lexsort([xz_array[:, i] for i in range(xz_array.shape[1] - 1, -1, -1)])
+    return xz_array[sort_indices], c_array[sort_indices]
+
+def _filter_nonzero_spo_arrays(spo):
+    mask = jnp.abs(spo.c_array) > 0
+    return spo.xz_array[mask], spo.c_array[mask]
+
+def _align_coeffs_to_support(support_xz, source_xz, source_c):
+    if support_xz.shape[0] == 0 or source_xz.shape[0] == 0:
+        return jnp.zeros((support_xz.shape[0],), dtype=utils.get_real_dtype())
+
+    source_xz, source_c = _sort_rows_and_coeffs(source_xz, source_c)
+    is_duplicate, indices_in_source = find_row_duplications(support_xz, source_xz)
+    safe_indices = jnp.minimum(indices_in_source, source_xz.shape[0] - 1)
+    aligned = source_c[safe_indices]
+    return jnp.where(is_duplicate, aligned, jnp.zeros((support_xz.shape[0],), dtype=source_c.dtype))
+
+def _union_support_xz(spo, target_spo):
+    spo_xz, spo_c = _filter_nonzero_spo_arrays(spo)
+    target_xz, target_c = _filter_nonzero_spo_arrays(target_spo)
+    if spo_xz.shape[0] == 0:
+        return target_xz
+    if target_xz.shape[0] == 0:
+        return spo_xz
+
+    support_marker = jnp.ones_like(spo_c)
+    target_marker = jnp.ones_like(target_c)
+    x_union, _, union_size = merge_(
+        spo_xz,
+        support_marker,
+        target_xz,
+        target_marker,
+        0.0,
+    )
+    return x_union[:int(union_size)]
+
+def init_gradient_from_l2_difference(spo, target_spo):
+    support_xz = _union_support_xz(spo, target_spo)
+    current_xz, current_c = _filter_nonzero_spo_arrays(spo)
+    target_xz, target_c = _filter_nonzero_spo_arrays(target_spo)
+    current_coeffs = _align_coeffs_to_support(support_xz, current_xz, current_c)
+    target_coeffs = _align_coeffs_to_support(support_xz, target_xz, target_c)
+    grad_coeffs = 2.0 * (current_coeffs - target_coeffs)
+    return SparsePauliGradientOp(support_xz, current_coeffs, grad_coeffs)
+
+def init_gradient_spo(
+    spo,
+    *,
+    loss_type='basis_expectation',
+    basis='0',
+    target_spo=None,
+    lambda_ose=0.0,
+    alpha=1.0,
+):
+    """Canonical gradient initializer for terminal losses on the JAX backend."""
+    if loss_type == 'basis_expectation':
+        gradient_spo = init_gradient_from_basis_expectation(spo, basis=basis)
+    elif loss_type == 'l2_difference':
+        if target_spo is None:
+            raise ValueError("target_spo must be provided when loss_type='l2_difference'.")
+        gradient_spo = init_gradient_from_l2_difference(spo, target_spo)
+    else:
+        raise ValueError(f"Unsupported loss_type: {loss_type}")
+
+    if lambda_ose != 0.0:
+        gradient_spo = gradient_spo + lambda_ose * init_gradient_from_ose(spo, alpha=alpha)
+
+    return gradient_spo
+
+def create_gradient_spo(spo, basis='0'):
+    """Legacy compatibility alias for basis-expectation initialization only."""
+    return init_gradient_from_basis_expectation(spo, basis=basis)
 # ---------------------------------------------------------------------- #
 
 # Need to provide a single function to merge
@@ -1372,7 +1454,7 @@ def benchmark_merge_pauli_batched():
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-# @jax.jit
+@jax.jit
 def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
     print("Recompiling merge_...", x_array_1.shape, x_array_2.shape)
     x_concat = jnp.concatenate([x_array_1, x_array_2], axis=0)
@@ -1442,6 +1524,7 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
 
     return x_concat, c_concat, final_valid_count
 
+@jax.jit
 def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
     x_array_1, c_array_1, grad_c_array_1 = spo_val_grad_1.xz_array, spo_val_grad_1.c_array, spo_val_grad_1.grad_c_array
     x_array_2, c_array_2, grad_c_array_2 = spo_val_grad_2.xz_array, spo_val_grad_2.c_array, spo_val_grad_2.grad_c_array
