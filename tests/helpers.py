@@ -17,6 +17,8 @@ def to_term_dict(backend_name, module, spo, n_qubits=8):
         xz_rows = np.asarray(spo.xz_array)
         c_vals = np.asarray(spo.c_array)
         for xz, c in zip(xz_rows, c_vals):
+            if np.isclose(np.real(c), 0.0):
+                continue
             pstr = module.utils.uint32_to_pauli_str(np.asarray(xz), 32)[:n_qubits]
             terms[pstr] = terms.get(pstr, 0.0) + float(np.real(c))
         return terms
@@ -35,6 +37,8 @@ def to_grad_term_dict(backend_name, module, spgo, n_qubits=8):
         c_vals = np.asarray(spgo.c_array)
         grad_vals = np.asarray(spgo.grad_c_array)
         for xz, c, grad in zip(xz_rows, c_vals, grad_vals):
+            if np.isclose(np.real(c), 0.0) and np.isclose(np.real(grad), 0.0):
+                continue
             pstr = module.utils.uint32_to_pauli_str(np.asarray(xz), 32)[:n_qubits]
             terms[pstr] = (
                 terms.get(pstr, (0.0, 0.0))[0] + float(np.real(c)),

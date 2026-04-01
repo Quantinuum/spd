@@ -78,6 +78,39 @@ grads, backward_final_spo = spd.run_pytket_circuit_backward(
 )
 ```
 
+Canonical composable backward setup:
+
+```python
+initial_spgo = spd.init_gradient_spo(
+    final_spo,
+    loss_type="basis_expectation",
+    basis="0",
+    backend_name="numpy",
+)
+
+grads, backward_final_spgo = spd.run_pytket_backward_from_spgo(
+    circ,
+    initial_spgo,
+    trunc_val=1e-12,
+    max_num_str=1000,
+    backend_name="numpy",
+)
+```
+
+`init_gradient_spo(...)` is the primary public entry point for constructing the
+terminal backward object. Supported options are:
+
+- `loss_type="basis_expectation"` with `basis="0"` / `"Z"` or `basis="+"` / `"X"`
+- `loss_type="l2_difference"` with `target_spo=<SparsePauliOp>`
+- optional OSE regularization on either loss via `lambda_ose` and `alpha`
+
+`run_pytket_circuit_backward(...)` remains the convenience wrapper that calls
+`init_gradient_spo(...)` and then `run_pytket_backward_from_spgo(...)`.
+
+`create_gradient_spo(...)` is retained as a compatibility alias for
+basis-expectation initialization only; new code should prefer
+`init_gradient_spo(...)`.
+
 `max_num_str` is the maximum number of Pauli strings retained during
 simulation. Both backends treat it as an upper bound. For the JAX backend this
 cap is rounded up to the next power of two before slicing the post-merge
@@ -95,7 +128,7 @@ The test suite includes:
 - kernel-level algebra tests
 - frontend parser tests
 - backend adapter tests
-- end-to-end `run_pytket_circuit` tests
+- end-to-end forward/backward runner tests
 
 Run the current suite with:
 

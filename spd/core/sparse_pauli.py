@@ -19,6 +19,10 @@ class BaseSparsePauliOp(ABC):
         """Return a histogram keyed by Pauli weight."""
 
     @abstractmethod
+    def get_operator_stabilizer_entropy(self, alpha: float = 1):
+        """Return the operator stabilizer entropy for the given Renyi order."""
+
+    @abstractmethod
     def __str__(self) -> str:
         """Return a readable string representation."""
 
@@ -33,6 +37,9 @@ class BaseSparsePauliGradientOp(ABC):
         """Return the squared norm of the primal coefficients."""
 
     @abstractmethod
+    def get_operator_stabilizer_entropy(self, alpha: float = 1):
+        """Return the operator stabilizer entropy of the primal coefficients."""
+
+    @abstractmethod
     def __str__(self) -> str:
         """Return a readable string representation."""
-
