@@ -13,7 +13,11 @@ def test_jax_default_precision_is_float32():
     jax_backend.set_precision("single")
 
     spo = jax_backend.create_op({"XIII": 1.0})
-    spgo = jax_backend.create_gradient_spo(spo, basis="Z")
+    spgo = jax_backend.init_gradient_spo(
+        spo,
+        loss_type="basis_expectation",
+        basis="Z",
+    )
 
     assert spo.c_array.dtype == np.dtype(np.float32)
     assert spgo.c_array.dtype == np.dtype(np.float32)
@@ -27,7 +31,7 @@ def test_jax_double_precision_is_float64_across_forward_and_backward():
     circ.Ry(0.25, 0)
 
     adapter = BackendAdapter.from_name("jax", packbit=32, precision="double")
-    assert adapter.module.get_precision() == "double"
+    assert adapter.module.utils.get_precision() == "double"
 
     exp_val, final_spo = spd.run_pytket_circuit(
         circ,
