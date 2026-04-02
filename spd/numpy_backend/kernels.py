@@ -25,9 +25,6 @@ def set_precision(precision: str):
     utils.set_precision(precision)
 
 
-def get_precision() -> str:
-    return utils.get_precision()
-
 def create_measurement_op(measurement_dict, padded_system_size):
     """
     Create a SparsePauliOp from a measurement dict.
@@ -53,25 +50,6 @@ def create_op(pauli_dict):
         spo[tuple(xz)] = val
 
     return spo
-
-def get_norm_square(sparse_pauli_op):
-    return sparse_pauli_op.get_norm_square()
-
-def get_size(sparse_pauli_op):
-    return sparse_pauli_op.get_size()
-
-def get_expectation_value(spo, basis='0'):
-    """
-    This is too slow for large arrays.
-    if ( p_str.count('X') + p_str.count('Y') ) == 0:
-        exp_val += pauli_dict[key]
-
-    We just use a mask from x_array to select I and Z-only terms.
-
-    # This can be wrong due to overflow
-    # mask = jnp.sum(xz_array[:, :N], axis=1) == 0  # Select I and Z-only terms
-    """
-    return spo.get_expectation_value(basis=basis)
 
 def init_gradient_from_basis_expectation(spo, basis='0'):
     gradient_spo = SparsePauliGradientOp()
@@ -158,49 +136,8 @@ def init_gradient_spo(
 
     return gradient_spo
 
-def create_gradient_spo(spo, basis='0'):
-    """Legacy compatibility alias for basis-expectation initialization only."""
-    return init_gradient_from_basis_expectation(spo, basis=basis)
-
 # ---------------------------------------------------------------------- #
 
-# # ---------- single Pauli multiply (JAX) ----------
-# def pauli_product(xz1, c1, xz2, c2):
-#     """
-#     Multiply two Pauli strings in binary symplectic form with complex coefficients.
-#
-#     Parameters:
-#         xz1: bool arrays, shape (2N,) - first Pauli string
-#         c1: complex scalar - coefficient of first Pauli
-#         xz2: bool arrays, shape (2N,) - second Pauli string
-#         c2: complex scalar - coefficient of second Pauli
-#
-#     Returns:
-#         c_new: complex scalar
-#         xz_new: bool arrays - resulting Pauli string
-#     """
-#     N = xz1.shape[0] // 2
-#     # XOR for new Pauli
-#     xz_new = jnp.bitwise_xor(xz1, xz2)  # ^
-#
-#     x1, z1 = xz1[:N], xz1[N:]
-#     x2, z2 = xz2[:N], xz2[N:]
-#
-#     z1_int = z1.astype(jnp.int8)
-#     x1_int = x1.astype(jnp.int8)
-#     z2_int = z2.astype(jnp.int8)
-#     x2_int = x2.astype(jnp.int8)
-#     x_new, z_new = xz_new[:N], xz_new[N:]
-#
-#     # jnp.sum should not overflow as promote_integers is True by default
-#     count = jnp.sum(2 * x1_int * z2_int + x1_int * z1_int + x2_int * z2_int - x_new * z_new) % 4
-#     phase = (-1j) ** count
-#
-#     # Multiply coefficients with phase
-#     c_new = c1 * c2 * phase
-#
-#     return xz_new, c_new
-#
 def pauli_product_uint(xz1, c1, xz2, c2):
     """
     Multiply two Pauli strings in packed format using NumPy.
@@ -250,168 +187,6 @@ def pauli_product_batched_second_uint(xz1, c1, xz2_array, c2_array):
     c_new_array = c1 * c2_array * phase
     return xz_new_array, c_new_array
 
-# # ---------- per-row/batched Pauli multiply (JAX) ----------
-# @jax.jit
-# def pauli_product_batched(xz1_array, c1_array, xz2, c2):
-#     """
-#     [Deprecated] This version is not efficient, because we are using
-#     floating point operations over the boolean array.
-#
-#     Batched version of pauli_product.
-#     xz1_array: bool arrays of shape (M, 2N)
-#     c1_array: complex array of shape (M,)
-#     xz2: bool arrays of shape (2N,)
-#     c2: complex scalar
-#
-#     Returns:
-#         xz_new_array: bool arrays of shape (M, 2N)
-#         c_new_array: complex array of shape (M,)
-#     """
-#     raise NotImplementedError("Use pauli_product_batched_uint instead.")
-#     N = xz1_array.shape[1] // 2
-#     xz_new_array = jnp.bitwise_xor(xz1_array, xz2)
-#
-#     # count = jnp.sum(2 * x1_int * z2_int + x1_int * z1_int + x2_int * z2_int - x_new_int * z_new_int, axis=1) % 4
-#     count = jnp.sum((2 * xz1_array[:, :N] * xz2[N:] + xz1_array[:, :N] * xz1_array[:, N:] +
-#                     xz2[:N] * xz2[N:] - xz_new_array[:, :N] * xz_new_array[:, N:]),
-#                     axis=1) % 4
-#     phase = jnp.take(PHASES, count)   # vectorized lookup
-#     c_new_array = c1_array * c2 * phase
-#     return xz_new_array, c_new_array
-#
-# @jax.jit
-# def pauli_product_batched_first_uint(xz1_array, c1_array, xz2, c2):
-#     """
-#     Batched version of pauli_product_uint.
-#     xz1_array: uint arrays of shape (M, nbytes)
-#     c1_array: complex array of shape (M,)
-#     xz2: uint arrays of shape (nbytes,)
-#     c2: complex scalar
-#
-#     Returns:
-#         xz_new_array: uint arrays of shape (M, nbytes)
-#         c_new_array: complex array of shape (M,)
-#     """
-#     N = xz1_array.shape[1] // 2
-#     xz_new_array = xz1_array ^ xz2
-#     count = jnp.sum((2 * jax.lax.population_count(xz1_array[:, :N] & xz2[N:]) +
-#                      jax.lax.population_count(xz1_array[:, :N] & xz1_array[:, N:]) +
-#                      jax.lax.population_count(xz2[:N] & xz2[N:]) -
-#                      jax.lax.population_count(xz_new_array[:, :N] & xz_new_array[:, N:])),
-#                     axis=1) % 4
-#     phase = jnp.take(PHASES, count)   # vectorized lookup
-#     c_new_array = c1_array * c2 * phase
-#     return xz_new_array, c_new_array
-#
-# @jax.jit
-# def pauli_product_batched_second_uint(xz1, c1, xz2_array, c2_array):
-#     """
-#     Batched version of pauli_product_uint.
-#     xz1: uint arrays of shape (nbytes,)
-#     c1: complex scalar
-#     xz2_array: uint arrays of shape (M, nbytes)
-#     c2_array: complex array of shape (M,)
-#
-#     Returns:
-#         xz_new_array: uint arrays of shape (M, nbytes)
-#         c_new_array: complex array of shape (M,)
-#     """
-#     N = xz2_array.shape[1] // 2
-#     xz_new_array = xz1 ^ xz2_array
-#     count = jnp.sum((2 * jax.lax.population_count(xz1[:N] & xz2_array[:, N:]) +
-#                      jax.lax.population_count(xz1[:N] & xz1[N:]) +
-#                      jax.lax.population_count(xz2_array[:, :N] & xz2_array[:, N:]) -
-#                      jax.lax.population_count(xz_new_array[:, :N] & xz_new_array[:, N:])),
-#                     axis=1) % 4
-#     phase = jnp.take(PHASES, count)   # vectorized lookup
-#     c_new_array = c1 * c2_array * phase
-#     return xz_new_array, c_new_array
-#
-#
-#
-# # def conjugate_pauli(xj, zj, cj, xk, zk, theta):
-# #     """
-# #     Conjugate Pauli string j by rotation R_k(theta):
-# #     exp(i theta/2 * sigma_k) * sigma_j * exp(-i theta/2 * sigma_k)
-# #     = = = = = = = = = = = = = =
-# #     case1: sigma_j, if commute
-# #     case2: cos(theta) sigma_j + i sin(theta) sigma_k sigma_j, if anticommute
-# #     """
-# #     raise NotImplementedError("Use conjugated_pauli_batched instead.")
-# #     acq_val = jnp.sum(zj & xk) - jnp.sum(xj & zk)
-# #     acq_val = acq_val % 2  # 0 = commute, 1 = anticommute
-# #
-# #     def commute():
-# #         return xj, zj, cj
-# #
-# #     def anticommute():
-# #         x_new, z_new, phase = pauli_product(xk, zk, 1., xj, zj, 1.)
-# #         new_cj = cj * jnp.array([jnp.cos(theta), 1j * jnp.sin(theta) * phase], dtype=jnp.complex64)
-# #         return jnp.stack([xj, x_new]), jnp.stack([zj, z_new]), new_cj
-# #
-# #     return jax.lax.cond(acq_val==0, commute, anticommute)
-#
-# def conjugated_pauli_batched(xz_array, c_array, xzk, theta):
-#     """
-#     Pad to a fixed size and call JIT-compiled version.
-#     """
-#     # return conjugated_pauli_batched_(xz_array, c_array, xzk, theta)
-#     M = xz_array.shape[0]
-#     max_size = 2 ** int(jax.numpy.log2(M - 1e-1) + 1)  # touch M to avoid recompile
-#     pad_size = max_size - M
-#     xz_padded = jnp.pad(xz_array, ((0, pad_size), (0, 0)), mode='constant', constant_values=0)
-#     c_padded = jnp.pad(c_array, ((0, pad_size),), mode='constant', constant_values=0)
-#     xz1, c1, xz2, c2 = conjugated_pauli_batched_(xz_padded, c_padded, xzk, theta)
-#     return xz1, c1, xz2, c2
-#     # return xz1[:M], c1[:M], xz2[:M], c2[:M]
-#
-# @jax.jit
-# def conjugated_pauli_batched_(xz_array, c_array, xzk, theta):
-#     """
-#     Conjugate a batch of Pauli strings by rotation R_k(theta):
-#     exp(i theta/2 * sigma_k) * sigma_j * exp(-i theta/2 * sigma_k)
-#     = = = = = = = = = = = = = =
-#     case1: sigma_j, if commute
-#     case2: cos(theta) sigma_j + i sin(theta) sigma_k sigma_j, if anticommute
-#
-#     Parameters:
-#         xz_array: bool arrays of shape (M, 2N) - M Pauli strings on N qubits
-#         c_array: complex array of shape (M,) - coefficients
-#         xzk: bool arrays of shape (2N,) - Pauli string for rotation
-#         theta: float scalar - rotation angle
-#     Returns:
-#         xz_array: bool array of shape (M, 2N) - unchanged Pauli strings
-#         c_array_1: complex array of shape (M,) - coefficients for sigma_j
-#         xz_array_2: bool array of shape (M, 2N) - Pauli strings for sigma_k sigma_j
-#         c_array_2: complex array of shape (M,) - coefficients for sigma_k sigma_j
-#
-#     """
-#     print("Recompile: conjugated_pauli_batched", xz_array.shape, c_array.shape, xzk.shape, type(theta), theta, "\n")
-#     N = xz_array.shape[1] // 2
-#     # acq_val = jnp.sum(z_array & xk, axis=1) - jnp.sum(x_array & zk, axis=1)
-#     acq_val = jnp.sum(xz_array[:, N:] & xzk[:N], axis=1) - jnp.sum(xz_array[:, :N] & xzk[N:], axis=1)
-#     acq_val = acq_val % 2  # 0 = commute, 1 = anticommute
-#     theta = theta * acq_val
-#
-#     c_array_1 = c_array * jnp.cos(theta)
-#     xz_array_2, phase_array = pauli_product_batched(xz_array, jnp.ones_like(c_array),
-#                                                     xzk, 1.)
-#     c_array_2 = 1j * c_array * jnp.sin(theta) * phase_array
-#
-#     return xz_array, c_array_1, xz_array_2, c_array_2
-#
-# def conjugated_pauli_batched_uint(xz_array, c_array, xzk, theta):
-#     """
-#     Pad to a fixed size and call JIT-compiled version.
-#     """
-#     M = xz_array.shape[0]
-#     max_size = 2 ** int(jax.numpy.log2(M - 1e-1) + 1)  # touch M to avoid recompile
-#     pad_size = max_size - M
-#     xz_padded = jnp.pad(xz_array, ((0, pad_size), (0, 0)), mode='constant', constant_values=0)
-#     c_padded = jnp.pad(c_array, ((0, pad_size),), mode='constant', constant_values=0)
-#     xz1, c1, xz2, c2 = conjugated_pauli_batched_uint_(xz_padded, c_padded, xzk, theta)
-#     return xz1, c1, xz2, c2
-#
 def check_anticommute_uint(xz1, xz2):
     """
     Check if two Pauli strings in packed uint form anticommute.

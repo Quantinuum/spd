@@ -84,18 +84,18 @@ def test_size_norm_and_expectation_match_between_backends():
 
     ops = _build_ops(lambda module, payload: module.create_op(payload), pauli_dict)
 
-    sizes = {backend_name: module.get_size(ops[backend_name]) for backend_name, module in BACKENDS.items()}
+    sizes = {backend_name: ops[backend_name].get_size() for backend_name in BACKENDS}
     norm_squares = {
-        backend_name: float(np.asarray(module.get_norm_square(ops[backend_name])))
-        for backend_name, module in BACKENDS.items()
+        backend_name: float(np.asarray(ops[backend_name].get_norm_square()))
+        for backend_name in BACKENDS
     }
     exp_z = {
-        backend_name: float(np.asarray(module.get_expectation_value(ops[backend_name], basis="Z")))
-        for backend_name, module in BACKENDS.items()
+        backend_name: float(np.asarray(ops[backend_name].get_expectation_value(basis="Z")))
+        for backend_name in BACKENDS
     }
     exp_x = {
-        backend_name: float(np.asarray(module.get_expectation_value(ops[backend_name], basis="X")))
-        for backend_name, module in BACKENDS.items()
+        backend_name: float(np.asarray(ops[backend_name].get_expectation_value(basis="X")))
+        for backend_name in BACKENDS
     }
 
     assert sizes["numpy"] == sizes["jax"]
@@ -173,8 +173,8 @@ def test_init_gradient_spo_basis_expectation_semantics_match_between_backends():
 
     assert grad_terms["numpy"] == grad_terms["jax"]
     assert np.isclose(
-        float(np.asarray(BACKENDS["numpy"].get_norm_square(grads["numpy"]))),
-        float(np.asarray(BACKENDS["jax"].get_norm_square(grads["jax"]))),
+        float(np.asarray(grads["numpy"].get_norm_square())),
+        float(np.asarray(grads["jax"].get_norm_square())),
         atol=1e-6,
     )
     assert np.isclose(
@@ -187,43 +187,6 @@ def test_init_gradient_spo_basis_expectation_semantics_match_between_backends():
         float(np.asarray(grads["jax"].get_operator_stabilizer_entropy(alpha=2.0))),
         atol=1e-6,
     )
-
-
-def test_create_gradient_spo_remains_basis_expectation_compatibility_alias():
-    pauli_dict = {
-        "IIII": 2.0,
-        "ZIII": -0.5,
-        "XIII": 0.75,
-        "YIIX": -1.25,
-    }
-    ops = _build_ops(lambda module, payload: module.create_op(payload), pauli_dict)
-    alias_grads = {
-        backend_name: BACKENDS[backend_name].create_gradient_spo(spo, basis="Z")
-        for backend_name, spo in ops.items()
-    }
-    canonical_grads = {
-        backend_name: BACKENDS[backend_name].init_gradient_spo(
-            spo,
-            loss_type="basis_expectation",
-            basis="Z",
-        )
-        for backend_name, spo in ops.items()
-    }
-
-    for backend_name in BACKENDS:
-        alias_terms = to_grad_term_dict(
-            backend_name,
-            BACKENDS[backend_name],
-            alias_grads[backend_name],
-            n_qubits=4,
-        )
-        canonical_terms = to_grad_term_dict(
-            backend_name,
-            BACKENDS[backend_name],
-            canonical_grads[backend_name],
-            n_qubits=4,
-        )
-        assert alias_terms == canonical_terms
 
 
 def test_sparse_pauli_gradient_op_arithmetic_matches_between_backends():

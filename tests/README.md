@@ -21,11 +21,7 @@ Current coverage includes:
 
 - `create_op`
 - `create_measurement_op`
-- `get_size`
-- `get_norm_square`
-- `get_expectation_value`
 - `init_gradient_spo`
-- `create_gradient_spo` compatibility alias semantics
 - OSE and L2 gradient initialization semantics
 - split backward runner coverage via `run_pytket_backward_from_spgo`
 - a simple `conjugated_pauli_forward` rotation case
@@ -35,7 +31,7 @@ Design notes:
 
 - NumPy and JAX store `SPO` / `SPGO` differently, so tests normalize both into Pauli-string keyed dictionaries before comparison.
 - Rotation outputs are compared with tolerance because the JAX path defaults to `float32`, while NumPy may keep higher precision.
-- `init_gradient_spo(...)` is the canonical initializer; `create_gradient_spo(...)` is covered only for backward compatibility.
+- `init_gradient_spo(...)` is the canonical initializer.
 - These tests protect interface cleanup around the backend, adapter, and runner layers.
 
 ## Fixtures And Helpers

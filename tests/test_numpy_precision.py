@@ -13,7 +13,11 @@ def test_numpy_default_precision_is_float32():
     numpy_backend.set_precision("single")
 
     spo = numpy_backend.create_op({"XIII": 1.0})
-    spgo = numpy_backend.create_gradient_spo(spo, basis="Z")
+    spgo = numpy_backend.init_gradient_spo(
+        spo,
+        loss_type="basis_expectation",
+        basis="Z",
+    )
 
     coeff = np.asarray(next(iter(spo.values())))
     grad_coeff, grad_val = next(iter(spgo.values()))
@@ -31,7 +35,7 @@ def test_numpy_double_precision_is_float64_across_forward_and_backward():
     circ.Ry(0.25, 0)
 
     adapter = BackendAdapter.from_name("numpy", packbit=32, precision="double")
-    assert adapter.module.get_precision() == "double"
+    assert adapter.module.utils.get_precision() == "double"
 
     exp_val, final_spo = spd.run_pytket_circuit(
         circ,
