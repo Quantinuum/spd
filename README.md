@@ -2,13 +2,20 @@
 
 Sparse-Pauli dynamics simulation for static quantum circuits.
 
-The current package supports parsing `pytket` circuits and executing them on
-either a NumPy backend or a JAX backend. The JAX backend is designed to support
-accelerated execution and JIT-compiled kernels.
+The current package supports two circuit frontends:
+
+- a built-in OpenQASM 2 frontend with no extra circuit-library dependency
+- a `pytket` frontend for users already working in the `pytket` ecosystem
+
+Both feed the same execution pipeline and can run on either a NumPy backend or
+a JAX backend. The JAX backend is designed to support accelerated execution and
+JIT-compiled kernels.
 
 ## Current Scope
 
-- frontend: `pytket`
+- frontends:
+  - built-in `openqasm`
+  - `pytket` (extra dependency)
 - backends: `numpy`, `jax`
 - circuit model: static circuits without mid-circuit measurement/feedforward
 - execution modes:
@@ -19,11 +26,12 @@ accelerated execution and JIT-compiled kernels.
 
 The current execution path is:
 
-`pytket circuit -> frontend parser -> internal circuit IR -> backend adapter -> backend kernels -> SPO/SPGO`
+`frontend input -> frontend parser -> internal circuit IR -> backend adapter -> backend kernels -> SPO/SPGO`
 
 Key pieces:
 
 - [`spd/README.md`](spd/README.md): package-level architecture summary
+- [`spd/openqasm_frontend.py`](spd/openqasm_frontend.py): built-in OpenQASM 2 parser into the internal IR
 - [`spd/pytket_frontend.py`](spd/pytket_frontend.py): parser from `pytket` into the internal IR
 - [`spd/backend_adapter.py`](spd/backend_adapter.py): execution-facing wrapper around a backend
 - [`spd/run_circuit.py`](spd/run_circuit.py): forward and backward runner entry points
@@ -44,6 +52,12 @@ For example, `pytket` uses `exp(-i * param * pi * P / 2)`, so the parser stores
 
 ```bash
 pip install -e .
+```
+
+Install the `pytket` frontend extras with:
+
+```bash
+pip install -e .[pytket]
 ```
 
 ## Minimal Usage
@@ -106,6 +120,30 @@ terminal backward object. Supported options are:
 
 `run_pytket_circuit_backward(...)` remains the convenience wrapper that calls
 `init_gradient_spo(...)` and then `run_pytket_backward_from_spgo(...)`.
+
+Built-in OpenQASM 2 forward expectation:
+
+```python
+import spd
+
+exp_val, final_spo = spd.run_openqasm_file(
+    "examples/open_qasm/spd_periodic_trunc5e-4_70steps_time05.qasm",
+    [0],
+    trunc_val=1e-12,
+    max_num_str=1000,
+    backend_name="numpy",
+)
+```
+
+A runnable example script is available at
+[`examples/open_qasm/run_openqasm_file.py`](examples/open_qasm/run_openqasm_file.py).
+
+When comparing the built-in OpenQASM frontend against the `pytket.qasm` import
+path, note that `pytket` may canonicalize or reorder imported gates within
+commuting layers. Compatibility checks should therefore compare lowered IR
+semantics or execution results, and file-based regression fixtures should
+prefer a canonical gate presentation instead of relying on descending or
+presentation-only source order.
 
 `create_gradient_spo(...)` is retained as a compatibility alias for
 basis-expectation initialization only; new code should prefer

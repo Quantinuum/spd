@@ -8,6 +8,7 @@ This package is organized around sparse-Pauli state objects and backend-specific
 - [`numpy_backend/`](numpy_backend/): NumPy realization and kernels
 - [`jax_backend/`](jax_backend/): JAX realization and kernels
 - [`circuit_ir.py`](circuit_ir.py): backend-agnostic execution IR for supported circuit operations
+- [`openqasm_frontend.py`](openqasm_frontend.py): built-in OpenQASM 2 parser into the internal IR
 - [`pytket_frontend.py`](pytket_frontend.py): parser from `pytket` circuits into the internal IR
 - [`backend_adapter.py`](backend_adapter.py): backend-facing execution adapter used by the runner
 - [`run_circuit.py`](run_circuit.py): execution over the chosen backend
@@ -20,7 +21,9 @@ This package is organized around sparse-Pauli state objects and backend-specific
 - The backend adapter executes that IR against a selected backend.
 - The runner remains a thin orchestration layer.
 
-This split is intended to support multiple circuit frontends later, for example `pytket`, Qiskit, or Guppy, without duplicating backend execution logic.
+This split supports multiple circuit frontends, for example the built-in
+OpenQASM 2 frontend, the `pytket` frontend, and eventually Qiskit or Guppy,
+without duplicating backend execution logic.
 
 ## Scope Of The Current IR
 
