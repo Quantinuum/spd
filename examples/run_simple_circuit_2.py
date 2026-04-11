@@ -1,18 +1,27 @@
-import pytket
-from pytket.circuit import Circuit
-import sys
-sys.path.append('../')
+"""Run the stored sample `pytket` circuit with the public SPD API."""
+
+import pickle
+from pathlib import Path
+
 import spd
 
 if __name__ == "__main__":
-    import pickle
-    file_path = 'simple_test_circuit.pkl'
-    circ = pickle.load(open(file_path, 'rb'))
+    file_path = Path(__file__).resolve().parent / "simple_test_circuit.pkl"
+    with file_path.open("rb") as handle:
+        circ = pickle.load(handle)
 
     m_qubits = [0, 1]
-    for trunc_val in [3e-5]:
-        print("\n Truncation Value:", trunc_val)
+    trunc_val = 3e-5
 
-        # exp_val, spo = spd.run_pytket_circuit(circ, m_qubits, trunc_val, int(1e6), backend_name='jax')
-        exp_val, spo = spd.run_pytket_circuit(circ, m_qubits, trunc_val, int(1e6), backend_name='numpy')
-        print("\n Expectation Value:", exp_val)
+    exp_val, final_spo = spd.run_pytket_circuit(
+        circ,
+        m_qubits,
+        trunc_val,
+        int(1e6),
+        backend_name="numpy",
+    )
+
+    print("circuit file:", file_path.name)
+    print("trunc_val:", trunc_val)
+    print("expectation value:", exp_val)
+    print("final SPO size:", final_spo.get_size())

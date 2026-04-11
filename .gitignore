@@ -1,3 +1,14 @@
-__pycache__
+__pycache__/
+*.py[cod]
 *.egg-info/
 *.DS_Store
+.pytest_cache/
+
+examples/**/__pycache__/
+examples/**/*.pkl
+!examples/simple_test_circuit.pkl
+!examples/6x6_periodic_2steps_pauliexpbox.pkl
+!examples/open_qasm/*.pkl
+!examples/gradient/*.pkl
+
+AGENTS.md
