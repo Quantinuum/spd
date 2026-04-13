@@ -80,6 +80,31 @@ exp_val, final_spo = spd.run_pytket_circuit(
 )
 ```
 
+Configured backend workflow:
+
+```python
+from pytket.circuit import Circuit
+import spd
+
+circ = Circuit(1)
+circ.Ry(0.25, 0)
+
+backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
+backend.module.set_algorithm("search_update_merge")
+
+exp_val, final_spo = spd.run_pytket_circuit(
+    circ,
+    [0],
+    trunc_val=1e-12,
+    max_num_str=1000,
+    backend=backend,
+)
+```
+
+The same configured backend object can be reused for
+`init_gradient_spo(...)`, `run_pytket_backward_from_spgo(...)`, and the
+corresponding OpenQASM helpers.
+
 Backward pass:
 
 ```python
@@ -121,6 +146,10 @@ terminal backward object. Supported options are:
 `run_pytket_circuit_backward(...)` remains the convenience wrapper that calls
 `init_gradient_spo(...)` and then `run_pytket_backward_from_spgo(...)`.
 
+For advanced configuration, the high-level runners also accept a reusable
+`BackendAdapter` object via `backend=...`. When provided, the runner uses that
+configured backend directly instead of constructing one from `backend_name=...`.
+
 Built-in OpenQASM 2 forward expectation:
 
 ```python
@@ -156,6 +185,28 @@ arrays.
 
 Both backends also support `precision="single"` and `precision="double"` for
 real-valued sparse-Pauli coefficients.
+
+On the JAX backend, the default internal algorithm is now
+`search_update_merge`, which keeps the stored sparse-Pauli operator
+lexicographically sorted. The legacy `stack_sort_merge` path is still
+available for comparison or fallback via the lower-level JAX backend module:
+
+```python
+import spd.jax_backend as jax_backend
+
+jax_backend.set_algorithm("stack_sort_merge")
+```
+
+Because the two JAX algorithms use different internal ordering and truncation
+strategies, they may retain different subsets near the `max_num_str` cap.
+
+For advanced workflows, a reusable `BackendAdapter` can be used together with
+the JAX backend module setting:
+
+```python
+backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
+backend.module.set_algorithm("stack_sort_merge")
+```
 
 
 ## Tests

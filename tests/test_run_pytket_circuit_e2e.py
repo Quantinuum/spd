@@ -11,6 +11,14 @@ BACKENDS = {
 }
 
 
+def _count_significant_coeff_terms(spo_like, atol=1e-6):
+    if hasattr(spo_like, "c_array"):
+        coeffs = np.asarray(spo_like.c_array)
+    else:
+        coeffs = np.asarray([value[0] for value in spo_like.values()])
+    return int(np.sum(np.abs(coeffs) > atol))
+
+
 def test_run_pytket_circuit_single_qubit_ry_z_expectation(backend_name):
     circ = Circuit(1)
     circ.Ry(0.25, 0)
@@ -74,7 +82,7 @@ def test_run_pytket_circuit_backward_single_parameter_gradient(backend_name):
     assert np.isclose(float(np.asarray(exp_val)), np.cos(theta), atol=1e-6)
     assert len(grads) == 1
     assert np.isclose(float(np.asarray(grads[0])), -np.sin(theta), atol=1e-6)
-    assert backward_final_spo.get_size() == 1
+    assert _count_significant_coeff_terms(backward_final_spo) == 1
 
 
 def test_run_pytket_backward_from_spgo_matches_wrapper(backend_name):
@@ -196,7 +204,81 @@ def test_run_pytket_circuit_backward_basis_expectation_plus_ose_matches_direct_r
 
     assert len(grads) == 1
     assert np.allclose(np.asarray(grads), np.asarray(direct_grads), atol=1e-6)
-    assert direct_final_spgo.get_size() == 1
+    assert _count_significant_coeff_terms(direct_final_spgo) == 1
+
+
+def test_run_pytket_circuit_accepts_configured_backend_object():
+    circ = Circuit(1)
+    circ.Ry(0.25, 0)
+
+    previous_algorithm = spd.jax_backend.get_algorithm()
+    backend = spd.BackendAdapter.from_name("jax", packbit=32)
+    backend.module.set_algorithm("stack_sort_merge")
+
+    try:
+        exp_val, final_spo = spd.run_pytket_circuit(
+            circ,
+            [0],
+            1e-12,
+            MAX_NUM_STR,
+            backend=backend,
+        )
+
+        assert np.isclose(float(np.asarray(exp_val)), np.cos(np.pi / 4), atol=1e-6)
+        assert backend.is_spo_instance(final_spo)
+        assert spd.jax_backend.get_algorithm() == "stack_sort_merge"
+    finally:
+        spd.jax_backend.set_algorithm(previous_algorithm)
+
+
+def test_run_pytket_backward_from_spgo_accepts_reused_backend_object():
+    circ = Circuit(1)
+    circ.Ry(0.25, 0)
+
+    previous_algorithm = spd.jax_backend.get_algorithm()
+    backend = spd.BackendAdapter.from_name("jax", packbit=32)
+    backend.module.set_algorithm("stack_sort_merge")
+
+    try:
+        _, final_spo = spd.run_pytket_circuit(
+            circ,
+            [0],
+            1e-12,
+            MAX_NUM_STR,
+            backend=backend,
+        )
+        initial_spgo = spd.init_gradient_spo(
+            final_spo,
+            basis="0",
+            backend=backend,
+        )
+        grads, final_spgo = spd.run_pytket_backward_from_spgo(
+            circ,
+            initial_spgo,
+            1e-12,
+            MAX_NUM_STR,
+            backend=backend,
+        )
+
+        assert len(grads) == 1
+        assert np.isclose(float(np.asarray(grads[0])), -np.sin(np.pi / 4), atol=1e-6)
+        assert backend.is_spgo_instance(final_spgo)
+    finally:
+        spd.jax_backend.set_algorithm(previous_algorithm)
+
+
+def test_run_pytket_circuit_rejects_invalid_backend_object():
+    circ = Circuit(1)
+    circ.Ry(0.25, 0)
+
+    with pytest.raises(TypeError, match="backend must be a BackendAdapter"):
+        spd.run_pytket_circuit(
+            circ,
+            [0],
+            1e-12,
+            MAX_NUM_STR,
+            backend="jax",
+        )
 
 
 def test_init_gradient_spo_rejects_backend_mismatched_spo():

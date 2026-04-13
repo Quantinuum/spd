@@ -18,7 +18,8 @@ This package is organized around sparse-Pauli state objects and backend-specific
 - `SPO` / `SPGO` are the core domain objects.
 - Backend `kernels.py` files implement the heavy algebra and return backend-local `SPO` / `SPGO`.
 - Frontends parse external circuit formats into the internal IR.
-- The backend adapter executes that IR against a selected backend.
+- The backend adapter executes that IR against a selected backend and can now be
+  passed directly into the public runners for advanced configuration.
 - The runner remains a thin orchestration layer.
 
 This split supports multiple circuit frontends, for example the built-in

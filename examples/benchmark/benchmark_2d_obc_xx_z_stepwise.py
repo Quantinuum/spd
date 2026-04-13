@@ -128,18 +128,9 @@ def evolve_step(spo, operations, adapter, trunc_val, max_num_str):
 
 
 def configure_jax_algorithm(algorithm):
-    """Apply a JAX algorithm selection when the backend exposes a switch."""
-    setter = getattr(jax_backend, "set_algorithm", None)
-    if setter is None:
-        if algorithm != "stack_sort_merge":
-            raise NotImplementedError(
-                "This repo does not expose a JAX algorithm switch yet. "
-                "Use --jax-algorithm stack_sort_merge for now."
-            )
-        return "stack_sort_merge"
-
-    setter(algorithm)
-    return algorithm
+    """Apply the current internal JAX algorithm selection."""
+    jax_backend.set_algorithm(algorithm)
+    return jax_backend.get_algorithm()
 
 
 def benchmark_filename(dt, total_t, threshold_log, backend, algorithm_tag=None):
@@ -175,9 +166,7 @@ def main():
         choices=["stack_sort_merge", "search_update_merge"],
         default="stack_sort_merge",
         help=(
-            "JAX forward/merge algorithm to benchmark. Today only the default "
-            "path is wired, but this flag keeps the benchmark script ready for "
-            "future backend algorithm switching."
+            "JAX forward/merge algorithm to benchmark."
         ),
     )
     parser.add_argument("--max-num-str", type=int, default=int(1e9))
