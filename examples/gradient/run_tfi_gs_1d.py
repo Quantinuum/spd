@@ -33,7 +33,7 @@ if __name__ == "__main__":
                                                )
 
     precision = 'double'
-    full_H = True
+    full_H = False
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=full_H)
     factor = system_size if full_H else 1
 

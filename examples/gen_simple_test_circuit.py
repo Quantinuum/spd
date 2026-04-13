@@ -1,8 +1,13 @@
+"""Generate the stored sample circuit used by `run_simple_circuit_2.py`."""
+
 import pickle
-import pytket
+from pathlib import Path
+
 from pytket import Circuit
 import numpy as np
+
 np.random.seed(0)
+
 
 def gen_simple_test_circuit() -> Circuit:
     circ = Circuit(64, 64)
@@ -41,8 +46,10 @@ def gen_simple_test_circuit() -> Circuit:
 
     return circ
 
+
 if __name__ == "__main__":
     circ = gen_simple_test_circuit()
-    with open("simple_test_circuit.pkl", "wb") as f:
-        pickle.dump(circ, f)
-    print("Circuit saved to simple_test_circuit.pkl")
+    output_path = Path(__file__).resolve().parent / "simple_test_circuit.pkl"
+    with output_path.open("wb") as handle:
+        pickle.dump(circ, handle)
+    print(f"Circuit saved to {output_path}")
