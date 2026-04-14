@@ -10,6 +10,10 @@ This directory contains regression, conformance, and end-to-end tests for the SP
 - [`test_sparse_pauli_op_string.py`](test_sparse_pauli_op_string.py): string rendering and simple object behavior
 - [`test_backend_conformance.py`](test_backend_conformance.py): semantic agreement between NumPy and JAX backends
 - [`test_backend_adapter.py`](test_backend_adapter.py): adapter-level execution dispatch
+- [`test_jax_algorithm_switch_forward.py`](test_jax_algorithm_switch_forward.py): JAX algorithm-switch forward tests, including the default-algorithm assertion and explicit legacy-path coverage
+- [`test_jax_algorithm_switch_backward.py`](test_jax_algorithm_switch_backward.py): focused parity test for the `search_update_merge` backward path
+- [`test_jax_forward_algorithm_matrix.py`](test_jax_forward_algorithm_matrix.py): selected forward-only parity matrix that runs JAX under both forward algorithms while keeping backward coverage separate
+- [`test_jax_backward_algorithm_matrix.py`](test_jax_backward_algorithm_matrix.py): selected backward-only parity matrix that runs JAX under both backward-capable algorithms
 - [`test_openqasm_frontend.py`](test_openqasm_frontend.py): built-in OpenQASM parsing into the internal IR
 - [`test_openqasm_pytket_compat.py`](test_openqasm_pytket_compat.py): semantic IR and execution compatibility checks between the built-in OpenQASM frontend and the `pytket` OpenQASM importer
 - [`test_pytket_frontend.py`](test_pytket_frontend.py): frontend parsing from `pytket` into the internal IR

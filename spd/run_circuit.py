@@ -32,35 +32,40 @@ def _make_backend(backend_name, *, packbit=32, precision="single"):
     return BackendAdapter.from_name(backend_name, packbit=packbit, precision=precision)
 
 
-def _setup_pytket_run(circ, backend_name, rebase, packbit=32, precision="single"):
+def _resolve_backend(backend_name, backend, *, packbit=32, precision="single"):
+    if backend is None:
+        return _make_backend(backend_name, packbit=packbit, precision=precision)
+    if not isinstance(backend, BackendAdapter):
+        raise TypeError("backend must be a BackendAdapter when provided.")
+    return backend
+
+
+def _setup_pytket_run(circ, backend, rebase):
     """Prepare backend, padded system size, and parsed operations for pytket input."""
     from .pytket_frontend import maybe_rebase_pytket_circuit, parse_pytket_circuit
 
-    backend = _make_backend(backend_name, packbit=packbit, precision=precision)
     if rebase:
         maybe_rebase_pytket_circuit(circ)
 
     original_system_size = circ.n_qubits
-    padded_system_size = _compute_padded_system_size(original_system_size, packbit)
+    padded_system_size = _compute_padded_system_size(original_system_size, backend.packbit)
     operations = parse_pytket_circuit(circ, padded_system_size)
     return backend, original_system_size, padded_system_size, operations
 
 
-def _setup_openqasm_file_run(path, backend_name, *, packbit=32, precision="single"):
+def _setup_openqasm_file_run(path, backend):
     """Prepare backend, padded system size, and parsed operations for an OpenQASM file."""
     with open(path, "r", encoding="utf-8") as f:
         system_size = _peek_openqasm_system_size(f.read())
-    backend = _make_backend(backend_name, packbit=packbit, precision=precision)
-    padded_system_size = _compute_padded_system_size(system_size, packbit)
+    padded_system_size = _compute_padded_system_size(system_size, backend.packbit)
     _, operations = parse_openqasm_file(path, padded_system_size)
     return backend, system_size, padded_system_size, operations
 
 
-def _setup_openqasm_str_run(source, backend_name, *, packbit=32, precision="single"):
+def _setup_openqasm_str_run(source, backend):
     """Prepare backend, padded system size, and parsed operations for an OpenQASM string."""
     system_size = _peek_openqasm_system_size(source)
-    backend = _make_backend(backend_name, packbit=packbit, precision=precision)
-    padded_system_size = _compute_padded_system_size(system_size, packbit)
+    padded_system_size = _compute_padded_system_size(system_size, backend.packbit)
     _, operations = parse_openqasm_str(source, padded_system_size)
     return backend, system_size, padded_system_size, operations
 
@@ -267,13 +272,20 @@ def run_pytket_circuit(circ,
                        rebase=False,
                        log_filename=None,
                        save_strings=False,
+                       backend=None,
                        ):
     """Run a static pytket circuit forward on the selected backend."""
     total_start_time = time.time()
     _PACKBIT = 32
-    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend = _resolve_backend(
+        backend_name,
+        backend,
+        packbit=_PACKBIT,
+        precision=precision,
+    )
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     backend, _, padded_system_size, operations = _setup_pytket_run(
-        circ, backend_name, rebase, packbit=_PACKBIT, precision=precision
+        circ, backend, rebase
     )
     return _run_forward_operations(
         backend,
@@ -297,19 +309,25 @@ def init_gradient_spo(final_spo,
                       alpha=1.0,
                       backend_name='numpy',
                       precision='single',
+                      backend=None,
                       ):
     """Construct the initial backward SPGO for the requested terminal loss.
 
     This is the canonical public initializer for backward propagation.
     """
-    backend = _make_backend(backend_name, packbit=32, precision=precision)
+    backend = _resolve_backend(
+        backend_name,
+        backend,
+        packbit=32,
+        precision=precision,
+    )
     if not backend.is_spo_instance(final_spo):
         raise TypeError(
-            f"final_spo must be a {backend_name} SparsePauliOp when backend_name='{backend_name}'."
+            f"final_spo must be a {backend.name} SparsePauliOp when backend_name='{backend.name}'."
         )
     if target_spo is not None and not backend.is_spo_instance(target_spo):
         raise TypeError(
-            f"target_spo must be a {backend_name} SparsePauliOp when backend_name='{backend_name}'."
+            f"target_spo must be a {backend.name} SparsePauliOp when backend_name='{backend.name}'."
         )
     return backend.init_gradient_spo(
         final_spo,
@@ -328,13 +346,20 @@ def run_pytket_backward_from_spgo(circ,
                                   precision='single',
                                   rebase=False,
                                   save_strings=False,
+                                  backend=None,
                                   ):
     """Propagate a pre-built gradient SPGO backward through a pytket circuit."""
     total_start_time = time.time()
     _PACKBIT = 32
-    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend = _resolve_backend(
+        backend_name,
+        backend,
+        packbit=_PACKBIT,
+        precision=precision,
+    )
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     backend, _, _, operations = _setup_pytket_run(
-        circ, backend_name, rebase, packbit=_PACKBIT, precision=precision
+        circ, backend, rebase
     )
     return _run_backward_operations(
         backend,
@@ -360,6 +385,7 @@ def run_pytket_circuit_backward(circ,
                                 target_spo=None,
                                 lambda_ose=0.0,
                                 alpha=1.0,
+                                backend=None,
                                 ):
     """Run backward propagation by initializing a terminal loss then propagating it."""
     initial_spgo = init_gradient_spo(
@@ -371,6 +397,7 @@ def run_pytket_circuit_backward(circ,
         alpha=alpha,
         backend_name=backend_name,
         precision=precision,
+        backend=backend,
     )
     return run_pytket_backward_from_spgo(
         circ,
@@ -381,6 +408,7 @@ def run_pytket_circuit_backward(circ,
         precision=precision,
         rebase=rebase,
         save_strings=save_strings,
+        backend=backend,
     )
 
 
@@ -393,13 +421,20 @@ def run_openqasm_file(path,
                       precision='single',
                       log_filename=None,
                       save_strings=False,
+                      backend=None,
                       ):
     """Run a static OpenQASM 2 circuit from file on the selected backend."""
     total_start_time = time.time()
     _PACKBIT = 32
-    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend = _resolve_backend(
+        backend_name,
+        backend,
+        packbit=_PACKBIT,
+        precision=precision,
+    )
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     backend, _, padded_system_size, operations = _setup_openqasm_file_run(
-        path, backend_name, packbit=_PACKBIT, precision=precision
+        path, backend
     )
     return _run_forward_operations(
         backend,
@@ -424,13 +459,20 @@ def run_openqasm_str(source,
                      precision='single',
                      log_filename=None,
                      save_strings=False,
+                     backend=None,
                      ):
     """Run a static OpenQASM 2 circuit from source text on the selected backend."""
     total_start_time = time.time()
     _PACKBIT = 32
-    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend = _resolve_backend(
+        backend_name,
+        backend,
+        packbit=_PACKBIT,
+        precision=precision,
+    )
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     backend, _, padded_system_size, operations = _setup_openqasm_str_run(
-        source, backend_name, packbit=_PACKBIT, precision=precision
+        source, backend
     )
     return _run_forward_operations(
         backend,
@@ -455,18 +497,25 @@ def run_openqasm_backward_from_spgo(path_or_source,
                                     precision='single',
                                     save_strings=False,
                                     from_file=True,
+                                    backend=None,
                                     ):
     """Propagate a pre-built gradient SPGO backward through an OpenQASM 2 circuit."""
     total_start_time = time.time()
     _PACKBIT = 32
-    max_num_str = _normalize_max_num_str(backend_name, max_num_str)
+    backend = _resolve_backend(
+        backend_name,
+        backend,
+        packbit=_PACKBIT,
+        precision=precision,
+    )
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     if from_file:
         backend, _, _, operations = _setup_openqasm_file_run(
-            path_or_source, backend_name, packbit=_PACKBIT, precision=precision
+            path_or_source, backend
         )
     else:
         backend, _, _, operations = _setup_openqasm_str_run(
-            path_or_source, backend_name, packbit=_PACKBIT, precision=precision
+            path_or_source, backend
         )
     return _run_backward_operations(
         backend,
@@ -491,6 +540,7 @@ def run_openqasm_file_backward(path,
                                target_spo=None,
                                lambda_ose=0.0,
                                alpha=1.0,
+                               backend=None,
                                ):
     """Run backward propagation through an OpenQASM 2 file."""
     initial_spgo = init_gradient_spo(
@@ -502,6 +552,7 @@ def run_openqasm_file_backward(path,
         alpha=alpha,
         backend_name=backend_name,
         precision=precision,
+        backend=backend,
     )
     return run_openqasm_backward_from_spgo(
         path,
@@ -512,6 +563,7 @@ def run_openqasm_file_backward(path,
         precision=precision,
         save_strings=save_strings,
         from_file=True,
+        backend=backend,
     )
 
 
@@ -527,6 +579,7 @@ def run_openqasm_str_backward(source,
                               target_spo=None,
                               lambda_ose=0.0,
                               alpha=1.0,
+                              backend=None,
                               ):
     """Run backward propagation through an OpenQASM 2 source string."""
     initial_spgo = init_gradient_spo(
@@ -538,6 +591,7 @@ def run_openqasm_str_backward(source,
         alpha=alpha,
         backend_name=backend_name,
         precision=precision,
+        backend=backend,
     )
     return run_openqasm_backward_from_spgo(
         source,
@@ -548,4 +602,5 @@ def run_openqasm_str_backward(source,
         precision=precision,
         save_strings=save_strings,
         from_file=False,
+        backend=backend,
     )

@@ -17,6 +17,8 @@ from .kernels import (
     init_gradient_spo,
     pauli_product_batched_second_uint,
     pauli_product_uint,
+    get_algorithm,
+    set_algorithm,
     set_precision,
 )
 from .sparse_pauli import SparsePauliGradientOp, SparsePauliOp
@@ -43,6 +45,8 @@ __all__ = [
     "init_gradient_spo",
     "pauli_product_batched_second_uint",
     "pauli_product_uint",
+    "get_algorithm",
+    "set_algorithm",
     "set_precision",
     "utils",
 ]

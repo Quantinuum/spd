@@ -18,7 +18,7 @@ Keep `kernels.py` focused on runner-critical internals, and define a small, expl
 - low-level module: stable, documented primitives for power users
 - `legacy.py`: archived/experimental/reference code; not part of supported API
 
-## Future work
-When introducing algorithm switching, keep the same separation:
+## Ongoing Guidance
+With algorithm switching now in place, keep the same separation:
 - runtime dispatch in kernels
 - small curated low-level API for direct operator manipulation

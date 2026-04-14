@@ -5,7 +5,8 @@ This backend uses JAX arrays for sparse-Pauli state and JIT-compiled kernels for
 ## Layout
 
 - [`sparse_pauli.py`](sparse_pauli.py): concrete `SparsePauliOp` and `SparsePauliGradientOp`
-- [`kernels.py`](kernels.py): backend math kernels and factories
+- [`kernels.py`](kernels.py): public backend entrypoints plus shared low-level math helpers
+- [`algorithms/`](algorithms/): strategy-local forward/backward orchestration
 - [`utils.py`](utils.py): packing and formatting helpers
 
 ## Representation
@@ -17,8 +18,34 @@ For the JAX backend, `c_array` and `grad_c_array` are stored as real-valued
 arrays only. Precision is selected globally within the backend as either
 single precision (`float32`) or double precision (`float64`).
 
-The runner-facing `max_num_str` limit is applied after the existing JIT merge
-path returns. JAX rounds that limit up to the next power of two and then caps
-the final slice size with `min(new_size, max_num_str)`.
+The default JAX algorithm is `search_update_merge`, which keeps the long-lived
+stored sparse-Pauli operator lexicographically sorted and updates it through
+binary-search partner matching. The legacy `stack_sort_merge` algorithm remains
+available as an alternate path.
+
+Algorithm selection is currently an internal JAX-backend setting:
+
+```python
+import spd.jax_backend as jax_backend
+
+jax_backend.set_algorithm("search_update_merge")
+jax_backend.set_algorithm("stack_sort_merge")
+```
+
+When using the higher-level runners, advanced users can combine this with a
+reusable configured `BackendAdapter`:
+
+```python
+import spd
+
+backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
+backend.module.set_algorithm("search_update_merge")
+```
+
+The runner-facing `max_num_str` limit is applied after the active JIT path
+returns. JAX rounds that limit up to the next power of two and then caps the
+final slice size with `min(new_size, max_num_str)`. Because the two algorithms
+use different internal ordering and truncation strategies, they may retain
+different subsets near the `max_num_str` boundary.
 
 The custom classes in `sparse_pauli.py` are registered as JAX pytrees so they can continue to flow through `jit`-compiled kernels while exposing a clearer object interface.
