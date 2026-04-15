@@ -31,7 +31,7 @@ Current coverage includes:
 - `init_gradient_spo`
 - OSE and L2 gradient initialization semantics
 - split backward runner coverage via `run_pytket_backward_from_spgo`
-- a simple `conjugated_pauli_forward` rotation case
+- a simple `conjugate_pauli_rot_forward` rotation case
 - runner-level `max_num_str` behavior for both backends
 
 Design notes:

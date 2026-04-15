@@ -309,11 +309,28 @@ def test_single_rotation_semantics_match_between_backends():
     }
 
     outputs = {
-        backend_name: BACKENDS[backend_name].conjugated_pauli_forward(
+        backend_name: BACKENDS[backend_name].conjugate_pauli_rot_forward(
             spo_in[backend_name], sigma_u[backend_name], np.pi / 3,
             trunc_val=1e-12,
             max_num_str=1000,
         )[0]
+        for backend_name in BACKENDS
+    }
+    terms_by_backend = {
+        backend_name: to_term_dict(backend_name, BACKENDS[backend_name], spo, n_qubits=4)
+        for backend_name, spo in outputs.items()
+    }
+
+    _assert_term_dicts_close(terms_by_backend["numpy"], terms_by_backend["jax"])
+
+
+def test_cy_clifford_semantics_match_between_backends():
+    spo_in = _build_ops(lambda module: module.create_op({"IXYZ": 1.0, "ZIIX": -0.25}))
+
+    outputs = {
+        backend_name: BACKENDS[backend_name].conjugate_CY_forward(
+            spo_in[backend_name], 1, 3
+        )
         for backend_name in BACKENDS
     }
     terms_by_backend = {

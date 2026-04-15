@@ -35,7 +35,7 @@ conjugated_pauli_batched_uint
 conjugated_pauli_batched_uint_
     Input: SparsePauliOp + packed xzk, theta
     Role: packed uint core split used by current runtime path
-    Called by forward_jitted and therefore by conjugated_pauli_forward
+    Called by forward_jitted and therefore by conjugate_pauli_rot_forward
     Status: keep (runtime-critical)
 
 We don't work with bool-like and unpacked array anymore, so we move it here.

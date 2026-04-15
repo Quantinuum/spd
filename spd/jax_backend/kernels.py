@@ -207,7 +207,7 @@ def init_gradient_spo(
 
 # ---------------------------------------------------------------------- #
 
-def conjugated_pauli_forward(spo, xzk, theta, trunc_val, max_num_str):
+def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):
     return _load_algorithm_module().forward_step(
         spo,
         xzk,
@@ -218,7 +218,7 @@ def conjugated_pauli_forward(spo, xzk, theta, trunc_val, max_num_str):
 
 
 
-def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str):
+def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     return _load_algorithm_module().backward_step(
         spo_val_grad,
         xzk,
@@ -354,11 +354,11 @@ def conjugated_pauli_batched_uint_(spo, xzk, theta):
     # return xz_array, c_array_1, xz_array_2, c_array_2
     return spo_1, spo_2
 
-def conjugated_pauli_backward_batched_uint_(spo_val_grad, xzk, theta):
+def conjugate_pauli_rot_backward_batched_uint_(spo_val_grad, xzk, theta):
     xz_array = spo_val_grad.xz_array
     c_array = spo_val_grad.c_array
     grad_c_array = spo_val_grad.grad_c_array
-    print("Recompile: conjugated_pauli_backward_batched_uint", xz_array.shape, c_array.shape)
+    print("Recompile: conjugate_pauli_rot_backward_batched_uint", xz_array.shape, c_array.shape)
 
     N = xz_array.shape[1] // 2
     acq_val = jnp.sum(jax.lax.population_count(xz_array[:, N:] & xzk[:N]), axis=1) - \
@@ -386,7 +386,7 @@ def conjugated_pauli_backward_batched_uint_(spo_val_grad, xzk, theta):
     return spo_val_grad_1, spo_val_grad_2
 
 @jax.jit
-def conjugated_pauli_batched_uint32_H(spo, qubit):
+def conjugate_H_forward(spo, qubit):
     """
     Apply Hadamard gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -436,7 +436,7 @@ def conjugated_pauli_batched_uint32_H(spo, qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_S(spo, qubit):
+def conjugate_S_forward(spo, qubit):
     """
     Apply S gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -481,7 +481,7 @@ def conjugated_pauli_batched_uint32_S(spo, qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
+def conjugate_Sdg_forward(spo, qubit):
     """
     Apply Sdg gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -526,7 +526,7 @@ def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
+def conjugate_CX_forward(spo, control_qubit, target_qubit):
     """
     Apply CX gate on the specified qubits for a batch of packed (x,z) representations.
     x_t <-- x_t XOR x_c
@@ -593,24 +593,21 @@ def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_CY(spo, control_qubit, target_qubit):
+def conjugate_CY_forward(spo, control_qubit, target_qubit):
     xz_array = spo.xz_array
     c_array = spo.c_array
-    print("Recompile: conjugated_pauli_batched_uint_CY", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
+    print("Recompile: conjugate_CY_forward", xz_array.shape, c_array.shape, control_qubit, target_qubit, "\n")
     # --- Step 1: S on target ---
-    xz_array, c_array = conjugated_pauli_batched_uint32_S(xz_array, c_array, target_qubit)
+    spo = conjugate_S_forward(spo, target_qubit)
 
     # --- Step 2: CX ---
-    xz_array, c_array = conjugated_pauli_batched_uint32_CX(xz_array, c_array, control_qubit, target_qubit)
+    spo = conjugate_CX_forward(spo, control_qubit, target_qubit)
 
     # --- Step 3: S† on target ---
-    xz_array, c_array = conjugated_pauli_batched_uint32_Sdg(xz_array, c_array, target_qubit)
-    new_spo = SparsePauliOp(xz_array, c_array)
-    # return xz_array, c_array
-    return new_spo
+    return conjugate_Sdg_forward(spo, target_qubit)
 
 @jax.jit
-def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
+def conjugate_CZ_forward(spo, control_qubit, target_qubit):
     """
     Apply CZ gate on the specified qubits for a batch of packed (x,z) representations.
     z_c' = z_c XOR x_t
@@ -679,7 +676,7 @@ def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_X(spo, qubit):
+def conjugate_X_forward(spo, qubit):
     """
     Apply X gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -711,11 +708,11 @@ def conjugated_pauli_batched_uint32_X(spo, qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_X_backward(spgo, qubit):
+def conjugate_X_backward(spgo, qubit):
     xz_array = spgo.xz_array
     c_array = spgo.c_array
     grad_c_array = spgo.grad_c_array
-    print("Recompile: conjugated_pauli_batched_uint_X_backward", xz_array.shape, c_array.shape, qubit, "\n")
+    print("Recompile: conjugate_X_backward", xz_array.shape, c_array.shape, qubit, "\n")
     N = xz_array.shape[1] // 2
     z_array = xz_array[:, N:]
 
@@ -734,7 +731,7 @@ def conjugated_pauli_batched_uint32_X_backward(spgo, qubit):
 
 
 @jax.jit
-def conjugated_pauli_batched_uint32_Y(spo, qubit):
+def conjugate_Y_forward(spo, qubit):
     """
     Apply Y gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -772,7 +769,7 @@ def conjugated_pauli_batched_uint32_Y(spo, qubit):
     return new_spo
 
 @jax.jit
-def conjugated_pauli_batched_uint32_Z(spo, qubit):
+def conjugate_Z_forward(spo, qubit):
     """
     Apply Z gate on the specified qubit for a batch of packed (x,z) representations.
     Args:

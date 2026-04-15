@@ -34,18 +34,18 @@ class BackendModule(Protocol):
         lambda_ose=0.0,
         alpha=1.0,
     ): ...
-    def conjugated_pauli_forward(self, spo, xzk, theta, trunc_val, max_num_str): ...
-    def conjugated_pauli_backward(self, spgo, xzk, theta, trunc_val, max_num_str): ...
-    def conjugated_pauli_batched_uint32_H(self, spo, qubit): ...
-    def conjugated_pauli_batched_uint32_S(self, spo, qubit): ...
-    def conjugated_pauli_batched_uint32_Sdg(self, spo, qubit): ...
-    def conjugated_pauli_batched_uint32_CX(self, spo, control_qubit, target_qubit): ...
-    def conjugated_pauli_batched_uint32_CY(self, spo, control_qubit, target_qubit): ...
-    def conjugated_pauli_batched_uint32_CZ(self, spo, control_qubit, target_qubit): ...
-    def conjugated_pauli_batched_uint32_X(self, spo, qubit): ...
-    def conjugated_pauli_batched_uint32_Y(self, spo, qubit): ...
-    def conjugated_pauli_batched_uint32_Z(self, spo, qubit): ...
-    def conjugated_pauli_batched_uint32_X_backward(self, spgo, qubit): ...
+    def conjugate_pauli_rot_forward(self, spo, xzk, theta, trunc_val, max_num_str): ...
+    def conjugate_pauli_rot_backward(self, spgo, xzk, theta, trunc_val, max_num_str): ...
+    def conjugate_H_forward(self, spo, qubit): ...
+    def conjugate_S_forward(self, spo, qubit): ...
+    def conjugate_Sdg_forward(self, spo, qubit): ...
+    def conjugate_CX_forward(self, spo, control_qubit, target_qubit): ...
+    def conjugate_CY_forward(self, spo, control_qubit, target_qubit): ...
+    def conjugate_CZ_forward(self, spo, control_qubit, target_qubit): ...
+    def conjugate_X_forward(self, spo, qubit): ...
+    def conjugate_Y_forward(self, spo, qubit): ...
+    def conjugate_Z_forward(self, spo, qubit): ...
+    def conjugate_X_backward(self, spgo, qubit): ...
 
 
 @dataclass
@@ -56,22 +56,26 @@ class BackendAdapter:
     precision: str = "single"
 
     def __post_init__(self):
+        if self.packbit != 32:
+            raise ValueError(
+                f"BackendAdapter currently requires packbit=32, got {self.packbit}."
+            )
         self.module.utils.set_packbit(self.packbit)
         self.module.set_precision(self.precision)
         self.utils = self.module.utils
-        self._clifford_dispatch = {
-            "OpType.H": self.module.conjugated_pauli_batched_uint32_H,
-            "OpType.S": self.module.conjugated_pauli_batched_uint32_S,
-            "OpType.Sdg": self.module.conjugated_pauli_batched_uint32_Sdg,
-            "OpType.CX": self.module.conjugated_pauli_batched_uint32_CX,
-            "OpType.CY": self.module.conjugated_pauli_batched_uint32_CY,
-            "OpType.CZ": self.module.conjugated_pauli_batched_uint32_CZ,
-            "OpType.X": self.module.conjugated_pauli_batched_uint32_X,
-            "OpType.Y": self.module.conjugated_pauli_batched_uint32_Y,
-            "OpType.Z": self.module.conjugated_pauli_batched_uint32_Z,
+        self._clifford_forward_dispatch = {
+            "OpType.H": self.module.conjugate_H_forward,
+            "OpType.S": self.module.conjugate_S_forward,
+            "OpType.Sdg": self.module.conjugate_Sdg_forward,
+            "OpType.CX": self.module.conjugate_CX_forward,
+            "OpType.CY": self.module.conjugate_CY_forward,
+            "OpType.CZ": self.module.conjugate_CZ_forward,
+            "OpType.X": self.module.conjugate_X_forward,
+            "OpType.Y": self.module.conjugate_Y_forward,
+            "OpType.Z": self.module.conjugate_Z_forward,
         }
         self._clifford_backward_dispatch = {
-            "OpType.X": self.module.conjugated_pauli_batched_uint32_X_backward,
+            "OpType.X": self.module.conjugate_X_backward,
         }
 
     @classmethod
@@ -122,16 +126,16 @@ class BackendAdapter:
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
-            return self.module.conjugated_pauli_forward(
+            return self.module.conjugate_pauli_rot_forward(
                 spo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
             )
 
         if isinstance(operation, SingleQubitClifford):
-            return self._clifford_dispatch[operation.gate_name](spo, operation.qubit), None
+            return self._clifford_forward_dispatch[operation.gate_name](spo, operation.qubit), None
 
         if isinstance(operation, TwoQubitClifford):
             return (
-                self._clifford_dispatch[operation.gate_name](
+                self._clifford_forward_dispatch[operation.gate_name](
                     spo,
                     operation.control_qubit,
                     operation.target_qubit,
@@ -147,7 +151,7 @@ class BackendAdapter:
     def apply_backward(self, spgo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
-            return self.module.conjugated_pauli_backward(
+            return self.module.conjugate_pauli_rot_backward(
                 spgo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
             )
 

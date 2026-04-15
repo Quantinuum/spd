@@ -88,7 +88,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
 @jax.jit
 def backward_jitted(spo_val_grad, xzk, theta, trunc_val):
     print("Recompile: backward_jitted", spo_val_grad.xz_array.shape,)
-    spo_val_grad_1, spo_val_grad_2 = kernels.conjugated_pauli_backward_batched_uint_(spo_val_grad, xzk, theta)
+    spo_val_grad_1, spo_val_grad_2 = kernels.conjugate_pauli_rot_backward_batched_uint_(spo_val_grad, xzk, theta)
     x_concat, c_concat, grad_c_concat, final_valid_count = kernels.merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val)
     new_size = kernels.next_pow2(final_valid_count)
     return x_concat, c_concat, grad_c_concat, new_size, final_valid_count
@@ -163,4 +163,3 @@ def get_gradient(spo_val_grad, xzk, theta):
 
     total_sum = jnp.sum(valid_products)
     return jnp.real(total_sum / 2.)
-

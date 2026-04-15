@@ -82,25 +82,25 @@ expected_products_two_sites = {
 
 def _apply_one_site(module, clifford, spo, qubit):
     if clifford == "H":
-        return module.conjugated_pauli_batched_uint32_H(spo, qubit)
+        return module.conjugate_H_forward(spo, qubit)
     if clifford == "S":
-        return module.conjugated_pauli_batched_uint32_S(spo, qubit)
+        return module.conjugate_S_forward(spo, qubit)
     if clifford == "Sdg":
-        return module.conjugated_pauli_batched_uint32_Sdg(spo, qubit)
+        return module.conjugate_Sdg_forward(spo, qubit)
     if clifford == "X":
-        return module.conjugated_pauli_batched_uint32_X(spo, qubit)
+        return module.conjugate_X_forward(spo, qubit)
     if clifford == "Y":
-        return module.conjugated_pauli_batched_uint32_Y(spo, qubit)
+        return module.conjugate_Y_forward(spo, qubit)
     if clifford == "Z":
-        return module.conjugated_pauli_batched_uint32_Z(spo, qubit)
+        return module.conjugate_Z_forward(spo, qubit)
     raise ValueError(f"Unknown Clifford gate: {clifford}")
 
 
 def _apply_two_sites(module, clifford, spo, control_qubit, target_qubit):
     if clifford == "CX":
-        return module.conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit)
+        return module.conjugate_CX_forward(spo, control_qubit, target_qubit)
     if clifford == "CZ":
-        return module.conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit)
+        return module.conjugate_CZ_forward(spo, control_qubit, target_qubit)
     raise ValueError(f"Unknown Clifford gate: {clifford}")
 
 

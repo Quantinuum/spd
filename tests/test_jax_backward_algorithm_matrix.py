@@ -45,10 +45,10 @@ def test_jax_backward_algorithms_match_numpy_on_direct_kernel_basis_expectation(
     sigma_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
     sigma_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32("ZIII"))
 
-    spgo_jax_out, _, grad_jax = jax_backend.conjugated_pauli_backward(
+    spgo_jax_out, _, grad_jax = jax_backend.conjugate_pauli_rot_backward(
         spgo_jax, sigma_jax, np.pi / 3, trunc_val=1e-12, max_num_str=1000
     )
-    spgo_numpy_out, _, grad_numpy = numpy_backend.conjugated_pauli_backward(
+    spgo_numpy_out, _, grad_numpy = numpy_backend.conjugate_pauli_rot_backward(
         spgo_numpy, sigma_numpy, np.pi / 3, trunc_val=1e-12, max_num_str=1000
     )
 

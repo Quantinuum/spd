@@ -54,14 +54,14 @@ def test_jax_forward_algorithms_match_numpy_on_rotation_examples(jax_forward_alg
     sigma_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32(case["sigma"]))
     sigma_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32(case["sigma"]))
 
-    spo_jax_out, _ = jax_backend.conjugated_pauli_forward(
+    spo_jax_out, _ = jax_backend.conjugate_pauli_rot_forward(
         spo_jax,
         sigma_jax,
         case["theta"],
         trunc_val=1e-12,
         max_num_str=1000,
     )
-    spo_numpy_out, _ = numpy_backend.conjugated_pauli_forward(
+    spo_numpy_out, _ = numpy_backend.conjugate_pauli_rot_forward(
         spo_numpy,
         sigma_numpy,
         case["theta"],

@@ -200,7 +200,7 @@ def check_anticommute_uint(xz1, xz2):
     return acq
 
 # ---------------------------------------------------------------------- #
-def conjugated_pauli_forward(spo, xzk, theta, trunc_val, max_num_str=None):
+def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
     """
     [Support uint8, uint16, uint32, uint64]
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
@@ -274,7 +274,7 @@ def tuple_sum(a, b):
 def zeros_like_tuple(t):
     return tuple(0 for _ in t)
 
-def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str=None):
+def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str=None):
     """
     [Support uint8, uint16, uint32, uint64]
     Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
@@ -346,7 +346,7 @@ def conjugated_pauli_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str=N
 # ---------------------------------------------------------------------- #
 
 
-def conjugated_pauli_batched_uint32_H(spo, qubit):
+def conjugate_H_forward(spo, qubit):
     """
     Apply Hadamard gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -383,7 +383,7 @@ def conjugated_pauli_batched_uint32_H(spo, qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_S(spo, qubit):
+def conjugate_S_forward(spo, qubit):
     """
     Apply S gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -418,7 +418,7 @@ def conjugated_pauli_batched_uint32_S(spo, qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
+def conjugate_Sdg_forward(spo, qubit):
     """
     Apply Sdg gate on the specified qubit for a batch of packed (x,z) representations.
 
@@ -453,7 +453,7 @@ def conjugated_pauli_batched_uint32_Sdg(spo, qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
+def conjugate_CX_forward(spo, control_qubit, target_qubit):
     """
     Apply CX gate on the specified qubits for a batch of packed (x,z) representations.
     x_t <-- x_t XOR x_c
@@ -505,13 +505,13 @@ def conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_CY(spo, control_qubit, target_qubit):
-    spo = conjugated_pauli_batched_uint32_S(spo, target_qubit)
-    spo = conjugated_pauli_batched_uint32_CX(spo, control_qubit, target_qubit)
-    spo = conjugated_pauli_batched_uint32_Sdg(spo, target_qubit)
+def conjugate_CY_forward(spo, control_qubit, target_qubit):
+    spo = conjugate_S_forward(spo, target_qubit)
+    spo = conjugate_CX_forward(spo, control_qubit, target_qubit)
+    spo = conjugate_Sdg_forward(spo, target_qubit)
     return spo
 
-def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
+def conjugate_CZ_forward(spo, control_qubit, target_qubit):
     """
     Apply CZ gate on the specified qubits for a batch of packed (x,z) representations.
     z_c' = z_c XOR x_t
@@ -563,7 +563,7 @@ def conjugated_pauli_batched_uint32_CZ(spo, control_qubit, target_qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_X(spo, qubit):
+def conjugate_X_forward(spo, qubit):
     """
     Apply X gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -589,7 +589,7 @@ def conjugated_pauli_batched_uint32_X(spo, qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_X_backward(spgo, qubit):
+def conjugate_X_backward(spgo, qubit):
     """
     Apply X gate on the specified qubit to a SparsePauliGradientOp.
     """
@@ -607,7 +607,7 @@ def conjugated_pauli_batched_uint32_X_backward(spgo, qubit):
 
     return new_spgo
 
-def conjugated_pauli_batched_uint32_Y(spo, qubit):
+def conjugate_Y_forward(spo, qubit):
     """
     Apply Y gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
@@ -635,7 +635,7 @@ def conjugated_pauli_batched_uint32_Y(spo, qubit):
 
     return new_spo
 
-def conjugated_pauli_batched_uint32_Z(spo, qubit):
+def conjugate_Z_forward(spo, qubit):
     """
     Apply Z gate on the specified qubit for a batch of packed (x,z) representations.
     Args:
