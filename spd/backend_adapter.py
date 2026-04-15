@@ -45,6 +45,7 @@ class BackendModule(Protocol):
     def conjugated_pauli_batched_uint32_X(self, spo, qubit): ...
     def conjugated_pauli_batched_uint32_Y(self, spo, qubit): ...
     def conjugated_pauli_batched_uint32_Z(self, spo, qubit): ...
+    def conjugated_pauli_batched_uint32_X_backward(self, spgo, qubit): ...
 
 
 @dataclass
@@ -68,6 +69,9 @@ class BackendAdapter:
             "OpType.X": self.module.conjugated_pauli_batched_uint32_X,
             "OpType.Y": self.module.conjugated_pauli_batched_uint32_Y,
             "OpType.Z": self.module.conjugated_pauli_batched_uint32_Z,
+        }
+        self._clifford_backward_dispatch = {
+            "OpType.X": self.module.conjugated_pauli_batched_uint32_X_backward,
         }
 
     @classmethod
@@ -145,6 +149,27 @@ class BackendAdapter:
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
             return self.module.conjugated_pauli_backward(
                 spgo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
+            )
+
+        if isinstance(operation, SingleQubitClifford):
+            # add Warning this is a temporary hack until we implement proper SPGO support for cliffords
+            import warnings
+            warnings.warn(
+                "Applying a single-qubit Clifford in the backward pass is not fully supported. "
+                "The gradient will be incorrect if the Clifford changes the Pauli type of any rotation generator."
+            )
+            if operation.gate_name not in self._clifford_backward_dispatch:
+                raise NotImplementedError(
+                    f"Backward support for {operation.gate_name} is not implemented."
+                )
+            # Keep num_string as None so non-parameterized Clifford steps are not
+            # appended to the parameter-gradient list in run_circuit.py.
+            return (
+                self._clifford_backward_dispatch[operation.gate_name](
+                    spgo, operation.qubit
+                ),
+                None,
+                None,
             )
 
         if isinstance(operation, SkippedOperation):

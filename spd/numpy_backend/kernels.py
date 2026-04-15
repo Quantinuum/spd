@@ -589,6 +589,24 @@ def conjugated_pauli_batched_uint32_X(spo, qubit):
 
     return new_spo
 
+def conjugated_pauli_batched_uint32_X_backward(spgo, qubit):
+    """
+    Apply X gate on the specified qubit to a SparsePauliGradientOp.
+    """
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = np.uint32(1 << (31 - bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+        z_word = xz[n_words + site]
+        phase = -1.0 if (z_word & bit_mask) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
+
 def conjugated_pauli_batched_uint32_Y(spo, qubit):
     """
     Apply Y gate on the specified qubit for a batch of packed (x,z) representations.

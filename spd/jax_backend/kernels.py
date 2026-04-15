@@ -711,6 +711,29 @@ def conjugated_pauli_batched_uint32_X(spo, qubit):
     return new_spo
 
 @jax.jit
+def conjugated_pauli_batched_uint32_X_backward(spgo, qubit):
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    print("Recompile: conjugated_pauli_batched_uint_X_backward", xz_array.shape, c_array.shape, qubit, "\n")
+    N = xz_array.shape[1] // 2
+    z_array = xz_array[:, N:]
+
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = jnp.uint32(1 << (31 - bit))
+
+    z_word = z_array[:, site]
+    z_bit = (z_word & bit_mask) >> (31 - bit)
+
+    # Compute phase = (-1)^(z_bit)
+    phase = jnp.power(-1.0, z_bit)
+    # return xz_array, phase * c_array
+    new_spgo = SparsePauliGradientOp(xz_array, phase * c_array, phase * grad_c_array)
+    return new_spgo
+
+
+@jax.jit
 def conjugated_pauli_batched_uint32_Y(spo, qubit):
     """
     Apply Y gate on the specified qubit for a batch of packed (x,z) representations.
