@@ -35,3 +35,11 @@ Current state:
 Deferred decision:
 - keep it permanently as a supported alternate path
 - or deprecate/remove it after the new JAX path has enough long-term confidence
+
+### 5. Separate IR from padded backend storage width
+Current state:
+- parsed OpenQASM / pytket operations are lowered with packbit-padded Pauli strings
+
+Possible refactor:
+- keep the IR logical and unpadded
+- move padding/packing to the backend-lowering step instead of the frontend parser

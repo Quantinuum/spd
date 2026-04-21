@@ -57,3 +57,19 @@ def test_parse_openqasm_file_handles_sample_circuit():
     assert isinstance(operations[8], PauliRotation)
     assert operations[8].pauli[0] == "Z"
     assert operations[8].pauli[3] == "Z"
+
+
+def test_parse_openqasm_str_defaults_to_packbit_padding():
+    source = """
+    OPENQASM 2.0;
+    include "qelib1.inc";
+    qreg q[3];
+    rz(pi/2) q[2];
+    """
+
+    system_size, operations = parse_openqasm_str(source)
+
+    assert system_size == 3
+    assert isinstance(operations[0], PauliRotation)
+    assert len(operations[0].pauli) == 32
+    assert operations[0].pauli[:3] == "IIZ"
