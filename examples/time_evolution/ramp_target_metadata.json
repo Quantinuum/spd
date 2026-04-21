@@ -1,0 +1,18 @@
+{
+  "ansatz_steps": 2,
+  "ansatz_style": "first_order_trotter",
+  "backend_algorithm": "search_update_merge",
+  "backend_name": "jax",
+  "g_end": 3.2,
+  "g_start": 0.0,
+  "j_coupling": -1.0,
+  "max_num_str": 10000000,
+  "precision": "single",
+  "system_size": 196,
+  "system_size_x": 14,
+  "system_size_y": 14,
+  "target_steps": 6,
+  "target_style": "linear_ramp_second_order_trotter",
+  "total_time": 0.06,
+  "trunc_val": 0.0005
+}

@@ -73,6 +73,21 @@ class SparsePauliOp(BaseSparsePauliOp):
     def get_OSE(self, alpha: float = 1) -> float:
         return self.get_operator_stabilizer_entropy(alpha)
 
+    def translate(self, x: int, system_size: int):
+        half_words = self.xz_array.shape[1] // 2
+        translated_x = utils.translate_packed_uint_rows_prefix_right(
+            self.xz_array[:, :half_words],
+            x,
+            system_size,
+        )
+        translated_z = utils.translate_packed_uint_rows_prefix_right(
+            self.xz_array[:, half_words:],
+            x,
+            system_size,
+        )
+        translated_xz = jnp.concatenate([translated_x, translated_z], axis=1)
+        return self.__class__(translated_xz, self.c_array)
+
     def __add__(self, other):
         if other == 0:
             return self.__class__(self.xz_array, self.c_array)
