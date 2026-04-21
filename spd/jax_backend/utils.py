@@ -314,3 +314,87 @@ def uint_to_pauli_str(*args, **kwargs):
         return uint64_to_pauli_str(*args, **kwargs)
     else:
         raise ValueError("Packbit not set. Use set_packbit(n) with n in [8,32,64].")
+
+
+def _validate_translation_inputs(packed_rows, system_size: int):
+    if system_size < 1:
+        raise ValueError("system_size must be at least 1.")
+    if _PACKBIT is None:
+        raise ValueError("Packbit not set. Use set_packbit(n) before translating.")
+
+    packed_rows = jnp.asarray(packed_rows)
+    word_bits = _PACKBIT
+    capacity = packed_rows.shape[-1] * word_bits
+    if system_size > capacity:
+        raise ValueError(
+            f"system_size={system_size} exceeds the represented site capacity {capacity}."
+        )
+    return packed_rows, word_bits
+
+
+def _prefix_mask(word_bits: int, active_bits: int, dtype):
+    if active_bits <= 0:
+        return jnp.asarray(0, dtype=dtype)
+
+    full_mask = (1 << word_bits) - 1
+    mask = ((1 << active_bits) - 1) << (word_bits - active_bits)
+    return jnp.asarray(mask & full_mask, dtype=dtype)
+
+
+def translate_packed_uint_rows_prefix_right(packed_rows, x: int, system_size: int):
+    packed_rows, word_bits = _validate_translation_inputs(packed_rows, system_size)
+    squeeze = packed_rows.ndim == 1
+    if squeeze:
+        packed_rows = packed_rows[None, :]
+
+    x_mod = x % system_size
+    if x_mod == 0:
+        return packed_rows[0] if squeeze else jnp.array(packed_rows, copy=True)
+
+    dtype = packed_rows.dtype
+    n_prefix_words = (system_size + word_bits - 1) // word_bits
+    source_positions = (np.arange(system_size) - x_mod) % system_size
+    source_word_idx = jnp.asarray(source_positions // word_bits)
+    source_shift = jnp.asarray(word_bits - 1 - (source_positions % word_bits), dtype=packed_rows.dtype)
+    target_word_idx = np.arange(system_size) // word_bits
+    target_shift = jnp.asarray(word_bits - 1 - (np.arange(system_size) % word_bits), dtype=packed_rows.dtype)
+
+    prefix_masks = jnp.asarray(
+        [
+            int(_prefix_mask(word_bits, min(word_bits, system_size - word_idx * word_bits), dtype))
+            for word_idx in range(n_prefix_words)
+        ],
+        dtype=dtype,
+    )
+
+    source_words = packed_rows[:, source_word_idx]
+    source_bits = jnp.bitwise_and(jnp.right_shift(source_words, source_shift), jnp.asarray(1, dtype=dtype))
+
+    translated_prefix_words = []
+    for word_idx in range(n_prefix_words):
+        positions = np.where(target_word_idx == word_idx)[0]
+        target_word = jnp.asarray(0, dtype=dtype)
+        if len(positions) > 0:
+            shifted_bits = jnp.left_shift(source_bits[:, positions].astype(dtype), target_shift[positions])
+            target_word = jnp.sum(shifted_bits, axis=1, dtype=dtype)
+        preserved_tail = jnp.bitwise_and(
+            packed_rows[:, word_idx],
+            jnp.bitwise_not(prefix_masks[word_idx]),
+        )
+        translated_prefix_words.append(
+            jnp.bitwise_or(
+                preserved_tail,
+                jnp.bitwise_and(target_word, prefix_masks[word_idx]),
+            )
+        )
+
+    translated_prefix = jnp.stack(translated_prefix_words, axis=1)
+    if n_prefix_words < packed_rows.shape[1]:
+        translated_rows = jnp.concatenate(
+            [translated_prefix, packed_rows[:, n_prefix_words:]],
+            axis=1,
+        )
+    else:
+        translated_rows = translated_prefix
+
+    return translated_rows[0] if squeeze else translated_rows

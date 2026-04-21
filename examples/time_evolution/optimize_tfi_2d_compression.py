@@ -1,0 +1,279 @@
+"""Optimize a shallow 2D TFI circuit against cached target evolved X/Z operators."""
+
+from __future__ import annotations
+
+import pickle
+
+import numpy as np
+import spd
+
+from common import (
+    ANSATZ_STEPS,
+    BACKEND_NAME,
+    CONSTANT_SYSTEM_SIZE,
+    GRAD_CHECK_ATOL,
+    GRAD_CHECK_INDICES,
+    GRAD_CHECK_RTOL,
+    MAX_NUM_STR,
+    OPTIMIZATION_HISTORY_NPY_PATH,
+    OPTIMIZATION_HISTORY_TXT_PATH,
+    OPTIMIZATION_RESULT_PATH,
+    OPTIMIZER_METHOD,
+    OPTIMIZER_OPTIONS,
+    TARGET_METADATA_PATH,
+    TARGET_X_PATH,
+    TARGET_Z_PATH,
+    TRUNC_VAL,
+    build_2d_tfi_circuit,
+    build_backend,
+    compress_tfi_gradients,
+    finite_difference,
+    initial_ansatz_parameters,
+    l2_cost,
+    load_metadata,
+    quiet_call,
+    representative_x_dict,
+    representative_z_dict,
+    validate_metadata,
+)
+
+
+def _load_pickle(path):
+    with path.open("rb") as handle:
+        return pickle.load(handle)
+
+
+class CompressionObjective:
+    def __init__(
+        self,
+        target_spo_x,
+        target_spo_z,
+        backend,
+        *,
+        num_steps: int = ANSATZ_STEPS,
+        system_size: int = CONSTANT_SYSTEM_SIZE,
+        circuit_builder=build_2d_tfi_circuit,
+    ):
+        self.target_spo_x = target_spo_x
+        self.target_spo_z = target_spo_z
+        self.backend = backend
+        self.num_steps = num_steps
+        self.system_size = system_size
+        self.circuit_builder = circuit_builder
+        self.history = []
+        self.eval_count = 0
+
+    def _run_forward(self, thetas: np.ndarray):
+        circuit = self.circuit_builder(thetas)
+        _, spo_x = quiet_call(
+            spd.run_pytket_circuit,
+            circuit,
+            representative_x_dict(self.system_size),
+            TRUNC_VAL,
+            MAX_NUM_STR,
+            backend=self.backend,
+        )
+        _, spo_z = quiet_call(
+            spd.run_pytket_circuit,
+            circuit,
+            representative_z_dict(self.system_size),
+            TRUNC_VAL,
+            MAX_NUM_STR,
+            backend=self.backend,
+        )
+        return circuit, spo_x, spo_z
+
+    def cost_only(self, thetas: np.ndarray) -> float:
+        _, spo_x, spo_z = self._run_forward(thetas)
+        return l2_cost(spo_x, self.target_spo_x) + l2_cost(spo_z, self.target_spo_z)
+
+    def __call__(self, thetas):
+        thetas = np.asarray(thetas, dtype=float)
+        expected_shape = (2 * self.num_steps,)
+        if thetas.shape != expected_shape:
+            raise ValueError(f"Expected parameter vector of shape {expected_shape}, got {thetas.shape}.")
+
+        circuit, spo_x, spo_z = self._run_forward(thetas)
+
+        cost_x = l2_cost(spo_x, self.target_spo_x)
+        cost_z = l2_cost(spo_z, self.target_spo_z)
+
+        initial_spgo_x = spd.init_gradient_spo(
+            spo_x,
+            loss_type="l2_difference",
+            target_spo=self.target_spo_x,
+            backend=self.backend,
+        )
+        raw_grads_x, _ = quiet_call(
+            spd.run_pytket_backward_from_spgo,
+            circuit,
+            initial_spgo_x,
+            TRUNC_VAL,
+            MAX_NUM_STR,
+            backend=self.backend,
+        )
+
+        initial_spgo_z = spd.init_gradient_spo(
+            spo_z,
+            loss_type="l2_difference",
+            target_spo=self.target_spo_z,
+            backend=self.backend,
+        )
+        raw_grads_z, _ = quiet_call(
+            spd.run_pytket_backward_from_spgo,
+            circuit,
+            initial_spgo_z,
+            TRUNC_VAL,
+            MAX_NUM_STR,
+            backend=self.backend,
+        )
+
+        grad_x = compress_tfi_gradients(
+            raw_grads_x,
+            system_size=self.system_size,
+            num_steps=self.num_steps,
+        )
+        grad_z = compress_tfi_gradients(
+            raw_grads_z,
+            system_size=self.system_size,
+            num_steps=self.num_steps,
+        )
+        total_grad = grad_x + grad_z
+        total_cost = cost_x + cost_z
+
+        self.eval_count += 1
+        record = {
+            "eval": self.eval_count,
+            "cost": float(total_cost),
+            "cost_x": float(cost_x),
+            "cost_z": float(cost_z),
+            "grad_norm": float(np.linalg.norm(total_grad)),
+            "theta_norm": float(np.linalg.norm(thetas)),
+            "parameters": np.array(thetas, copy=True),
+        }
+        self.history.append(record)
+
+        print(
+            f"[eval {self.eval_count:03d}] cost={total_cost:.8e} "
+            f"(x={cost_x:.8e}, z={cost_z:.8e}) "
+            f"|grad|={record['grad_norm']:.8e} |theta|={record['theta_norm']:.8e}"
+        )
+
+        return float(total_cost), total_grad
+
+
+def run_gradient_sanity_checks(objective: CompressionObjective, initial_params: np.ndarray) -> None:
+    zero_cost_x = l2_cost(objective.target_spo_x, objective.target_spo_x)
+    zero_cost_z = l2_cost(objective.target_spo_z, objective.target_spo_z)
+    if zero_cost_x > 1e-12 or zero_cost_z > 1e-12:
+        raise AssertionError(
+            f"Target self-cost is not zero: X={zero_cost_x}, Z={zero_cost_z}."
+        )
+
+    base_cost, analytical_grad = objective(initial_params)
+    expected_shape = (2 * objective.num_steps,)
+    if analytical_grad.shape != expected_shape:
+        raise AssertionError(
+            f"Expected analytical gradient shape {expected_shape}, got {analytical_grad.shape}."
+        )
+    if not np.all(np.isfinite(analytical_grad)):
+        raise AssertionError("Analytical gradient contains non-finite values.")
+
+    print("Running finite-difference sanity checks.")
+    for index in GRAD_CHECK_INDICES:
+        fd_grad = finite_difference(objective.cost_only, initial_params, index)
+        if not np.isclose(analytical_grad[index], fd_grad, rtol=GRAD_CHECK_RTOL, atol=GRAD_CHECK_ATOL):
+            raise AssertionError(
+                f"Finite-difference mismatch at index {index}: "
+                f"analytical={analytical_grad[index]}, finite_difference={fd_grad}."
+            )
+        print(
+            f"Gradient check index {index}: analytical={analytical_grad[index]:.8e}, "
+            f"finite_difference={fd_grad:.8e}"
+        )
+
+    print(f"Initial cost for optimization: {base_cost:.8e}")
+
+
+def save_history(history, npy_path, txt_path) -> None:
+    history_array = np.asarray(
+        [
+            [
+                entry["eval"],
+                entry["cost"],
+                entry["cost_x"],
+                entry["cost_z"],
+                entry["grad_norm"],
+                entry["theta_norm"],
+            ]
+            for entry in history
+        ],
+        dtype=float,
+    )
+    np.save(npy_path, history_array)
+    np.savetxt(
+        txt_path,
+        history_array,
+        header="eval cost cost_x cost_z grad_norm theta_norm",
+    )
+
+
+if __name__ == "__main__":
+    try:
+        import scipy.optimize
+    except ImportError as exc:
+        raise ImportError(
+            "SciPy is required for this example. Install it in the active environment to run L-BFGS-B."
+        ) from exc
+
+    metadata = load_metadata(TARGET_METADATA_PATH)
+    validate_metadata(metadata)
+
+    target_spo_x = _load_pickle(TARGET_X_PATH)
+    target_spo_z = _load_pickle(TARGET_Z_PATH)
+    backend = build_backend()
+
+    objective = CompressionObjective(
+        target_spo_x,
+        target_spo_z,
+        backend,
+        num_steps=ANSATZ_STEPS,
+        system_size=CONSTANT_SYSTEM_SIZE,
+        circuit_builder=build_2d_tfi_circuit,
+    )
+    initial_params = initial_ansatz_parameters()
+
+    print("Loaded cached target data for time-evolution compression.")
+    print(f"Target metadata backend: {metadata['backend_name']} ({metadata.get('backend_algorithm', 'default')})")
+    print(f"Initial parameter vector shape: {initial_params.shape}")
+
+    run_gradient_sanity_checks(objective, initial_params)
+
+    result = scipy.optimize.minimize(
+        objective,
+        initial_params,
+        method=OPTIMIZER_METHOD,
+        jac=True,
+        options=OPTIMIZER_OPTIONS,
+    )
+
+    if objective.history:
+        initial_cost = objective.history[0]["cost"]
+        final_cost = objective.history[-1]["cost"]
+        if final_cost > initial_cost + 1e-10:
+            raise AssertionError(
+                f"Optimization did not decrease the cost: initial={initial_cost}, final={final_cost}."
+            )
+
+    save_history(objective.history, OPTIMIZATION_HISTORY_NPY_PATH, OPTIMIZATION_HISTORY_TXT_PATH)
+    with OPTIMIZATION_RESULT_PATH.open("wb") as handle:
+        pickle.dump(result, handle)
+
+    print(f"Optimization backend: {BACKEND_NAME}")
+    print(f"Optimizer success: {result.success}")
+    print(f"Optimizer message: {result.message}")
+    print(f"Final cost: {result.fun}")
+    print(f"Final parameters: {result.x}")
+    print(f"Saved result: {OPTIMIZATION_RESULT_PATH}")
+    print(f"Saved history (.npy): {OPTIMIZATION_HISTORY_NPY_PATH}")
+    print(f"Saved history (.txt): {OPTIMIZATION_HISTORY_TXT_PATH}")

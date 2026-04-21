@@ -23,6 +23,10 @@ class BaseSparsePauliOp(ABC):
         """Return the operator stabilizer entropy for the given Renyi order."""
 
     @abstractmethod
+    def translate(self, x: int, system_size: int):
+        """Return a new operator translated cyclically over the physical sites."""
+
+    @abstractmethod
     def __str__(self) -> str:
         """Return a readable string representation."""
 

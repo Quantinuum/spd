@@ -66,6 +66,28 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
     def get_OSE(self, alpha: float = 1.) -> float:
         return self.get_operator_stabilizer_entropy(alpha)
 
+    def translate(self, x: int, system_size: int):
+        result = self.__class__()
+        for packed, coeff in self.items():
+            packed_array = np.asarray(packed)
+            half_words = packed_array.shape[0] // 2
+            translated = np.concatenate(
+                (
+                    utils.translate_packed_uint_row_prefix_right(
+                        packed_array[:half_words],
+                        x,
+                        system_size,
+                    ),
+                    utils.translate_packed_uint_row_prefix_right(
+                        packed_array[half_words:],
+                        x,
+                        system_size,
+                    ),
+                )
+            )
+            result[tuple(np.asarray(translated).tolist())] = coeff
+        return result
+
     def __add__(self, other):
         if other == 0:
             return self.__class__(self)

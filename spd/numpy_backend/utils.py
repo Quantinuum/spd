@@ -291,3 +291,75 @@ def uint_to_pauli_str(*args, **kwargs):
         return uint64_to_pauli_str(*args, **kwargs)
     else:
         raise ValueError("Packbit not set. Use set_packbit(n) with n in [8,32,64].")
+
+
+def _validate_translation_inputs(packed, system_size: int):
+    if system_size < 1:
+        raise ValueError("system_size must be at least 1.")
+    if _PACKBIT is None:
+        raise ValueError("Packbit not set. Use set_packbit(n) before translating.")
+
+    packed = np.asarray(packed)
+    word_bits = _PACKBIT
+    capacity = packed.shape[0] * word_bits
+    if system_size > capacity:
+        raise ValueError(
+            f"system_size={system_size} exceeds the represented site capacity {capacity}."
+        )
+    return packed, word_bits
+
+
+def _prefix_mask(word_bits: int, active_bits: int, dtype) -> np.generic:
+    if active_bits <= 0:
+        return np.array(0, dtype=dtype)[()]
+
+    full_mask = (1 << word_bits) - 1
+    mask = ((1 << active_bits) - 1) << (word_bits - active_bits)
+    return np.array(mask & full_mask, dtype=dtype)[()]
+
+
+def translate_packed_uint_row_prefix_right(packed, x: int, system_size: int) -> np.ndarray:
+    packed, word_bits = _validate_translation_inputs(packed, system_size)
+    x_mod = x % system_size
+    original = np.array(packed, copy=True)
+    translated = np.array(packed, copy=True)
+    if x_mod == 0:
+        return translated
+
+    dtype = translated.dtype
+    n_prefix_words = (system_size + word_bits - 1) // word_bits
+    source_positions = (np.arange(system_size) - x_mod) % system_size
+    source_word_idx = source_positions // word_bits
+    source_shift = word_bits - 1 - (source_positions % word_bits)
+    target_word_idx = np.arange(system_size) // word_bits
+    target_shift = word_bits - 1 - (np.arange(system_size) % word_bits)
+
+    prefix_masks = []
+    for word_idx in range(n_prefix_words):
+        active_bits = min(word_bits, system_size - word_idx * word_bits)
+        prefix_mask = _prefix_mask(word_bits, active_bits, dtype)
+        prefix_masks.append(prefix_mask)
+        translated[word_idx] = np.bitwise_and(
+            translated[word_idx],
+            np.bitwise_not(prefix_mask),
+        )
+
+    one = np.array(1, dtype=dtype)[()]
+    for word_idx, prefix_mask in enumerate(prefix_masks):
+        assembled = np.array(0, dtype=dtype)[()]
+        positions = np.where(target_word_idx == word_idx)[0]
+        for position in positions:
+            source_bit = np.bitwise_and(
+                np.right_shift(original[source_word_idx[position]], int(source_shift[position])),
+                one,
+            )
+            assembled = np.bitwise_or(
+                assembled,
+                np.left_shift(source_bit.astype(dtype, copy=False), int(target_shift[position])),
+            )
+        translated[word_idx] = np.bitwise_or(
+            translated[word_idx],
+            np.bitwise_and(assembled, prefix_mask),
+        )
+
+    return translated

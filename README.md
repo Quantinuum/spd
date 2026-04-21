@@ -186,6 +186,16 @@ arrays.
 Both backends also support `precision="single"` and `precision="double"` for
 real-valued sparse-Pauli coefficients.
 
+Backend-local `SparsePauliOp` objects also support cyclic physical-site
+translation via:
+
+```python
+translated_spo = final_spo.translate(x=2, system_size=6)
+```
+
+This rotates only the first `system_size` physical qubits to the right and
+leaves padded storage sites untouched.
+
 On the JAX backend, the default internal algorithm is now
 `search_update_merge`, which keeps the stored sparse-Pauli operator
 lexicographically sorted. The legacy `stack_sort_merge` path is still
