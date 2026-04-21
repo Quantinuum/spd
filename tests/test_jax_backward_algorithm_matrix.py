@@ -4,7 +4,7 @@ from pytket.circuit import Circuit
 
 import spd
 from spd import jax_backend, numpy_backend
-from tests.helpers import to_grad_term_dict
+from tests.helpers import make_initial_spo, to_grad_term_dict
 
 
 JAX_BACKWARD_ALGORITHMS = ["stack_sort_merge", "search_update_merge"]
@@ -65,19 +65,18 @@ def test_jax_backward_algorithms_match_numpy_on_runner_basis_expectation(jax_alg
     circ = Circuit(1)
     circ.Ry(0.25, 0)
 
-    _, final_spo_jax = spd.run_pytket_circuit(
-        circ, [0], RUNNER_TRUNC_VAL, 1000, backend_name="jax"
+    final_spo_jax = spd.evolve(make_initial_spo("jax", [0], circ.n_qubits), circ, RUNNER_TRUNC_VAL, 1000)
+    final_spo_numpy = spd.evolve(
+        make_initial_spo("numpy", [0], circ.n_qubits),
+        circ,
+        RUNNER_TRUNC_VAL,
+        1000,
     )
-    _, final_spo_numpy = spd.run_pytket_circuit(
-        circ, [0], RUNNER_TRUNC_VAL, 1000, backend_name="numpy"
-    )
+    initial_spgo_jax = spd.init_gradient_spo(final_spo_jax)
+    initial_spgo_numpy = spd.init_gradient_spo(final_spo_numpy)
 
-    grads_jax, spgo_jax = spd.run_pytket_circuit_backward(
-        circ, final_spo_jax, RUNNER_TRUNC_VAL, 1000, backend_name="jax"
-    )
-    grads_numpy, spgo_numpy = spd.run_pytket_circuit_backward(
-        circ, final_spo_numpy, RUNNER_TRUNC_VAL, 1000, backend_name="numpy"
-    )
+    spgo_jax, grads_jax = spd.backpropagate(initial_spgo_jax, circ, RUNNER_TRUNC_VAL, 1000)
+    spgo_numpy, grads_numpy = spd.backpropagate(initial_spgo_numpy, circ, RUNNER_TRUNC_VAL, 1000)
 
     actual_terms = to_grad_term_dict("jax", jax_backend, spgo_jax, n_qubits=1)
     expected_terms = to_grad_term_dict("numpy", numpy_backend, spgo_numpy, n_qubits=1)
@@ -94,31 +93,26 @@ def test_jax_backward_algorithms_match_numpy_on_runner_l2_difference(jax_algorit
     target_jax = jax_backend.create_op({"Z": 0.4, "X": -0.2})
     target_numpy = numpy_backend.create_op({"Z": 0.4, "X": -0.2})
 
-    _, final_spo_jax = spd.run_pytket_circuit(
-        circ, [0], RUNNER_TRUNC_VAL, 1000, backend_name="jax"
-    )
-    _, final_spo_numpy = spd.run_pytket_circuit(
-        circ, [0], RUNNER_TRUNC_VAL, 1000, backend_name="numpy"
-    )
-
-    grads_jax, spgo_jax = spd.run_pytket_circuit_backward(
+    final_spo_jax = spd.evolve(make_initial_spo("jax", [0], circ.n_qubits), circ, RUNNER_TRUNC_VAL, 1000)
+    final_spo_numpy = spd.evolve(
+        make_initial_spo("numpy", [0], circ.n_qubits),
         circ,
-        final_spo_jax,
         RUNNER_TRUNC_VAL,
         1000,
-        backend_name="jax",
+    )
+    initial_spgo_jax = spd.init_gradient_spo(
+        final_spo_jax,
         loss_type="l2_difference",
         target_spo=target_jax,
     )
-    grads_numpy, spgo_numpy = spd.run_pytket_circuit_backward(
-        circ,
+    initial_spgo_numpy = spd.init_gradient_spo(
         final_spo_numpy,
-        RUNNER_TRUNC_VAL,
-        1000,
-        backend_name="numpy",
         loss_type="l2_difference",
         target_spo=target_numpy,
     )
+
+    spgo_jax, grads_jax = spd.backpropagate(initial_spgo_jax, circ, RUNNER_TRUNC_VAL, 1000)
+    spgo_numpy, grads_numpy = spd.backpropagate(initial_spgo_numpy, circ, RUNNER_TRUNC_VAL, 1000)
 
     actual_terms = to_grad_term_dict("jax", jax_backend, spgo_jax, n_qubits=1)
     expected_terms = to_grad_term_dict("numpy", numpy_backend, spgo_numpy, n_qubits=1)

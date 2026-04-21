@@ -1,18 +1,32 @@
-"""Forward and backward runners for SPD circuit execution.
+"""Execution helpers for SPD state propagation.
 
-This module is the thin orchestration layer above the frontend parser and the
-backend adapter. It prepares the run, delegates operation execution, and handles
-progress/logging for forward and backward circuit evaluation.
+This module separates state evolution from expectation evaluation. Public entry
+points accept an existing backend-specific SPO or SPGO together with either a
+`pytket` circuit or a lowered SPD IR operation sequence.
 """
 
+from collections.abc import Sequence
 import math
-import psutil, time, sys
+import time
+
+import numpy as np
+import psutil
 
 from .backend_adapter import BackendAdapter
-from .openqasm_frontend import parse_openqasm_file, parse_openqasm_str
+from .circuit_ir import (
+    PauliRotation,
+    SingleQubitClifford,
+    SkippedOperation,
+    TwoQubitClifford,
+)
 
-
-# [TODO]: Merging the conj, merge into a single function
+_PACKBIT = 32
+_IR_OPERATION_TYPES = (
+    PauliRotation,
+    SingleQubitClifford,
+    TwoQubitClifford,
+    SkippedOperation,
+)
 
 
 def _normalize_max_num_str(backend_name, max_num_str):
@@ -28,46 +42,110 @@ def _compute_padded_system_size(system_size, packbit):
     return packbit * ((system_size + packbit - 1) // packbit)
 
 
-def _make_backend(backend_name, *, packbit=32, precision="single"):
+def _make_backend(backend_name, *, packbit=_PACKBIT, precision="single"):
     return BackendAdapter.from_name(backend_name, packbit=packbit, precision=precision)
 
 
-def _resolve_backend(backend_name, backend, *, packbit=32, precision="single"):
+def _precision_from_dtype(dtype):
+    if dtype is None:
+        return None
+    return "double" if np.dtype(dtype) == np.dtype(np.float64) else "single"
+
+
+def _infer_backend_name_and_precision(state):
+    from . import jax_backend, numpy_backend
+
+    if isinstance(state, numpy_backend.SparsePauliOp):
+        if len(state) == 0:
+            return "numpy", numpy_backend.utils.get_precision()
+        coeff = next(iter(state.values()))
+        return "numpy", _precision_from_dtype(np.asarray(coeff).dtype)
+
+    if isinstance(state, numpy_backend.SparsePauliGradientOp):
+        if len(state) == 0:
+            return "numpy", numpy_backend.utils.get_precision()
+        coeff, _ = next(iter(state.values()))
+        return "numpy", _precision_from_dtype(np.asarray(coeff).dtype)
+
+    if isinstance(state, jax_backend.SparsePauliOp):
+        return "jax", _precision_from_dtype(np.asarray(state.c_array).dtype)
+
+    if isinstance(state, jax_backend.SparsePauliGradientOp):
+        return "jax", _precision_from_dtype(np.asarray(state.c_array).dtype)
+
+    raise TypeError(
+        "state must be a backend-specific SparsePauliOp or SparsePauliGradientOp."
+    )
+
+
+def _resolve_backend_from_state(state, backend, *, state_name="state"):
+    inferred_backend_name, inferred_precision = _infer_backend_name_and_precision(state)
+
     if backend is None:
-        return _make_backend(backend_name, packbit=packbit, precision=precision)
+        return _make_backend(
+            inferred_backend_name,
+            packbit=_PACKBIT,
+            precision=inferred_precision or "single",
+        )
+
     if not isinstance(backend, BackendAdapter):
         raise TypeError("backend must be a BackendAdapter when provided.")
+
+    if not (backend.is_spo_instance(state) or backend.is_spgo_instance(state)):
+        expected_kind = (
+            "SparsePauliGradientOp" if "Gradient" in type(state).__name__ else "SparsePauliOp"
+        )
+        raise TypeError(
+            f"{state_name} must be a {backend.name} {expected_kind} when backend='{backend.name}'."
+        )
+
     return backend
 
 
-def _setup_pytket_run(circ, backend, rebase):
-    """Prepare backend, padded system size, and parsed operations for pytket input."""
+def _setup_pytket_operations(circ, backend, rebase):
+    """Prepare lowered operations for a pytket circuit."""
     from .pytket_frontend import maybe_rebase_pytket_circuit, parse_pytket_circuit
 
     if rebase:
         maybe_rebase_pytket_circuit(circ)
 
-    original_system_size = circ.n_qubits
-    padded_system_size = _compute_padded_system_size(original_system_size, backend.packbit)
-    operations = parse_pytket_circuit(circ, padded_system_size)
-    return backend, original_system_size, padded_system_size, operations
+    padded_system_size = _compute_padded_system_size(circ.n_qubits, backend.packbit)
+    return parse_pytket_circuit(circ, padded_system_size)
 
 
-def _setup_openqasm_file_run(path, backend):
-    """Prepare backend, padded system size, and parsed operations for an OpenQASM file."""
-    with open(path, "r", encoding="utf-8") as f:
-        system_size = _peek_openqasm_system_size(f.read())
-    padded_system_size = _compute_padded_system_size(system_size, backend.packbit)
-    _, operations = parse_openqasm_file(path, padded_system_size)
-    return backend, system_size, padded_system_size, operations
+def _validate_ir_operations(input_circuit):
+    if isinstance(input_circuit, (str, bytes)):
+        raise TypeError(
+            "input_circuit must be a pytket Circuit or a sequence of CircuitOperation objects."
+        )
+    if not isinstance(input_circuit, Sequence):
+        raise TypeError(
+            "input_circuit must be a pytket Circuit or a sequence of CircuitOperation objects."
+        )
+
+    operations = list(input_circuit)
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, _IR_OPERATION_TYPES):
+            raise TypeError(
+                "input_circuit sequence elements must be CircuitOperation instances; "
+                f"got {type(operation)!r} at index {index}."
+            )
+    return operations
 
 
-def _setup_openqasm_str_run(source, backend):
-    """Prepare backend, padded system size, and parsed operations for an OpenQASM string."""
-    system_size = _peek_openqasm_system_size(source)
-    padded_system_size = _compute_padded_system_size(system_size, backend.packbit)
-    _, operations = parse_openqasm_str(source, padded_system_size)
-    return backend, system_size, padded_system_size, operations
+def _normalize_input_circuit(input_circuit, backend, rebase):
+    try:
+        from pytket.circuit import Circuit as PytketCircuit
+    except ImportError:
+        PytketCircuit = None
+
+    if PytketCircuit is not None and isinstance(input_circuit, PytketCircuit):
+        return _setup_pytket_operations(input_circuit, backend, rebase)
+
+    if rebase:
+        raise ValueError("rebase=True is only supported when input_circuit is a pytket Circuit.")
+
+    return _validate_ir_operations(input_circuit)
 
 
 def _print_progress(
@@ -164,23 +242,37 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
     return state, max_num_string, last_stats
 
 
-def _run_forward_operations(
-    backend,
-    operations,
-    *,
-    measure_qubits_data,
-    padded_system_size,
+def _save_state_pickle(state, prefix, trunc_val):
+    import pickle
+
+    with open(f"{prefix}_{trunc_val}.pickle", "wb") as f:
+        pickle.dump(state, f)
+
+
+def evolve(
+    spo,
+    input_circuit,
     trunc_val,
     max_num_str,
-    basis,
-    total_start_time,
-    log_filename=None,
+    *,
+    rebase=False,
     save_strings=False,
+    backend=None,
 ):
-    sparse_pauli_op = backend.create_initial_spo(measure_qubits_data, padded_system_size)
-    sparse_pauli_op, max_num_string, last_stats = _run_operation_loop(
+    """Propagate a backend-specific SPO forward through a circuit."""
+    total_start_time = time.time()
+    backend = _resolve_backend_from_state(spo, backend, state_name="spo")
+    if not backend.is_spo_instance(spo):
+        raise TypeError(
+            f"spo must be a {backend.name} SparsePauliOp when backend='{backend.name}'."
+        )
+
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
+    operations = _normalize_input_circuit(input_circuit, backend, rebase)
+
+    final_spo, _, _ = _run_operation_loop(
         operations[::-1],
-        sparse_pauli_op,
+        spo,
         lambda state, operation: (
             *backend.apply_forward(
                 state,
@@ -193,39 +285,62 @@ def _run_forward_operations(
         total_start_time,
     )
 
-    exp_val = sparse_pauli_op.get_expectation_value(basis=basis)
-
-    if log_filename is not None:
-        assert type(log_filename) == str
-        current_row_size = last_stats["current_row_size"] if last_stats is not None else sparse_pauli_op.get_size()
-        weight_left = last_stats["weight_left"] if last_stats is not None else 1.0
-        with open(log_filename, "a") as f:
-            f.write(f"{trunc_val}, {current_row_size}, {max_num_string}, {weight_left}, {time.time() - total_start_time}, {exp_val}\n")
-
     if save_strings:
-        import pickle
+        _save_state_pickle(final_spo, "strings", trunc_val)
 
-        pickle.dump(sparse_pauli_op, open(f"strings_{trunc_val}.pickle", "wb"))
-
-    return exp_val, sparse_pauli_op
+    return final_spo
 
 
-def _run_backward_operations(
-    backend,
-    operations,
+def init_gradient_spo(
+    final_spo,
     *,
-    initial_spgo,
+    loss_type="basis_expectation",
+    basis="0",
+    target_spo=None,
+    lambda_ose=0.0,
+    alpha=1.0,
+    backend=None,
+):
+    """Construct the initial backward SPGO for the requested terminal loss."""
+    backend = _resolve_backend_from_state(final_spo, backend, state_name="final_spo")
+    if not backend.is_spo_instance(final_spo):
+        raise TypeError(
+            f"final_spo must be a {backend.name} SparsePauliOp when backend='{backend.name}'."
+        )
+    if target_spo is not None and not backend.is_spo_instance(target_spo):
+        raise TypeError(
+            f"target_spo must be a {backend.name} SparsePauliOp when backend='{backend.name}'."
+        )
+    return backend.init_gradient_spo(
+        final_spo,
+        loss_type=loss_type,
+        basis=basis,
+        target_spo=target_spo,
+        lambda_ose=lambda_ose,
+        alpha=alpha,
+    )
+
+
+def backpropagate(
+    spgo,
+    input_circuit,
     trunc_val,
     max_num_str,
-    total_start_time,
+    *,
+    rebase=False,
     save_strings=False,
+    backend=None,
 ):
-    if not backend.is_spgo_instance(initial_spgo):
+    """Propagate a backend-specific SPGO backward through a circuit."""
+    total_start_time = time.time()
+    backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
+    if not backend.is_spgo_instance(spgo):
         raise TypeError(
-            f"initial_spgo must be a {backend.name} SparsePauliGradientOp when backend_name='{backend.name}'."
+            f"spgo must be a {backend.name} SparsePauliGradientOp when backend='{backend.name}'."
         )
 
-    spo_val_grad = initial_spgo
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
+    operations = _normalize_input_circuit(input_circuit, backend, rebase)
     grads = []
 
     def _apply_backward(state, operation):
@@ -239,368 +354,14 @@ def _run_backward_operations(
             grads.append(grad_i)
         return next_state, num_string, grad_i
 
-    spo_val_grad, _, _ = _run_operation_loop(
+    final_spgo, _, _ = _run_operation_loop(
         operations,
-        spo_val_grad,
+        spgo,
         _apply_backward,
         total_start_time,
     )
 
     if save_strings:
-        import pickle
+        _save_state_pickle(final_spgo, "grad_strings", trunc_val)
 
-        pickle.dump(spo_val_grad, open(f"grad_strings_{trunc_val}.pickle", "wb"))
-
-    return grads, spo_val_grad
-
-
-def _peek_openqasm_system_size(source):
-    import re
-
-    matches = re.findall(r"\bqreg\s+[A-Za-z_]\w*\[(\d+)\]\s*;", source)
-    if not matches:
-        raise ValueError("OpenQASM source must declare at least one qreg.")
-    return sum(int(match) for match in matches)
-
-def run_pytket_circuit(circ,
-                       measure_qubits_data,
-                       trunc_val,
-                       max_num_str,
-                       basis='0',
-                       backend_name='numpy',
-                       precision='single',
-                       rebase=False,
-                       log_filename=None,
-                       save_strings=False,
-                       backend=None,
-                       ):
-    """Run a static pytket circuit forward on the selected backend."""
-    total_start_time = time.time()
-    _PACKBIT = 32
-    backend = _resolve_backend(
-        backend_name,
-        backend,
-        packbit=_PACKBIT,
-        precision=precision,
-    )
-    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    backend, _, padded_system_size, operations = _setup_pytket_run(
-        circ, backend, rebase
-    )
-    return _run_forward_operations(
-        backend,
-        operations,
-        measure_qubits_data=measure_qubits_data,
-        padded_system_size=padded_system_size,
-        trunc_val=trunc_val,
-        max_num_str=max_num_str,
-        basis=basis,
-        total_start_time=total_start_time,
-        log_filename=log_filename,
-        save_strings=save_strings,
-    )
-
-def init_gradient_spo(final_spo,
-                      *,
-                      loss_type='basis_expectation',
-                      basis='0',
-                      target_spo=None,
-                      lambda_ose=0.0,
-                      alpha=1.0,
-                      backend_name='numpy',
-                      precision='single',
-                      backend=None,
-                      ):
-    """Construct the initial backward SPGO for the requested terminal loss.
-
-    This is the canonical public initializer for backward propagation.
-    """
-    backend = _resolve_backend(
-        backend_name,
-        backend,
-        packbit=32,
-        precision=precision,
-    )
-    if not backend.is_spo_instance(final_spo):
-        raise TypeError(
-            f"final_spo must be a {backend.name} SparsePauliOp when backend_name='{backend.name}'."
-        )
-    if target_spo is not None and not backend.is_spo_instance(target_spo):
-        raise TypeError(
-            f"target_spo must be a {backend.name} SparsePauliOp when backend_name='{backend.name}'."
-        )
-    return backend.init_gradient_spo(
-        final_spo,
-        loss_type=loss_type,
-        basis=basis,
-        target_spo=target_spo,
-        lambda_ose=lambda_ose,
-        alpha=alpha,
-    )
-
-def run_pytket_backward_from_spgo(circ,
-                                  initial_spgo,
-                                  trunc_val,
-                                  max_num_str,
-                                  backend_name='numpy',
-                                  precision='single',
-                                  rebase=False,
-                                  save_strings=False,
-                                  backend=None,
-                                  ):
-    """Propagate a pre-built gradient SPGO backward through a pytket circuit."""
-    total_start_time = time.time()
-    _PACKBIT = 32
-    backend = _resolve_backend(
-        backend_name,
-        backend,
-        packbit=_PACKBIT,
-        precision=precision,
-    )
-    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    backend, _, _, operations = _setup_pytket_run(
-        circ, backend, rebase
-    )
-    return _run_backward_operations(
-        backend,
-        operations,
-        initial_spgo=initial_spgo,
-        trunc_val=trunc_val,
-        max_num_str=max_num_str,
-        total_start_time=total_start_time,
-        save_strings=save_strings,
-    )
-
-def run_pytket_circuit_backward(circ,
-                                final_spo,
-                                trunc_val,
-                                max_num_str,
-                                basis='0',
-                                backend_name='numpy',
-                                precision='single',
-                                rebase=False,
-                                log_filename=None,
-                                save_strings=False,
-                                loss_type='basis_expectation',
-                                target_spo=None,
-                                lambda_ose=0.0,
-                                alpha=1.0,
-                                backend=None,
-                                ):
-    """Run backward propagation by initializing a terminal loss then propagating it."""
-    initial_spgo = init_gradient_spo(
-        final_spo,
-        loss_type=loss_type,
-        basis=basis,
-        target_spo=target_spo,
-        lambda_ose=lambda_ose,
-        alpha=alpha,
-        backend_name=backend_name,
-        precision=precision,
-        backend=backend,
-    )
-    return run_pytket_backward_from_spgo(
-        circ,
-        initial_spgo,
-        trunc_val,
-        max_num_str,
-        backend_name=backend_name,
-        precision=precision,
-        rebase=rebase,
-        save_strings=save_strings,
-        backend=backend,
-    )
-
-
-def run_openqasm_file(path,
-                      measure_qubits_data,
-                      trunc_val,
-                      max_num_str,
-                      basis='0',
-                      backend_name='numpy',
-                      precision='single',
-                      log_filename=None,
-                      save_strings=False,
-                      backend=None,
-                      ):
-    """Run a static OpenQASM 2 circuit from file on the selected backend."""
-    total_start_time = time.time()
-    _PACKBIT = 32
-    backend = _resolve_backend(
-        backend_name,
-        backend,
-        packbit=_PACKBIT,
-        precision=precision,
-    )
-    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    backend, _, padded_system_size, operations = _setup_openqasm_file_run(
-        path, backend
-    )
-    return _run_forward_operations(
-        backend,
-        operations,
-        measure_qubits_data=measure_qubits_data,
-        padded_system_size=padded_system_size,
-        trunc_val=trunc_val,
-        max_num_str=max_num_str,
-        basis=basis,
-        total_start_time=total_start_time,
-        log_filename=log_filename,
-        save_strings=save_strings,
-    )
-
-
-def run_openqasm_str(source,
-                     measure_qubits_data,
-                     trunc_val,
-                     max_num_str,
-                     basis='0',
-                     backend_name='numpy',
-                     precision='single',
-                     log_filename=None,
-                     save_strings=False,
-                     backend=None,
-                     ):
-    """Run a static OpenQASM 2 circuit from source text on the selected backend."""
-    total_start_time = time.time()
-    _PACKBIT = 32
-    backend = _resolve_backend(
-        backend_name,
-        backend,
-        packbit=_PACKBIT,
-        precision=precision,
-    )
-    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    backend, _, padded_system_size, operations = _setup_openqasm_str_run(
-        source, backend
-    )
-    return _run_forward_operations(
-        backend,
-        operations,
-        measure_qubits_data=measure_qubits_data,
-        padded_system_size=padded_system_size,
-        trunc_val=trunc_val,
-        max_num_str=max_num_str,
-        basis=basis,
-        total_start_time=total_start_time,
-        log_filename=log_filename,
-        save_strings=save_strings,
-    )
-
-
-def run_openqasm_backward_from_spgo(path_or_source,
-                                    initial_spgo,
-                                    trunc_val,
-                                    max_num_str,
-                                    *,
-                                    backend_name='numpy',
-                                    precision='single',
-                                    save_strings=False,
-                                    from_file=True,
-                                    backend=None,
-                                    ):
-    """Propagate a pre-built gradient SPGO backward through an OpenQASM 2 circuit."""
-    total_start_time = time.time()
-    _PACKBIT = 32
-    backend = _resolve_backend(
-        backend_name,
-        backend,
-        packbit=_PACKBIT,
-        precision=precision,
-    )
-    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    if from_file:
-        backend, _, _, operations = _setup_openqasm_file_run(
-            path_or_source, backend
-        )
-    else:
-        backend, _, _, operations = _setup_openqasm_str_run(
-            path_or_source, backend
-        )
-    return _run_backward_operations(
-        backend,
-        operations,
-        initial_spgo=initial_spgo,
-        trunc_val=trunc_val,
-        max_num_str=max_num_str,
-        total_start_time=total_start_time,
-        save_strings=save_strings,
-    )
-
-
-def run_openqasm_file_backward(path,
-                               final_spo,
-                               trunc_val,
-                               max_num_str,
-                               basis='0',
-                               backend_name='numpy',
-                               precision='single',
-                               save_strings=False,
-                               loss_type='basis_expectation',
-                               target_spo=None,
-                               lambda_ose=0.0,
-                               alpha=1.0,
-                               backend=None,
-                               ):
-    """Run backward propagation through an OpenQASM 2 file."""
-    initial_spgo = init_gradient_spo(
-        final_spo,
-        loss_type=loss_type,
-        basis=basis,
-        target_spo=target_spo,
-        lambda_ose=lambda_ose,
-        alpha=alpha,
-        backend_name=backend_name,
-        precision=precision,
-        backend=backend,
-    )
-    return run_openqasm_backward_from_spgo(
-        path,
-        initial_spgo,
-        trunc_val,
-        max_num_str,
-        backend_name=backend_name,
-        precision=precision,
-        save_strings=save_strings,
-        from_file=True,
-        backend=backend,
-    )
-
-
-def run_openqasm_str_backward(source,
-                              final_spo,
-                              trunc_val,
-                              max_num_str,
-                              basis='0',
-                              backend_name='numpy',
-                              precision='single',
-                              save_strings=False,
-                              loss_type='basis_expectation',
-                              target_spo=None,
-                              lambda_ose=0.0,
-                              alpha=1.0,
-                              backend=None,
-                              ):
-    """Run backward propagation through an OpenQASM 2 source string."""
-    initial_spgo = init_gradient_spo(
-        final_spo,
-        loss_type=loss_type,
-        basis=basis,
-        target_spo=target_spo,
-        lambda_ose=lambda_ose,
-        alpha=alpha,
-        backend_name=backend_name,
-        precision=precision,
-        backend=backend,
-    )
-    return run_openqasm_backward_from_spgo(
-        source,
-        initial_spgo,
-        trunc_val,
-        max_num_str,
-        backend_name=backend_name,
-        precision=precision,
-        save_strings=save_strings,
-        from_file=False,
-        backend=backend,
-    )
+    return final_spgo, grads

@@ -6,7 +6,7 @@ import spd
 from spd import jax_backend, numpy_backend
 from spd.backend_adapter import BackendAdapter
 from spd.circuit_ir import PauliRotation
-from tests.helpers import shift_case, to_term_dict
+from tests.helpers import make_initial_spo, shift_case, to_term_dict
 
 
 JAX_FORWARD_ALGORITHMS = ["stack_sort_merge", "search_update_merge"]
@@ -116,20 +116,15 @@ def test_jax_forward_algorithms_match_numpy_on_multistep_runner_flow(jax_forward
     circ.Rz(0.125, 1)
     circ.XXPhase(0.2, 0, 1)
 
-    exp_jax, final_spo_jax = spd.run_pytket_circuit(
+    final_spo_jax = spd.evolve(make_initial_spo("jax", [0, 1], circ.n_qubits), circ, 1e-12, 1000)
+    final_spo_numpy = spd.evolve(
+        make_initial_spo("numpy", [0, 1], circ.n_qubits),
         circ,
-        [0, 1],
         1e-12,
         1000,
-        backend_name="jax",
     )
-    exp_numpy, final_spo_numpy = spd.run_pytket_circuit(
-        circ,
-        [0, 1],
-        1e-12,
-        1000,
-        backend_name="numpy",
-    )
+    exp_jax = final_spo_jax.get_expectation_value()
+    exp_numpy = final_spo_numpy.get_expectation_value()
 
     assert float(np.asarray(exp_jax)) == pytest.approx(float(np.asarray(exp_numpy)), abs=1e-6)
 

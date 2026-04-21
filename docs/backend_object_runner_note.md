@@ -1,18 +1,18 @@
-# Backend Object Runner Summary
+# Backend Object Execution Summary
 
 ## Outcome
-The public runner helpers now support two usage styles:
+The public execution helpers now support two usage styles:
 
 ### Simple path
-Pass `backend_name=...` and let SPD construct the backend internally.
+Create an initial SPO/SPGO and let SPD infer the backend from that state.
 
 ### Advanced path
 Construct a `BackendAdapter` once, configure it as needed, and pass it through
-`backend=...` across forward and backward calls.
+`backend=...` across `evolve(...)`, `init_gradient_spo(...)`, and
+`backpropagate(...)`.
 
 ## Motivation
-This keeps the common workflow simple while avoiding a growing list of
-backend-specific top-level keyword arguments.
+This keeps the common workflow explicit and state-based.
 
 It also gives advanced users a clean way to:
 - reuse one configured backend across multiple calls
@@ -22,23 +22,14 @@ It also gives advanced users a clean way to:
 ## Implemented API
 
 Supported public entry points now accept `backend=None`:
-- `run_pytket_circuit(...)`
+- `evolve(...)`
 - `init_gradient_spo(...)`
-- `run_pytket_backward_from_spgo(...)`
-- `run_pytket_circuit_backward(...)`
-- `run_openqasm_file(...)`
-- `run_openqasm_str(...)`
-- `run_openqasm_backward_from_spgo(...)`
-- `run_openqasm_file_backward(...)`
-- `run_openqasm_str_backward(...)`
-
-`backend_name=` remains supported for backward compatibility and the simple
-workflow.
+- `backpropagate(...)`
 
 When `backend` is provided:
 - it must be a `BackendAdapter`
-- it takes precedence over `backend_name=...`
-- its own `name`, `packbit`, and `precision` settings are used
+- it must match the backend of the provided SPO or SPGO
+- its own `name`, `packbit`, and `precision` settings are reused
 
 ## Example Workflow
 
@@ -47,14 +38,16 @@ import spd
 
 backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
 backend.module.set_algorithm("search_update_merge")
+initial_spo = backend.create_initial_spo({"Z": 1.0})
 
-exp_val, final_spo = spd.run_pytket_circuit(
+final_spo = spd.evolve(
+    initial_spo,
     circ,
-    [0],
     trunc_val=1e-12,
     max_num_str=1000,
     backend=backend,
 )
+exp_val = final_spo.get_expectation_value()
 
 initial_spgo = spd.init_gradient_spo(
     final_spo,
@@ -62,9 +55,9 @@ initial_spgo = spd.init_gradient_spo(
     backend=backend,
 )
 
-grads, final_spgo = spd.run_pytket_backward_from_spgo(
-    circ,
+final_spgo, grads = spd.backpropagate(
     initial_spgo,
+    circ,
     trunc_val=1e-12,
     max_num_str=1000,
     backend=backend,
@@ -74,14 +67,13 @@ grads, final_spgo = spd.run_pytket_backward_from_spgo(
 ## Package Surface
 - `BackendAdapter` is now exported from `spd`
 - the same configured backend can be reused across forward and backward flows
-- runner-side padded sizing and JAX `max_num_str` normalization now follow the
-  passed backend object
+- execution helpers validate that the provided backend matches the input state
 
 ## Validation
 This change is covered by focused end-to-end tests for:
 - configured backend reuse across forward and backward
 - invalid `backend=` rejection
-- continued compatibility with the original `backend_name=` workflow
+- backend inference from SPO / SPGO objects
 
 ## Status
 - [x] `BackendAdapter` exported from `spd`

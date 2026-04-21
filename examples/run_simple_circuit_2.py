@@ -10,16 +10,17 @@ if __name__ == "__main__":
     with file_path.open("rb") as handle:
         circ = pickle.load(handle)
 
-    m_qubits = [0, 1]
     trunc_val = 3e-5
+    backend = spd.BackendAdapter.from_name("numpy", packbit=32)
+    initial_spo = backend.create_initial_spo({"ZZ": 1.0})
 
-    exp_val, final_spo = spd.run_pytket_circuit(
+    final_spo = spd.evolve(
+        initial_spo,
         circ,
-        m_qubits,
         trunc_val,
         int(1e6),
-        backend_name="numpy",
     )
+    exp_val = final_spo.get_expectation_value()
 
     print("circuit file:", file_path.name)
     print("trunc_val:", trunc_val)

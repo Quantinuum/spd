@@ -8,10 +8,10 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 
 ## Recommended Starting Points
 
-- [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using the public SPD API
+- [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `create_initial_spo(...)`, `evolve(...)`, and `get_expectation_value(...)`
 - [`run_simple_circuit_2.py`](run_simple_circuit_2.py): runs a stored sample circuit from [`simple_test_circuit.pkl`](simple_test_circuit.pkl)
 - [`functionality/translate_spo.py`](functionality/translate_spo.py): demonstrates cyclic physical-site translation on a sparse Pauli operator
-- [`open_qasm/run_openqasm_file.py`](open_qasm/run_openqasm_file.py): built-in OpenQASM frontend example with the NumPy backend
+- [`open_qasm/run_openqasm_file.py`](open_qasm/run_openqasm_file.py): built-in OpenQASM parse-plus-execute example with the NumPy backend
 - [`gen_simple_test_circuit.py`](gen_simple_test_circuit.py): regenerates the sample pickled `pytket` circuit used by `run_simple_circuit_2.py`
 
 ## Advanced / Exploratory Scripts

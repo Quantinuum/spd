@@ -19,8 +19,8 @@ JIT-compiled kernels.
 - backends: `numpy`, `jax`
 - circuit model: static circuits without mid-circuit measurement/feedforward
 - execution modes:
-  - forward expectation evaluation
-  - backward propagation over the final sparse-Pauli state
+  - forward state evolution
+  - backward propagation over a sparse-Pauli gradient state
 
 ## Architecture
 
@@ -34,7 +34,7 @@ Key pieces:
 - [`spd/openqasm_frontend.py`](spd/openqasm_frontend.py): built-in OpenQASM 2 parser into the internal IR
 - [`spd/pytket_frontend.py`](spd/pytket_frontend.py): parser from `pytket` into the internal IR
 - [`spd/backend_adapter.py`](spd/backend_adapter.py): execution-facing wrapper around a backend
-- [`spd/run_circuit.py`](spd/run_circuit.py): forward and backward runner entry points
+- [`spd/run_circuit.py`](spd/run_circuit.py): state-evolution entry points
 
 ## Rotation Convention
 
@@ -62,7 +62,7 @@ pip install -e .[pytket]
 
 ## Minimal Usage
 
-Forward expectation:
+Forward evolution plus expectation evaluation:
 
 ```python
 from pytket.circuit import Circuit
@@ -71,13 +71,16 @@ import spd
 circ = Circuit(1)
 circ.Ry(0.25, 0)
 
-exp_val, final_spo = spd.run_pytket_circuit(
+backend = spd.BackendAdapter.from_name("numpy", packbit=32)
+initial_spo = backend.create_initial_spo({"Z": 1.0})
+
+final_spo = spd.evolve(
+    initial_spo,
     circ,
-    [0],          # measure Z on qubit 0
     trunc_val=1e-12,
     max_num_str=1000,
-    backend_name="numpy",
 )
+exp_val = final_spo.get_expectation_value(basis="0")
 ```
 
 Configured backend workflow:
@@ -91,29 +94,35 @@ circ.Ry(0.25, 0)
 
 backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
 backend.module.set_algorithm("search_update_merge")
+initial_spo = backend.create_initial_spo({"Z": 1.0})
 
-exp_val, final_spo = spd.run_pytket_circuit(
+final_spo = spd.evolve(
+    initial_spo,
     circ,
-    [0],
     trunc_val=1e-12,
     max_num_str=1000,
     backend=backend,
 )
+exp_val = final_spo.get_expectation_value(basis="0")
 ```
 
-The same configured backend object can be reused for
-`init_gradient_spo(...)`, `run_pytket_backward_from_spgo(...)`, and the
-corresponding OpenQASM helpers.
+The same configured backend object can be reused for `init_gradient_spo(...)`
+and `backpropagate(...)`.
 
 Backward pass:
 
 ```python
-grads, backward_final_spo = spd.run_pytket_circuit_backward(
-    circ,
+initial_spgo = spd.init_gradient_spo(
     final_spo,
+    loss_type="basis_expectation",
+    basis="0",
+)
+
+backward_final_spgo, grads = spd.backpropagate(
+    initial_spgo,
+    circ,
     trunc_val=1e-12,
     max_num_str=1000,
-    backend_name="numpy",
 )
 ```
 
@@ -124,15 +133,13 @@ initial_spgo = spd.init_gradient_spo(
     final_spo,
     loss_type="basis_expectation",
     basis="0",
-    backend_name="numpy",
 )
 
-grads, backward_final_spgo = spd.run_pytket_backward_from_spgo(
-    circ,
+backward_final_spgo, grads = spd.backpropagate(
     initial_spgo,
+    circ,
     trunc_val=1e-12,
     max_num_str=1000,
-    backend_name="numpy",
 )
 ```
 
@@ -143,25 +150,31 @@ terminal backward object. Supported options are:
 - `loss_type="l2_difference"` with `target_spo=<SparsePauliOp>`
 - optional OSE regularization on either loss via `lambda_ose` and `alpha`
 
-`run_pytket_circuit_backward(...)` remains the convenience wrapper that calls
-`init_gradient_spo(...)` and then `run_pytket_backward_from_spgo(...)`.
+`evolve(...)` and `backpropagate(...)` accept either a `pytket` circuit or a
+lowered SPD IR operation sequence. The backend is inferred from the input
+`SparsePauliOp` / `SparsePauliGradientOp`, and an optional `backend=...`
+argument can be passed for consistency validation and backend reuse.
 
-For advanced configuration, the high-level runners also accept a reusable
-`BackendAdapter` object via `backend=...`. When provided, the runner uses that
-configured backend directly instead of constructing one from `backend_name=...`.
-
-Built-in OpenQASM 2 forward expectation:
+Built-in OpenQASM 2 parse plus execution:
 
 ```python
 import spd
+from spd.openqasm_frontend import parse_openqasm_file
 
-exp_val, final_spo = spd.run_openqasm_file(
+backend = spd.BackendAdapter.from_name("numpy", packbit=32)
+initial_spo = backend.create_initial_spo({"Z": 1.0})
+_, operations = parse_openqasm_file(
     "examples/open_qasm/spd_periodic_trunc5e-4_70steps_time05.qasm",
-    [0],
+    padded_system_size=32,
+)
+
+final_spo = spd.evolve(
+    initial_spo,
+    operations,
     trunc_val=1e-12,
     max_num_str=1000,
-    backend_name="numpy",
 )
+exp_val = final_spo.get_expectation_value(basis="0")
 ```
 
 A runnable example script is available at
@@ -173,10 +186,6 @@ commuting layers. Compatibility checks should therefore compare lowered IR
 semantics or execution results, and file-based regression fixtures should
 prefer a canonical gate presentation instead of relying on descending or
 presentation-only source order.
-
-`create_gradient_spo(...)` is retained as a compatibility alias for
-basis-expectation initialization only; new code should prefer
-`init_gradient_spo(...)`.
 
 `max_num_str` is the maximum number of Pauli strings retained during
 simulation. Both backends treat it as an upper bound. For the JAX backend this
@@ -227,7 +236,7 @@ The test suite includes:
 - kernel-level algebra tests
 - frontend parser tests
 - backend adapter tests
-- end-to-end forward/backward runner tests
+- end-to-end evolve/backpropagate tests
 
 Run the current suite with:
 
@@ -239,4 +248,4 @@ pytest tests
 
 - additional circuit frontends such as Qiskit or Guppy
 - broader end-to-end coverage
-- continued cleanup of the public API and documentation
+- truncation-info tracking on `evolve(...)` / `backpropagate(...)`

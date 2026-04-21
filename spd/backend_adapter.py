@@ -89,16 +89,24 @@ class BackendAdapter:
 
         return cls(name=backend_name, module=backend_module, packbit=packbit, precision=precision)
 
-    def create_initial_spo(self, measure_qubits_data, padded_system_size):
+    def create_initial_spo(self, measure_qubits_data, padded_system_size=None):
         if isinstance(measure_qubits_data, dict):
             key = next(iter(measure_qubits_data))
             if isinstance(key, tuple):
+                if padded_system_size is None:
+                    raise ValueError(
+                        "padded_system_size is required when measurement keys are qubit tuples."
+                    )
                 return self.module.create_measurement_op(measure_qubits_data, padded_system_size)
             if isinstance(key, str):
                 return self.module.create_op(measure_qubits_data)
             raise ValueError("measure_qubits_data dict key must be tuple or str")
 
         if isinstance(measure_qubits_data, list):
+            if padded_system_size is None:
+                raise ValueError(
+                    "padded_system_size is required when measure_qubits_data is a list of qubits."
+                )
             measurement_dict = {tuple(measure_qubits_data): 1.0}
             return self.module.create_measurement_op(measurement_dict, padded_system_size)
 

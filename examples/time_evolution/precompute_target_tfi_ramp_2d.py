@@ -36,22 +36,10 @@ if __name__ == "__main__":
     backend = build_backend()
     target_circuit = build_second_order_linear_ramp_tfi_circuit()
 
-    _, target_spo_x = quiet_call(
-        spd.run_pytket_circuit,
-        target_circuit,
-        representative_x_dict(RAMP_SYSTEM_SIZE),
-        TRUNC_VAL,
-        MAX_NUM_STR,
-        backend=backend,
-    )
-    _, target_spo_z = quiet_call(
-        spd.run_pytket_circuit,
-        target_circuit,
-        representative_z_dict(RAMP_SYSTEM_SIZE),
-        TRUNC_VAL,
-        MAX_NUM_STR,
-        backend=backend,
-    )
+    initial_spo_x = backend.create_initial_spo(representative_x_dict(RAMP_SYSTEM_SIZE))
+    initial_spo_z = backend.create_initial_spo(representative_z_dict(RAMP_SYSTEM_SIZE))
+    target_spo_x = quiet_call(spd.evolve, initial_spo_x, target_circuit, TRUNC_VAL, MAX_NUM_STR, backend=backend)
+    target_spo_z = quiet_call(spd.evolve, initial_spo_z, target_circuit, TRUNC_VAL, MAX_NUM_STR, backend=backend)
 
     _save_pickle(RAMP_TARGET_X_PATH, target_spo_x)
     _save_pickle(RAMP_TARGET_Z_PATH, target_spo_z)

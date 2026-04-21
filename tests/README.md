@@ -18,7 +18,7 @@ This directory contains regression, conformance, and end-to-end tests for the SP
 - [`test_openqasm_pytket_compat.py`](test_openqasm_pytket_compat.py): semantic IR and execution compatibility checks between the built-in OpenQASM frontend and the `pytket` OpenQASM importer
 - [`test_pytket_frontend.py`](test_pytket_frontend.py): frontend parsing from `pytket` into the internal IR
 - [`test_run_openqasm_e2e.py`](test_run_openqasm_e2e.py): end-to-end execution through the built-in OpenQASM path
-- [`test_run_pytket_circuit_e2e.py`](test_run_pytket_circuit_e2e.py): end-to-end forward/backward runner tests
+- [`test_run_pytket_circuit_e2e.py`](test_run_pytket_circuit_e2e.py): end-to-end `evolve(...)` / `backpropagate(...)` tests
 
 ## Backend Conformance
 
@@ -30,7 +30,7 @@ Current coverage includes:
 - `create_measurement_op`
 - `init_gradient_spo`
 - OSE and L2 gradient initialization semantics
-- split backward runner coverage via `run_pytket_backward_from_spgo`
+- split backward coverage via `init_gradient_spo(...)` plus `backpropagate(...)`
 - a simple `conjugate_pauli_rot_forward` rotation case
 - runner-level `max_num_str` behavior for both backends
 

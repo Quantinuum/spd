@@ -10,16 +10,17 @@ if __name__ == "__main__":
     circ.Rx(0.5, 1)
     circ.ZZPhase(0.25, 0, 2)
     circ.measure_all()
-    measure_qubits = [1]
     trunc_val = 3e-5
+    backend = spd.BackendAdapter.from_name("numpy", packbit=32)
+    initial_spo = backend.create_initial_spo({"IZI": 1.0})
 
-    exp_val, final_spo = spd.run_pytket_circuit(
+    final_spo = spd.evolve(
+        initial_spo,
         circ,
-        measure_qubits,
         trunc_val,
         int(1e6),
-        backend_name="numpy",
     )
+    exp_val = final_spo.get_expectation_value()
 
     print("trunc_val:", trunc_val)
     print("expectation value:", exp_val)

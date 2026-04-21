@@ -1,23 +1,31 @@
 """Minimal built-in OpenQASM frontend example."""
 
 from pathlib import Path
+import re
 
 import spd
+from spd.openqasm_frontend import parse_openqasm_file
 
 
 if __name__ == "__main__":
     qasm_path = Path(__file__).resolve().parent / "spd_periodic_trunc5e-4_70steps_time05.qasm"
-    measure_qubits = [0]
     trunc_val = 5e-4
     max_num_str = int(1e6)
+    backend = spd.BackendAdapter.from_name("numpy", packbit=32)
 
-    exp_val, final_spo = spd.run_openqasm_file(
-        str(qasm_path),
-        measure_qubits,
-        trunc_val=trunc_val,
-        max_num_str=max_num_str,
-        backend_name="numpy",
+    source = qasm_path.read_text(encoding="utf-8")
+    system_size = sum(
+        int(match)
+        for match in re.findall(r"\bqreg\s+[A-Za-z_]\w*\[(\d+)\]\s*;", source)
     )
+    padded_system_size = backend.packbit * (
+        (system_size + backend.packbit - 1) // backend.packbit
+    )
+    initial_spo = backend.create_initial_spo({"Z" + "I" * (system_size - 1): 1.0})
+    _, operations = parse_openqasm_file(str(qasm_path), padded_system_size=padded_system_size)
+
+    final_spo = spd.evolve(initial_spo, operations, trunc_val=trunc_val, max_num_str=max_num_str)
+    exp_val = final_spo.get_expectation_value()
 
     print("OpenQASM file:", qasm_path.name)
     print("Expectation value:", exp_val)

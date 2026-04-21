@@ -1,5 +1,7 @@
 import numpy as np
 
+from spd.backend_adapter import BackendAdapter
+
 
 def u32(module, pstr):
     return np.asarray(module.utils.pauli_str_to_uint32(pstr))
@@ -89,3 +91,19 @@ def shift_product_case(case_tuple):
         permutations.append((p1_shifted, p2_shifted, p3_shifted, phase))
 
     return permutations
+
+
+def padded_system_size(num_qubits, packbit=32):
+    return packbit * ((num_qubits + packbit - 1) // packbit)
+
+
+def make_backend(backend_name, precision="single"):
+    return BackendAdapter.from_name(backend_name, packbit=32, precision=precision)
+
+
+def make_initial_spo(backend_name, measure_qubits_data, num_qubits, precision="single"):
+    backend = make_backend(backend_name, precision=precision)
+    return backend.create_initial_spo(
+        measure_qubits_data,
+        padded_system_size(num_qubits, backend.packbit),
+    )
