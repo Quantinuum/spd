@@ -4,7 +4,8 @@
 The public execution helpers now support two usage styles:
 
 ### Simple path
-Create an initial SPO/SPGO and let SPD infer the backend from that state.
+Use `spd.create_spo(...)` for forward setup, then let SPD infer the backend
+from that state.
 
 ### Advanced path
 Construct a `BackendAdapter` once, configure it as needed, and pass it through

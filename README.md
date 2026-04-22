@@ -71,8 +71,7 @@ import spd
 circ = Circuit(1)
 circ.Ry(0.25, 0)
 
-backend = spd.BackendAdapter.from_name("numpy", packbit=32)
-initial_spo = backend.create_initial_spo({"Z": 1.0})
+initial_spo = spd.create_spo({"Z": 1.0})
 
 final_spo = spd.evolve(
     initial_spo,
@@ -94,7 +93,7 @@ circ.Ry(0.25, 0)
 
 backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
 backend.module.set_algorithm("search_update_merge")
-initial_spo = backend.create_initial_spo({"Z": 1.0})
+initial_spo = spd.create_spo({"Z": 1.0}, backend=backend)
 
 final_spo = spd.evolve(
     initial_spo,
@@ -161,11 +160,9 @@ Built-in OpenQASM 2 parse plus execution:
 import spd
 from spd.openqasm_frontend import parse_openqasm_file
 
-backend = spd.BackendAdapter.from_name("numpy", packbit=32)
-initial_spo = backend.create_initial_spo({"Z": 1.0})
+initial_spo = spd.create_spo({"Z": 1.0})
 _, operations = parse_openqasm_file(
     "examples/open_qasm/spd_periodic_trunc5e-4_70steps_time05.qasm",
-    padded_system_size=32,
 )
 
 final_spo = spd.evolve(

@@ -11,8 +11,7 @@ if __name__ == "__main__":
     circ.ZZPhase(0.25, 0, 2)
     circ.measure_all()
     trunc_val = 3e-5
-    backend = spd.BackendAdapter.from_name("numpy", packbit=32)
-    initial_spo = backend.create_initial_spo({"IZI": 1.0})
+    initial_spo = spd.create_spo({"IZI": 1.0})
 
     final_spo = spd.evolve(
         initial_spo,

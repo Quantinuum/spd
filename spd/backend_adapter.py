@@ -92,15 +92,14 @@ class BackendAdapter:
     def create_initial_spo(self, measure_qubits_data, padded_system_size=None):
         if isinstance(measure_qubits_data, dict):
             key = next(iter(measure_qubits_data))
-            if isinstance(key, tuple):
-                if padded_system_size is None:
-                    raise ValueError(
-                        "padded_system_size is required when measurement keys are qubit tuples."
-                    )
-                return self.module.create_measurement_op(measure_qubits_data, padded_system_size)
             if isinstance(key, str):
                 return self.module.create_op(measure_qubits_data)
-            raise ValueError("measure_qubits_data dict key must be tuple or str")
+            if isinstance(key, tuple):
+                raise ValueError(
+                    "Tuple-key measurement dicts are no longer supported. "
+                    "Use a list of qubits for Z-basis measurements or a string-key dict for general Paulis."
+                )
+            raise ValueError("measure_qubits_data dict key must be str")
 
         if isinstance(measure_qubits_data, list):
             if padded_system_size is None:

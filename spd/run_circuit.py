@@ -46,6 +46,14 @@ def _make_backend(backend_name, *, packbit=_PACKBIT, precision="single"):
     return BackendAdapter.from_name(backend_name, packbit=packbit, precision=precision)
 
 
+def _resolve_backend_for_creation(backend_name, backend, *, precision="single"):
+    if backend is None:
+        return _make_backend(backend_name, packbit=_PACKBIT, precision=precision)
+    if not isinstance(backend, BackendAdapter):
+        raise TypeError("backend must be a BackendAdapter when provided.")
+    return backend
+
+
 def _precision_from_dtype(dtype):
     if dtype is None:
         return None
@@ -247,6 +255,33 @@ def _save_state_pickle(state, prefix, trunc_val):
 
     with open(f"{prefix}_{trunc_val}.pickle", "wb") as f:
         pickle.dump(state, f)
+
+
+def create_spo(
+    data,
+    *,
+    system_size=None,
+    backend_name="numpy",
+    precision="single",
+    backend=None,
+):
+    """Construct a backend-specific SparsePauliOp from simple user-facing data."""
+    backend = _resolve_backend_for_creation(
+        backend_name,
+        backend,
+        precision=precision,
+    )
+
+    if isinstance(data, list):
+        if system_size is None:
+            raise ValueError("system_size is required when data is a list of qubits.")
+        padded_system_size = _compute_padded_system_size(system_size, backend.packbit)
+        return backend.create_initial_spo(data, padded_system_size)
+
+    if isinstance(data, dict):
+        return backend.create_initial_spo(data)
+
+    raise ValueError("data must be a list of qubits or a string-key dict of Pauli coefficients.")
 
 
 def evolve(

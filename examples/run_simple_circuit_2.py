@@ -11,8 +11,7 @@ if __name__ == "__main__":
         circ = pickle.load(handle)
 
     trunc_val = 3e-5
-    backend = spd.BackendAdapter.from_name("numpy", packbit=32)
-    initial_spo = backend.create_initial_spo({"ZZ": 1.0})
+    initial_spo = spd.create_spo({"ZZ": 1.0})
 
     final_spo = spd.evolve(
         initial_spo,
