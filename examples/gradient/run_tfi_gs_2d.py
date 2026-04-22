@@ -40,7 +40,7 @@ if __name__ == "__main__":
     def get_f_g(thetas):
         circ = tfi_setup.gen_2d_TFI_ansatz_circuit(thetas, system_size_x, system_size_y)
         initial_spo = spd.create_spo(ham_dict, backend=backend)
-        final_spo = spd.evolve(
+        final_spo, _ = spd.evolve(
             initial_spo,
             circ,
             trunc_val,
@@ -49,7 +49,7 @@ if __name__ == "__main__":
         )
         exp_val = final_spo.get_expectation_value(basis=basis)
         initial_spgo = spd.init_gradient_spo(final_spo, basis=basis, backend=backend)
-        _, raw_grads = spd.backpropagate(
+        _, raw_grads, _ = spd.backpropagate(
             initial_spgo,
             circ,
             trunc_val,

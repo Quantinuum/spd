@@ -37,6 +37,7 @@ if __name__ == "__main__":
 
     full_H = False
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=full_H)
+    E_weight = np.sqrt(np.sum(np.array(list(ham_dict.values())) ** 2))
     factor = system_size if full_H else 1
 
     trunc_val = 1e-14
@@ -48,16 +49,18 @@ if __name__ == "__main__":
     def get_f_g(thetas):
         circ = tfi_setup.gen_1d_TFI_ansatz_circuit(thetas, system_size, basis)
         initial_spo = spd.create_spo(ham_dict, backend=backend)
-        final_spo = spd.evolve(
+        final_spo, forward_info = spd.evolve(
             initial_spo,
             circ,
             trunc_val,
             max_num_str=max_num_str,
             backend=backend,
         )
+        # print(f"RUN INFO: sum-l1-norm-err: {info['sum_truncated_l1_norm']}, sum-l2-norm-err: {info['sum_truncated_l2_norm']}, total-l2-norm-err: {info['total_truncated_l2_norm']}")
+        E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
         exp_val = final_spo.get_expectation_value(basis=basis)
         initial_spgo = spd.init_gradient_spo(final_spo, basis=basis, backend=backend)
-        _, raw_grads = spd.backpropagate(
+        _, raw_grads, backward_info = spd.backpropagate(
             initial_spgo,
             circ,
             trunc_val,
@@ -71,7 +74,7 @@ if __name__ == "__main__":
         lambda_reg = 0.0
         cost = exp_val + lambda_reg * np.sum(thetas ** 2)
         print("step = ", len(history), "num_param", number_of_parameters)
-        print(f"cost: {cost}, <E>: {exp_val}, Reg: {0.03 * np.sum(thetas**2)}")
+        print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
         history.append(cost)
         return exp_val, grads

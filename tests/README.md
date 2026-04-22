@@ -19,6 +19,7 @@ This directory contains regression, conformance, and end-to-end tests for the SP
 - [`test_pytket_frontend.py`](test_pytket_frontend.py): frontend parsing from `pytket` into the internal IR
 - [`test_run_openqasm_e2e.py`](test_run_openqasm_e2e.py): end-to-end execution through the built-in OpenQASM path
 - [`test_run_pytket_circuit_e2e.py`](test_run_pytket_circuit_e2e.py): end-to-end `evolve(...)` / `backpropagate(...)` tests
+- [`test_truncation_info.py`](test_truncation_info.py): focused truncation-info checks for both backends
 
 ## Backend Conformance
 

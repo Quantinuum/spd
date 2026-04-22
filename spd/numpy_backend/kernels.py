@@ -199,7 +199,14 @@ def check_anticommute_uint(xz1, xz2):
     acq = (term1 - term2) % 2  # 0 = commute, 1 = anticommute
     return acq
 
-# ---------------------------------------------------------------------- #
+
+def _make_step_info(num_str_truncated, truncated_l1_norm, truncated_l2_sq_norm):
+    return {
+        "num_str_truncated": int(num_str_truncated),
+        "truncated_l1_norm": float(truncated_l1_norm),
+        "truncated_l2_norm": float(np.sqrt(truncated_l2_sq_norm)),
+    }
+
 def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
     """
     [Support uint8, uint16, uint32, uint64]
@@ -250,6 +257,10 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
         # Update Q
         new_spo_c[Q] = -plus_or_minus * sin_theta * c_P + cos_theta * c_Q
 
+    num_str_truncated = 0
+    truncated_l1_norm = 0.0
+    truncated_l2_sq_norm = 0.0
+
     if max_num_str is not None and max_num_str < len(new_spo_c):
         vals = np.abs(np.array(list(new_spo_c.values())))
         vals.sort()
@@ -258,15 +269,28 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
 
     # 4. Truncate small values
     for P in list(new_spo_c.keys()):
-        if np.abs(new_spo_c[P]) < trunc_val:
+        coeff = new_spo_c[P]
+        magnitude = float(np.abs(coeff))
+        if magnitude < trunc_val:
+            num_str_truncated += 1
+            truncated_l1_norm += magnitude
+            truncated_l2_sq_norm += magnitude * magnitude
             new_spo_c.pop(P)
 
     if max_num_str is not None and len(new_spo_c) > max_num_str:
         ranked_keys = sorted(new_spo_c, key=lambda key: np.abs(new_spo_c[key]), reverse=True)
         for key in ranked_keys[max_num_str:]:
+            magnitude = float(np.abs(new_spo_c[key]))
+            num_str_truncated += 1
+            truncated_l1_norm += magnitude
+            truncated_l2_sq_norm += magnitude * magnitude
             new_spo_c.pop(key)
 
-    return new_spo_c, len(new_spo_c)
+    return (
+        new_spo_c,
+        len(new_spo_c),
+        _make_step_info(num_str_truncated, truncated_l1_norm, truncated_l2_sq_norm),
+    )
 # ---------------------------------------------------------------------- #
 def tuple_sum(a, b):
     return tuple(a[i] + b[i] for i in range(len(a)))
@@ -326,6 +350,10 @@ def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_st
         new_spo_c[P] = rot_P_vals
         new_spo_c[Q] = rot_Q_vals
 
+    num_str_truncated = 0
+    truncated_l1_norm = 0.0
+    truncated_l2_sq_norm = 0.0
+
     if max_num_str is not None and max_num_str < len(new_spo_c):
         vals = np.abs(np.array([value_grad[0] for value_grad in new_spo_c.values()]))
         vals.sort()
@@ -334,15 +362,29 @@ def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_st
 
     # 4. Truncate small values
     for P in list(new_spo_c.keys()):
-        if np.abs(new_spo_c[P][0]) < trunc_val:
+        coeff = new_spo_c[P][0]
+        magnitude = float(np.abs(coeff))
+        if magnitude < trunc_val:
+            num_str_truncated += 1
+            truncated_l1_norm += magnitude
+            truncated_l2_sq_norm += magnitude * magnitude
             new_spo_c.pop(P)
 
     if max_num_str is not None and len(new_spo_c) > max_num_str:
         ranked_keys = sorted(new_spo_c, key=lambda key: np.abs(new_spo_c[key][0]), reverse=True)
         for key in ranked_keys[max_num_str:]:
+            magnitude = float(np.abs(new_spo_c[key][0]))
+            num_str_truncated += 1
+            truncated_l1_norm += magnitude
+            truncated_l2_sq_norm += magnitude * magnitude
             new_spo_c.pop(key)
 
-    return new_spo_c, len(new_spo_c), theta_grad
+    return (
+        new_spo_c,
+        len(new_spo_c),
+        theta_grad,
+        _make_step_info(num_str_truncated, truncated_l1_norm, truncated_l2_sq_norm),
+    )
 # ---------------------------------------------------------------------- #
 
 

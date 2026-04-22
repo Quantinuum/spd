@@ -13,7 +13,7 @@ if __name__ == "__main__":
     trunc_val = 3e-5
     initial_spo = spd.create_spo({"IZI": 1.0})
 
-    final_spo = spd.evolve(
+    final_spo, info = spd.evolve(
         initial_spo,
         circ,
         trunc_val,
@@ -24,3 +24,4 @@ if __name__ == "__main__":
     print("trunc_val:", trunc_val)
     print("expectation value:", exp_val)
     print("final SPO size:", final_spo.get_size())
+    print("run info;", info)

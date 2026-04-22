@@ -61,11 +61,11 @@ if __name__ == "__main__":
             print("\n Truncation Value:", trunc_val)
 
             initial_spo = spd.create_spo(ham_dict, backend=backend)
-            final_spo = spd.evolve(initial_spo, circ, trunc_val, max_num_str=int(1e6), backend=backend)
+            final_spo, _ = spd.evolve(initial_spo, circ, trunc_val, max_num_str=int(1e6), backend=backend)
             exp_val = final_spo.get_expectation_value(basis=basis)
 
             initial_spgo = spd.init_gradient_spo(final_spo, basis=basis, backend=backend)
-            _, grads = spd.backpropagate(
+            _, grads, _ = spd.backpropagate(
                 initial_spgo,
                 circ,
                 trunc_val,
@@ -96,12 +96,12 @@ if __name__ == "__main__":
             print("========================================================")
 
             initial_spo = spd.create_spo(ham_dict, backend=backend)
-            final_spo = spd.evolve(initial_spo, circ, trunc_val, max_num_str=int(1e6), backend=backend)
+            final_spo, _ = spd.evolve(initial_spo, circ, trunc_val, max_num_str=int(1e6), backend=backend)
             exp_val = final_spo.get_expectation_value(basis=basis)
             print(f"\n Expectation Value[trunc={trunc_val}]:", exp_val)
 
             initial_spgo = spd.init_gradient_spo(final_spo, basis=basis, backend=backend)
-            _, grads = spd.backpropagate(
+            _, grads, _ = spd.backpropagate(
                 initial_spgo,
                 circ,
                 trunc_val,
@@ -140,7 +140,7 @@ if __name__ == "__main__":
                         ham_dict = tfi_setup.gen_2d_Hamiltonian_dict(system_size_x, system_size_y, g=3.1)
 
                     new_initial_spo = spd.create_spo(ham_dict, backend=backend)
-                    new_final_spo = spd.evolve(
+                    new_final_spo, _ = spd.evolve(
                         new_initial_spo,
                         new_circ,
                         trunc_val,

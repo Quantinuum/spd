@@ -56,7 +56,7 @@ if __name__ == "__main__":
             thetas, system_size_x, system_size_y
         )
         initial_spo = spd.create_spo(ham_dict, backend=backend)
-        final_spo = spd.evolve(
+        final_spo, _ = spd.evolve(
             initial_spo,
             circ,
             trunc_val,
@@ -70,7 +70,7 @@ if __name__ == "__main__":
             lambda_ose=lambda_ose,
             backend=backend,
         )
-        _, raw_grads = spd.backpropagate(
+        _, raw_grads, _ = spd.backpropagate(
             initial_spgo,
             circ,
             trunc_val,

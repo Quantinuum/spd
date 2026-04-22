@@ -29,6 +29,40 @@ _IR_OPERATION_TYPES = (
 )
 
 
+def _zero_step_info():
+    return {
+        "num_str_truncated": 0,
+        "truncated_l1_norm": 0.0,
+        "truncated_l2_norm": 0.0,
+    }
+
+
+def _init_history():
+    return {
+        "num_str_truncated": [],
+        "truncated_l1_norm": [],
+        "truncated_l2_norm": [],
+    }
+
+
+def _append_step_info(history, step_info):
+    history["num_str_truncated"].append(int(step_info["num_str_truncated"]))
+    history["truncated_l1_norm"].append(float(step_info["truncated_l1_norm"]))
+    history["truncated_l2_norm"].append(float(step_info["truncated_l2_norm"]))
+
+
+def _finalize_info(history):
+    total_l2_sq = sum(value * value for value in history["truncated_l2_norm"])
+    return {
+        "history": history,
+        "num_steps_tracked": len(history["num_str_truncated"]),
+        "sum_num_str_truncated": sum(history["num_str_truncated"]),
+        "sum_truncated_l1_norm": sum(history["truncated_l1_norm"]),
+        "sum_truncated_l2_norm": sum(history["truncated_l2_norm"]),
+        "total_truncated_l2_norm": math.sqrt(total_l2_sq),
+    }
+
+
 def _normalize_max_num_str(backend_name, max_num_str):
     max_num_str = int(max_num_str)
     if max_num_str < 1:
@@ -198,10 +232,13 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
     initial_weight = state.get_norm_square()
     max_num_string = 0
     last_stats = None
+    history = _init_history()
 
     for command_idx, operation in enumerate(operations):
         t0 = time.time()
-        state, num_string, extra = apply_fn(state, operation)
+        state, num_string, extra, step_info = apply_fn(state, operation)
+        if step_info is not None:
+            _append_step_info(history, step_info)
         if num_string is None:
             continue
 
@@ -247,7 +284,7 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
             end="\n",
         )
 
-    return state, max_num_string, last_stats
+    return state, max_num_string, last_stats, _finalize_info(history)
 
 
 def _save_state_pickle(state, prefix, trunc_val):
@@ -305,17 +342,14 @@ def evolve(
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     operations = _normalize_input_circuit(input_circuit, backend, rebase)
 
-    final_spo, _, _ = _run_operation_loop(
+    final_spo, _, _, info = _run_operation_loop(
         operations[::-1],
         spo,
-        lambda state, operation: (
-            *backend.apply_forward(
-                state,
-                operation,
-                trunc_val=trunc_val,
-                max_num_str=max_num_str,
-            ),
-            None,
+        lambda state, operation: backend.apply_forward(
+            state,
+            operation,
+            trunc_val=trunc_val,
+            max_num_str=max_num_str,
         ),
         total_start_time,
     )
@@ -323,7 +357,7 @@ def evolve(
     if save_strings:
         _save_state_pickle(final_spo, "strings", trunc_val)
 
-    return final_spo
+    return final_spo, info
 
 
 def init_gradient_spo(
@@ -379,17 +413,17 @@ def backpropagate(
     grads = []
 
     def _apply_backward(state, operation):
-        next_state, num_string, grad_i = backend.apply_backward(
+        next_state, num_string, grad_i, step_info = backend.apply_backward(
             state,
             operation,
             trunc_val=trunc_val,
             max_num_str=max_num_str,
         )
-        if num_string is not None:
+        if grad_i is not None:
             grads.append(grad_i)
-        return next_state, num_string, grad_i
+        return next_state, num_string, grad_i, step_info
 
-    final_spgo, _, _ = _run_operation_loop(
+    final_spgo, _, _, info = _run_operation_loop(
         operations,
         spgo,
         _apply_backward,
@@ -399,4 +433,4 @@ def backpropagate(
     if save_strings:
         _save_state_pickle(final_spgo, "grad_strings", trunc_val)
 
-    return final_spgo, grads
+    return final_spgo, grads, info

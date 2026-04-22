@@ -114,8 +114,8 @@ def test_openqasm_ir_matches_pytket_forward_execution(backend_name):
     _, native_ops = parse_openqasm_str(source, padded_system_size=32)
     initial_spo = make_initial_spo(backend_name, [1], 3)
 
-    native_final_spo = spd.evolve(initial_spo, native_ops, trunc_val=1e-12, max_num_str=1000)
-    pytket_final_spo = spd.evolve(initial_spo, pytket_circ, trunc_val=1e-12, max_num_str=1000)
+    native_final_spo, _ = spd.evolve(initial_spo, native_ops, trunc_val=1e-12, max_num_str=1000)
+    pytket_final_spo, _ = spd.evolve(initial_spo, pytket_circ, trunc_val=1e-12, max_num_str=1000)
 
     native_exp_val = native_final_spo.get_expectation_value()
     pytket_exp_val = pytket_final_spo.get_expectation_value()
@@ -139,8 +139,8 @@ def test_openqasm_file_ir_matches_pytket_forward_execution_on_sample(backend_nam
     _, native_ops = parse_openqasm_file(path, padded_system_size=32)
     initial_spo = make_initial_spo(backend_name, measurement, 8)
 
-    native_final_spo = spd.evolve(initial_spo, native_ops, trunc_val=1e-4, max_num_str=100000)
-    pytket_final_spo = spd.evolve(initial_spo, pytket_circ, trunc_val=1e-4, max_num_str=100000)
+    native_final_spo, _ = spd.evolve(initial_spo, native_ops, trunc_val=1e-4, max_num_str=100000)
+    pytket_final_spo, _ = spd.evolve(initial_spo, pytket_circ, trunc_val=1e-4, max_num_str=100000)
 
     native_exp_val = native_final_spo.get_expectation_value()
     pytket_exp_val = pytket_final_spo.get_expectation_value()

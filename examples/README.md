@@ -10,6 +10,7 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 
 - [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `spd.create_spo(...)`, `evolve(...)`, and `get_expectation_value(...)`
 - [`run_simple_circuit_2.py`](run_simple_circuit_2.py): runs a stored sample circuit from [`simple_test_circuit.pkl`](simple_test_circuit.pkl)
+- [`run_with_info.py`](run_with_info.py): minimal example showing how to inspect the truncation `info` returned by `evolve(...)`
 - [`functionality/translate_spo.py`](functionality/translate_spo.py): demonstrates cyclic physical-site translation on a sparse Pauli operator
 - [`open_qasm/run_openqasm_file.py`](open_qasm/run_openqasm_file.py): built-in OpenQASM parse-plus-execute example with the NumPy backend
 - [`gen_simple_test_circuit.py`](gen_simple_test_circuit.py): regenerates the sample pickled `pytket` circuit used by `run_simple_circuit_2.py`
@@ -18,7 +19,6 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 
 These are still intentionally kept because they are useful for inspection, comparison, or ad hoc investigation:
 
-- [`benchmark/benchmark_2d_obc_xx_z_stepwise.py`](benchmark/benchmark_2d_obc_xx_z_stepwise.py): advanced benchmark example that reproduces the legacy SPD stepwise OBC workload using SPD internals
 - [`run_forward_backward.py`](run_forward_backward.py): older forward/backward exploration with backend internals
 - [`run_hard.py`](run_hard.py): heavier large-circuit run on a stored pickled circuit
 - [`estimate_tfi_y_prop.py`](estimate_tfi_y_prop.py): TFI-specific exploratory script

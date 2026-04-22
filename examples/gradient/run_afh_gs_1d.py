@@ -46,7 +46,7 @@ if __name__ == "__main__":
     def get_f_g(thetas):
         circ = heisenberg_setup.gen_1d_AFH_ansatz_circuit(thetas, system_size)
         initial_spo = spd.create_spo(ham_dict, backend=backend)
-        final_spo = spd.evolve(
+        final_spo, _ = spd.evolve(
             initial_spo,
             circ,
             trunc_val,
@@ -59,7 +59,7 @@ if __name__ == "__main__":
             basis=basis,
             backend=backend,
         )
-        _, raw_grads = spd.backpropagate(
+        _, raw_grads, _ = spd.backpropagate(
             initial_spgo,
             circ,
             trunc_val,

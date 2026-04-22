@@ -41,7 +41,7 @@ backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
 backend.module.set_algorithm("stack_sort_merge")
 initial_spo = backend.create_initial_spo({"Z": 1.0})
 
-final_spo = spd.evolve(
+final_spo, info = spd.evolve(
     initial_spo,
     circ,
     trunc_val=1e-12,
@@ -56,7 +56,7 @@ initial_spgo = spd.init_gradient_spo(
     backend=backend,
 )
 
-final_spgo, grads = spd.backpropagate(
+final_spgo, grads, backward_info = spd.backpropagate(
     initial_spgo,
     circ,
     trunc_val=1e-12,

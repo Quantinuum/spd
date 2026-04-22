@@ -42,9 +42,9 @@ def test_numpy_double_precision_is_float64_across_forward_and_backward():
         [0],
         padded_system_size(circ.n_qubits, adapter.packbit),
     )
-    final_spo = spd.evolve(initial_spo, circ, 1e-12, MAX_NUM_STR, backend=adapter)
+    final_spo, _ = spd.evolve(initial_spo, circ, 1e-12, MAX_NUM_STR, backend=adapter)
     initial_spgo = spd.init_gradient_spo(final_spo, backend=adapter)
-    spgo, grads = spd.backpropagate(initial_spgo, circ, 1e-12, MAX_NUM_STR, backend=adapter)
+    spgo, grads, _ = spd.backpropagate(initial_spgo, circ, 1e-12, MAX_NUM_STR, backend=adapter)
     exp_val = final_spo.get_expectation_value()
 
     final_coeff = np.asarray(next(iter(final_spo.values())))

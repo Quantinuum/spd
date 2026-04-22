@@ -32,14 +32,14 @@ def test_jax_search_update_merge_backward_matches_numpy_reference():
         sigma_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
         sigma_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32("ZIII"))
 
-        spgo_jax_out, _, grad_jax = jax_backend.conjugate_pauli_rot_backward(
+        spgo_jax_out, _, grad_jax, _ = jax_backend.conjugate_pauli_rot_backward(
             spgo_jax,
             sigma_jax,
             np.pi / 3,
             trunc_val=1e-12,
             max_num_str=1000,
         )
-        spgo_numpy_out, _, grad_numpy = numpy_backend.conjugate_pauli_rot_backward(
+        spgo_numpy_out, _, grad_numpy, _ = numpy_backend.conjugate_pauli_rot_backward(
             spgo_numpy,
             sigma_numpy,
             np.pi / 3,

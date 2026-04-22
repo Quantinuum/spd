@@ -6,7 +6,7 @@ import spd
 from spd import jax_backend, numpy_backend
 from spd.backend_adapter import BackendAdapter
 from spd.circuit_ir import PauliRotation
-from tests.helpers import make_initial_spo, shift_case, to_term_dict
+from tests.helpers import assert_info_consistent, make_initial_spo, shift_case, to_term_dict
 
 
 JAX_FORWARD_ALGORITHMS = ["stack_sort_merge", "search_update_merge"]
@@ -54,14 +54,14 @@ def test_jax_forward_algorithms_match_numpy_on_rotation_examples(jax_forward_alg
     sigma_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32(case["sigma"]))
     sigma_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32(case["sigma"]))
 
-    spo_jax_out, _ = jax_backend.conjugate_pauli_rot_forward(
+    spo_jax_out, _, step_info_jax = jax_backend.conjugate_pauli_rot_forward(
         spo_jax,
         sigma_jax,
         case["theta"],
         trunc_val=1e-12,
         max_num_str=1000,
     )
-    spo_numpy_out, _ = numpy_backend.conjugate_pauli_rot_forward(
+    spo_numpy_out, _, step_info_numpy = numpy_backend.conjugate_pauli_rot_forward(
         spo_numpy,
         sigma_numpy,
         case["theta"],
@@ -72,6 +72,8 @@ def test_jax_forward_algorithms_match_numpy_on_rotation_examples(jax_forward_alg
     actual_terms = to_term_dict("jax", jax_backend, spo_jax_out, n_qubits=8)
     expected_terms = to_term_dict("numpy", numpy_backend, spo_numpy_out, n_qubits=8)
     assert actual_terms == pytest.approx(expected_terms, abs=1e-6)
+    assert step_info_jax["num_str_truncated"] >= 0
+    assert step_info_numpy["num_str_truncated"] >= 0
 
 
 @pytest.mark.parametrize("jax_forward_algorithm", JAX_FORWARD_ALGORITHMS, indirect=True)
@@ -89,13 +91,13 @@ def test_jax_forward_algorithms_match_numpy_through_backend_adapter(jax_forward_
         theta=np.pi / 3,
     )
 
-    spo_jax_out, _ = jax_adapter.apply_forward(
+    spo_jax_out, _, _, step_info_jax = jax_adapter.apply_forward(
         spo_jax,
         operation,
         trunc_val=1e-12,
         max_num_str=1000,
     )
-    spo_numpy_out, _ = numpy_adapter.apply_forward(
+    spo_numpy_out, _, _, step_info_numpy = numpy_adapter.apply_forward(
         spo_numpy,
         operation,
         trunc_val=1e-12,
@@ -105,6 +107,8 @@ def test_jax_forward_algorithms_match_numpy_through_backend_adapter(jax_forward_
     actual_terms = to_term_dict("jax", jax_backend, spo_jax_out, n_qubits=4)
     expected_terms = to_term_dict("numpy", numpy_backend, spo_numpy_out, n_qubits=4)
     assert actual_terms == pytest.approx(expected_terms, abs=1e-6)
+    assert step_info_jax["num_str_truncated"] >= 0
+    assert step_info_numpy["num_str_truncated"] >= 0
 
 
 @pytest.mark.parametrize("jax_forward_algorithm", JAX_FORWARD_ALGORITHMS, indirect=True)
@@ -116,8 +120,8 @@ def test_jax_forward_algorithms_match_numpy_on_multistep_runner_flow(jax_forward
     circ.Rz(0.125, 1)
     circ.XXPhase(0.2, 0, 1)
 
-    final_spo_jax = spd.evolve(make_initial_spo("jax", [0, 1], circ.n_qubits), circ, 1e-12, 1000)
-    final_spo_numpy = spd.evolve(
+    final_spo_jax, info_jax = spd.evolve(make_initial_spo("jax", [0, 1], circ.n_qubits), circ, 1e-12, 1000)
+    final_spo_numpy, info_numpy = spd.evolve(
         make_initial_spo("numpy", [0, 1], circ.n_qubits),
         circ,
         1e-12,
@@ -131,3 +135,5 @@ def test_jax_forward_algorithms_match_numpy_on_multistep_runner_flow(jax_forward
     actual_terms = to_term_dict("jax", jax_backend, final_spo_jax, n_qubits=2)
     expected_terms = to_term_dict("numpy", numpy_backend, final_spo_numpy, n_qubits=2)
     assert actual_terms == pytest.approx(expected_terms, abs=1e-6)
+    assert_info_consistent(info_jax, expected_steps=3)
+    assert_info_consistent(info_numpy, expected_steps=3)

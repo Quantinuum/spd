@@ -7,6 +7,15 @@ from .. import kernels
 from ..sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 
 
+def _step_info_from_tail(c_concat, slice_size):
+    removed_coeffs = jnp.abs(c_concat[slice_size:])
+    return {
+        "num_str_truncated": int(c_concat.shape[0] - slice_size),
+        "truncated_l1_norm": float(jnp.sum(removed_coeffs)),
+        "truncated_l2_norm": float(jnp.sqrt(jnp.sum(removed_coeffs ** 2))),
+    }
+
+
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a sparse-Pauli operator using the lexicographic search/update path.
@@ -20,14 +29,12 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     jax.block_until_ready(new_size)
 
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
-    final_valid_count = min(int(final_valid_count), slice_size)
-
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     jax.block_until_ready(c_)
 
     new_spo = SparsePauliOp(x_, c_)
-    return new_spo, final_valid_count
+    return new_spo, min(int(final_valid_count), slice_size), _step_info_from_tail(c_concat, slice_size)
 
 
 @jax.jit
@@ -194,7 +201,6 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     jax.block_until_ready(new_size)
 
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
-    final_valid_count = min(int(final_valid_count), slice_size)
 
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
@@ -202,7 +208,12 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     jax.block_until_ready(grad_c_)
 
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
-    return new_spo_val_grad, final_valid_count, grad_i
+    return (
+        new_spo_val_grad,
+        min(int(final_valid_count), slice_size),
+        grad_i,
+        _step_info_from_tail(c_concat, slice_size),
+    )
 
 
 @jax.jit
@@ -295,4 +306,3 @@ def backward_search_update_merge_jitted(spo_val_grad, xzk, theta, trunc_val):
     sorted_grad_c = final_grad_c_masked[sort_indices]
 
     return sorted_xz, sorted_c, sorted_grad_c, new_size, final_valid_count, grad_i
-

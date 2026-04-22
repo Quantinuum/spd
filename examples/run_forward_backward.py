@@ -18,7 +18,7 @@ if __name__ == "__main__":
     max_num_str = int(1e6)
 
     initial_spo = spd.create_spo([0, 1], system_size=circ.n_qubits, backend=backend)
-    final_spo = spd.evolve(
+    final_spo, forward_info = spd.evolve(
         initial_spo,
         circ,
         trunc_val=trunc_val,
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     exp_val = final_spo.get_expectation_value(basis="0")
 
     initial_spgo = spd.init_gradient_spo(final_spo, basis="0", backend=backend)
-    final_spgo, grads = spd.backpropagate(
+    final_spgo, grads, backward_info = spd.backpropagate(
         initial_spgo,
         circ,
         trunc_val=trunc_val,
@@ -41,5 +41,7 @@ if __name__ == "__main__":
     print("trunc_val:", trunc_val)
     print("expectation value:", exp_val)
     print("forward SPO size:", final_spo.get_size())
+    print("forward truncated strings:", forward_info["sum_num_str_truncated"])
     print("backward SPGO size:", final_spgo.get_size())
     print("number of gradients:", len(grads))
+    print("backward truncated strings:", backward_info["sum_num_str_truncated"])

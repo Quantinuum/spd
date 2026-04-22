@@ -73,7 +73,7 @@ circ.Ry(0.25, 0)
 
 initial_spo = spd.create_spo({"Z": 1.0})
 
-final_spo = spd.evolve(
+final_spo, info = spd.evolve(
     initial_spo,
     circ,
     trunc_val=1e-12,
@@ -95,7 +95,7 @@ backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
 backend.module.set_algorithm("stack_sort_merge")
 initial_spo = spd.create_spo({"Z": 1.0}, backend=backend)
 
-final_spo = spd.evolve(
+final_spo, info = spd.evolve(
     initial_spo,
     circ,
     trunc_val=1e-12,
@@ -117,7 +117,7 @@ initial_spgo = spd.init_gradient_spo(
     basis="0",
 )
 
-backward_final_spgo, grads = spd.backpropagate(
+backward_final_spgo, grads, backward_info = spd.backpropagate(
     initial_spgo,
     circ,
     trunc_val=1e-12,
@@ -134,12 +134,20 @@ initial_spgo = spd.init_gradient_spo(
     basis="0",
 )
 
-backward_final_spgo, grads = spd.backpropagate(
+backward_final_spgo, grads, backward_info = spd.backpropagate(
     initial_spgo,
     circ,
     trunc_val=1e-12,
     max_num_str=1000,
 )
+```
+
+Truncation info inspection:
+
+```python
+print(info["history"]["num_str_truncated"])
+print(info["sum_truncated_l1_norm"])
+print(info["total_truncated_l2_norm"])
 ```
 
 `init_gradient_spo(...)` is the primary public entry point for constructing the
@@ -150,9 +158,10 @@ terminal backward object. Supported options are:
 - optional OSE regularization on either loss via `lambda_ose` and `alpha`
 
 `evolve(...)` and `backpropagate(...)` accept either a `pytket` circuit or a
-lowered SPD IR operation sequence. The backend is inferred from the input
-`SparsePauliOp` / `SparsePauliGradientOp`, and an optional `backend=...`
-argument can be passed for consistency validation and backend reuse.
+lowered SPD IR operation sequence. They now always return an `info` dictionary
+as the last output. The backend is inferred from the input `SparsePauliOp` /
+`SparsePauliGradientOp`, and an optional `backend=...` argument can be passed
+for consistency validation and backend reuse.
 
 Built-in OpenQASM 2 parse plus execution:
 
@@ -165,7 +174,7 @@ _, operations = parse_openqasm_file(
     "examples/open_qasm/spd_periodic_trunc5e-4_70steps_time05.qasm",
 )
 
-final_spo = spd.evolve(
+final_spo, info = spd.evolve(
     initial_spo,
     operations,
     trunc_val=1e-12,
@@ -176,6 +185,8 @@ exp_val = final_spo.get_expectation_value(basis="0")
 
 A runnable example script is available at
 [`examples/open_qasm/run_openqasm_file.py`](examples/open_qasm/run_openqasm_file.py).
+For a minimal truncation-history example, see
+[`examples/run_with_info.py`](examples/run_with_info.py).
 
 When comparing the built-in OpenQASM frontend against the `pytket.qasm` import
 path, note that `pytket` may canonicalize or reorder imported gates within
@@ -244,4 +255,3 @@ pytest tests
 
 - additional circuit frontends such as Qiskit or Guppy
 - broader end-to-end coverage
-- truncation-info tracking on `evolve(...)` / `backpropagate(...)`

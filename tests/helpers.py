@@ -12,6 +12,38 @@ def assert_phase_close(actual, expected, atol=1e-6):
     assert np.isclose(np.imag(actual), np.imag(expected), atol=atol)
 
 
+def assert_step_info_close(actual, expected, atol=1e-6):
+    assert actual["num_str_truncated"] == expected["num_str_truncated"]
+    assert np.isclose(actual["truncated_l1_norm"], expected["truncated_l1_norm"], atol=atol)
+    assert np.isclose(actual["truncated_l2_norm"], expected["truncated_l2_norm"], atol=atol)
+
+
+def assert_info_consistent(info, expected_steps=None, atol=1e-6):
+    history = info["history"]
+    lengths = {len(history[key]) for key in history}
+    assert len(lengths) == 1
+    num_steps = lengths.pop()
+    if expected_steps is not None:
+        assert num_steps == expected_steps
+    assert info["num_steps_tracked"] == num_steps
+    assert info["sum_num_str_truncated"] == sum(history["num_str_truncated"])
+    assert np.isclose(
+        info["sum_truncated_l1_norm"],
+        sum(history["truncated_l1_norm"]),
+        atol=atol,
+    )
+    assert np.isclose(
+        info["sum_truncated_l2_norm"],
+        sum(history["truncated_l2_norm"]),
+        atol=atol,
+    )
+    assert np.isclose(
+        info["total_truncated_l2_norm"],
+        np.sqrt(sum(value * value for value in history["truncated_l2_norm"])),
+        atol=atol,
+    )
+
+
 def to_term_dict(backend_name, module, spo, n_qubits=8):
     terms = {}
 

@@ -83,7 +83,7 @@ def test_rotation_examples_8q(backend, case):
 
     spo_in = module.create_op({case["P"]: case["a_p"]})
 
-    spo_out, _ = module.conjugate_pauli_rot_forward(
+    spo_out, _, _ = module.conjugate_pauli_rot_forward(
         spo_in,
         sigma_u,
         case["theta"],
