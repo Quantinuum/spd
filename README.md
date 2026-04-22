@@ -92,7 +92,7 @@ circ = Circuit(1)
 circ.Ry(0.25, 0)
 
 backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
-backend.module.set_algorithm("search_update_merge")
+backend.module.set_algorithm("stack_sort_merge")
 initial_spo = spd.create_spo({"Z": 1.0}, backend=backend)
 
 final_spo = spd.evolve(
@@ -202,10 +202,9 @@ translated_spo = final_spo.translate(x=2, system_size=6)
 This rotates only the first `system_size` physical qubits to the right and
 leaves padded storage sites untouched.
 
-On the JAX backend, the default internal algorithm is now
-`search_update_merge`, which keeps the stored sparse-Pauli operator
-lexicographically sorted. The legacy `stack_sort_merge` path is still
-available for comparison or fallback via the lower-level JAX backend module:
+On the JAX backend, the default internal algorithm is
+`stack_sort_merge`. The alternate `search_update_merge` path remains
+available via the lower-level JAX backend module:
 
 ```python
 import spd.jax_backend as jax_backend

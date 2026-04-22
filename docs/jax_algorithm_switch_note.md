@@ -7,7 +7,7 @@ stable public backend surface:
 - `search_update_merge`
 - `stack_sort_merge`
 
-The default algorithm is now `search_update_merge`.
+The default algorithm is now `stack_sort_merge`.
 
 ## Final Structure
 - `spd/jax_backend/kernels.py`
@@ -73,7 +73,7 @@ keyword argument.
 - [x] Internal algorithm selection added
 - [x] `search_update_merge` implemented for forward
 - [x] `search_update_merge` implemented for backward
-- [x] `search_update_merge` made the default
+- [x] `stack_sort_merge` restored as the default
 - [x] Algorithm-specific code moved into `algorithms/`
 - [x] Focused forward/backward matrix tests added
 - [x] Benchmark comparison performed

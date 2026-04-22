@@ -10,16 +10,19 @@ import heisenberg_setup
 
 
 if __name__ == "__main__":
-    backend_name = "jax"
     precision = "double"
     basis = "0"
+    backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
+    backend.module.set_algorithm("stack_sort_merge")
 
     num_layers = int(sys.argv[1])
     niter = int(sys.argv[2])
 
     number_of_parameters = 4 * num_layers
-    system_size_x = 4
-    # system_size_x = num_layers * 3 * 2 + 2
+    # The light cone spread out by +2 in one spatial direction per gate type.
+    # There are XX, YY, ZZ gates.
+    # So per layer it increases + 6
+    system_size_x = num_layers * 6 + 2
     system_size_y = system_size_x
     system_size = system_size_x * system_size_y
     full_H = False
@@ -52,24 +55,27 @@ if __name__ == "__main__":
         circ = heisenberg_setup.gen_2d_AFH_ansatz_circuit(
             thetas, system_size_x, system_size_y
         )
-        exp_val, final_spo = spd.run_pytket_circuit(
+        initial_spo = spd.create_spo(ham_dict, backend=backend)
+        final_spo = spd.evolve(
+            initial_spo,
             circ,
-            ham_dict,
             trunc_val,
             max_num_str=max_num_str,
-            precision=precision,
-            basis=basis,
-            backend_name=backend_name,
+            backend=backend,
         )
-        raw_grads, _ = spd.run_pytket_circuit_backward(
-            circ,
+        exp_val = final_spo.get_expectation_value(basis=basis)
+        initial_spgo = spd.init_gradient_spo(
             final_spo,
+            basis=basis,
+            lambda_ose=lambda_ose,
+            backend=backend,
+        )
+        _, raw_grads = spd.backpropagate(
+            initial_spgo,
+            circ,
             trunc_val,
             max_num_str=max_num_str,
-            precision=precision,
-            basis=basis,
-            backend_name=backend_name,
-            lambda_ose=lambda_ose,
+            backend=backend,
         )
         grads = heisenberg_setup.combine_afh_parameter_grads(
             raw_grads, system_size, stagger_signs, grad_multiplicities

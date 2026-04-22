@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from spd import jax_backend, numpy_backend
+from spd.jax_backend.kernels import DEFAULT_ALGORITHM
 from tests.helpers import to_term_dict
 
 
@@ -16,8 +17,8 @@ def test_jax_set_algorithm_rejects_unknown_name():
         jax_backend.set_algorithm("not_a_real_algorithm")
 
 
-def test_jax_default_algorithm_is_search_update_merge():
-    assert jax_backend.get_algorithm() == "search_update_merge"
+def test_jax_default_algorithm_is_stack_sort_merge():
+    assert DEFAULT_ALGORITHM == "stack_sort_merge"
 
 
 def test_jax_stack_sort_merge_selection_preserves_current_rotation_behavior():

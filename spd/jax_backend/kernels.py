@@ -31,7 +31,7 @@ def set_precision(precision: str):
     utils.set_precision(precision)
 
 
-DEFAULT_ALGORITHM = "search_update_merge"
+DEFAULT_ALGORITHM = "stack_sort_merge"
 SUPPORTED_ALGORITHMS = (
     "stack_sort_merge",
     "search_update_merge",

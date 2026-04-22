@@ -38,7 +38,7 @@ When `backend` is provided:
 import spd
 
 backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
-backend.module.set_algorithm("search_update_merge")
+backend.module.set_algorithm("stack_sort_merge")
 initial_spo = backend.create_initial_spo({"Z": 1.0})
 
 final_spo = spd.evolve(
