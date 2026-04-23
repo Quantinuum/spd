@@ -25,6 +25,7 @@ if __name__ == "__main__":
     number_of_parameters = int(sys.argv[1])
     num_layers = int(number_of_parameters // 2)
     system_size = 2 * num_layers + 3
+    lambda_ose = 0.0
 
     g = float(sys.argv[2])
     basis = sys.argv[3]
@@ -56,10 +57,17 @@ if __name__ == "__main__":
             max_num_str=max_num_str,
             backend=backend,
         )
-        # print(f"RUN INFO: sum-l1-norm-err: {info['sum_truncated_l1_norm']}, sum-l2-norm-err: {info['sum_truncated_l2_norm']}, total-l2-norm-err: {info['total_truncated_l2_norm']}")
+
         E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
+        OSE = final_spo.get_OSE()
+
         exp_val = final_spo.get_expectation_value(basis=basis)
-        initial_spgo = spd.init_gradient_spo(final_spo, basis=basis, backend=backend)
+        initial_spgo = spd.init_gradient_spo(
+            final_spo,
+            basis=basis,
+            lambda_ose=lambda_ose,
+            backend=backend,
+        )
         _, raw_grads, backward_info = spd.backpropagate(
             initial_spgo,
             circ,
@@ -69,15 +77,16 @@ if __name__ == "__main__":
         )
         grads = combine_grads(raw_grads, number_of_parameters, system_size)
         exp_val /= factor
+        E_err_estimate /= factor
         grads /= factor
 
         lambda_reg = 0.0
-        cost = exp_val + lambda_reg * np.sum(thetas ** 2)
+        cost = exp_val + lambda_ose * OSE + lambda_reg * np.sum(thetas ** 2)
         print("step = ", len(history), "num_param", number_of_parameters)
-        print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}")
+        print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
         history.append(cost)
-        return exp_val, grads
+        return cost, grads
 
     initial_cost, initial_grads = get_f_g(random_thetas)
     print("\n Expectation Value:", initial_cost)

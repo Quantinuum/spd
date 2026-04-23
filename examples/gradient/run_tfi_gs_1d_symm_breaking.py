@@ -43,6 +43,7 @@ if __name__ == "__main__":
     random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
 
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=False)
+    E_weight = np.sqrt(np.sum(np.array(list(ham_dict.values())) ** 2))
     history = []
 
     def get_f_g(thetas):
@@ -51,13 +52,15 @@ if __name__ == "__main__":
 
         circ = tfi_setup.gen_1d_TFI_symm_breaking_ansatz_circuit(thetas, system_size)
         initial_spo = spd.create_spo(ham_dict, backend=backend)
-        final_spo, _ = spd.evolve(
+        final_spo, forward_info = spd.evolve(
             initial_spo,
             circ,
             trunc_val,
             max_num_str=max_num_str,
             backend=backend,
         )
+        E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
+        OSE = final_spo.get_OSE()
         exp_val = final_spo.get_expectation_value(basis=basis)
         initial_spgo = spd.init_gradient_spo(
             final_spo,
@@ -65,7 +68,7 @@ if __name__ == "__main__":
             lambda_ose=lambda_ose,
             backend=backend,
         )
-        _, raw_grads, _ = spd.backpropagate(
+        _, raw_grads, backward_info = spd.backpropagate(
             initial_spgo,
             circ,
             trunc_val,
@@ -75,12 +78,12 @@ if __name__ == "__main__":
         grads = combine_grads(raw_grads, number_of_parameters, system_size)
 
         lambda_reg = 0.0
-        cost = exp_val + lambda_ose * final_spo.get_OSE() + lambda_reg * np.sum(thetas ** 2)
+        cost = exp_val + lambda_ose * OSE + lambda_reg * np.sum(thetas ** 2)
         print("step = ", len(history), "num_param", number_of_parameters)
-        print(f"cost: {cost}, <E>: {exp_val}, Reg: {0.03 * np.sum(thetas**2)}")
+        print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
         history.append(cost)
-        return exp_val, grads
+        return cost, grads
 
     initial_cost, initial_grads = get_f_g(random_thetas)
     print("\n Expectation Value:", initial_cost)

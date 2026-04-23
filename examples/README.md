@@ -8,7 +8,7 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 
 ## Recommended Starting Points
 
-- [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `spd.create_spo(...)`, `evolve(...)`, and `get_expectation_value(...)`
+- [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `spd.create_spo(...)`, `evolve(...)`, `get_expectation_value(...)`, and truncation info
 - [`gradient/run_tfi_gs_1d.py`](gradient/run_tfi_gs_1d.py): main forward + backward workflow with `create_spo(...)`, `evolve(...)`, `init_gradient_spo(...)`, and `backpropagate(...)`
 - [`run_with_backend_adapter.py`](run_with_backend_adapter.py): small example with a reusable configured backend
 - [`run_simple_circuit_2.py`](run_simple_circuit_2.py): runs a stored sample circuit from [`simple_test_circuit.pkl`](simple_test_circuit.pkl)

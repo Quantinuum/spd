@@ -42,6 +42,7 @@ if __name__ == "__main__":
     ham_dict = heisenberg_setup.gen_2d_Hamiltonian_dict(
         system_size_x, system_size_y, full=full_H
     )
+    E_weight = np.sqrt(np.sum(np.array(list(ham_dict.values())) ** 2))
     trunc_val = 1e-4
     max_num_str = 1e6
     lambda_ose = 1e-2
@@ -56,13 +57,14 @@ if __name__ == "__main__":
             thetas, system_size_x, system_size_y
         )
         initial_spo = spd.create_spo(ham_dict, backend=backend)
-        final_spo, _ = spd.evolve(
+        final_spo, forward_info = spd.evolve(
             initial_spo,
             circ,
             trunc_val,
             max_num_str=max_num_str,
             backend=backend,
         )
+        E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
         exp_val = final_spo.get_expectation_value(basis=basis)
         initial_spgo = spd.init_gradient_spo(
             final_spo,
@@ -70,7 +72,7 @@ if __name__ == "__main__":
             lambda_ose=lambda_ose,
             backend=backend,
         )
-        _, raw_grads, _ = spd.backpropagate(
+        _, raw_grads, backward_info = spd.backpropagate(
             initial_spgo,
             circ,
             trunc_val,
@@ -81,16 +83,16 @@ if __name__ == "__main__":
             raw_grads, system_size, stagger_signs, grad_multiplicities
         )
         OSE = final_spo.get_OSE()
-        cost = exp_val + lambda_ose * OSE
-
         exp_val /= factor
+        E_err_estimate /= factor
         grads /= factor
-        history.append(exp_val)
+        cost = exp_val + lambda_ose * OSE
+        history.append(cost)
 
         print("step = ", len(history) - 1, "num_param", number_of_parameters)
-        print(f"E = {exp_val/4}, OSE = {OSE}, cost = {cost}")
+        print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
-        return exp_val, grads
+        return cost, grads
 
     initial_cost, initial_grads = get_f_g(random_thetas)
     print("\n Expectation Value:", initial_cost)

@@ -19,7 +19,7 @@ Useful entry points:
 
 Recommended examples:
 
-- [`examples/run_simple_circuit_1.py`](./examples/run_simple_circuit_1.py): smallest forward workflow
+- [`examples/run_simple_circuit_1.py`](./examples/run_simple_circuit_1.py): smallest forward workflow, including truncation info
 - [`examples/gradient/run_tfi_gs_1d.py`](./examples/gradient/run_tfi_gs_1d.py): forward + backward workflow inside an optimization loop
 - [`examples/run_with_backend_adapter.py`](./examples/run_with_backend_adapter.py): reusable configured backend
 
@@ -36,6 +36,13 @@ If you want to run the `pytket` examples:
 ```bash
 pip install -e .[pytket]
 ```
+
+If you want to run this on the GPU with JAX,
+you need to first install
+```bash
+pip install "jax[cuda12]"
+```
+
 
 ## Current Scope
 

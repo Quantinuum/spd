@@ -1,4 +1,4 @@
-"""Minimal in-code `pytket` example for forward expectation evaluation."""
+"""Minimal in-code `pytket` example for forward evaluation and truncation info."""
 
 from pytket.circuit import Circuit
 
@@ -10,18 +10,23 @@ if __name__ == "__main__":
     circ.Rx(0.5, 1)
     circ.ZZPhase(0.25, 0, 2)
     circ.measure_all()
+
     trunc_val = 3e-5
+    max_num_str = int(1e6)
     initial_spo = spd.create_spo({"IZI": 1.0})
 
     final_spo, info = spd.evolve(
         initial_spo,
         circ,
-        trunc_val,
-        int(1e6),
+        trunc_val=trunc_val,
+        max_num_str=max_num_str,
     )
     exp_val = final_spo.get_expectation_value()
 
     print("trunc_val:", trunc_val)
+    print("max_num_str:", max_num_str)
     print("expectation value:", exp_val)
     print("final SPO size:", final_spo.get_size())
-    print("run info;", info)
+    print("steps tracked:", info["num_steps_tracked"])
+    print("sum truncated l1:", info["sum_truncated_l1_norm"])
+    print("total truncated l2:", info["total_truncated_l2_norm"])
