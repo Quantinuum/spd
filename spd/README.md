@@ -22,9 +22,9 @@ This package is organized around sparse-Pauli state objects and backend-specific
   passed directly into the public runners for advanced configuration.
 - The runner remains a thin orchestration layer.
 
-This split supports multiple circuit frontends, for example the built-in
-OpenQASM 2 frontend, the `pytket` frontend, and eventually Qiskit or Guppy,
-without duplicating backend execution logic.
+This split supports multiple circuit frontends, including the built-in
+OpenQASM 2 frontend and the `pytket` frontend, without duplicating backend
+execution logic.
 
 ## Scope Of The Current IR
 

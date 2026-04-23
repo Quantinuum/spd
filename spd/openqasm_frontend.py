@@ -42,7 +42,7 @@ _TWO_QUBIT_CLIFFORDS = {
 _SUPPORTED_INCLUDES = {"qelib1.inc", "stdgates.inc"}
 
 
-def parse_openqasm_str(source: str, padded_system_size: int):
+def parse_openqasm_str(source: str, padded_system_size: int | None = None):
     """Parse an OpenQASM 2 program string into SPD IR operations.
 
     Returns a tuple `(system_size, operations)`.
@@ -91,12 +91,13 @@ def parse_openqasm_str(source: str, padded_system_size: int):
         if system_size == 0:
             raise ValueError("At least one qreg declaration is required before gate statements.")
 
+        effective_padded_system_size = _resolve_padded_system_size(system_size, padded_system_size)
         operations.append(
             _parse_operation(
                 statement,
                 registers=registers,
                 classical_registers=classical_registers,
-                padded_system_size=padded_system_size,
+                padded_system_size=effective_padded_system_size,
             )
         )
 
@@ -108,7 +109,7 @@ def parse_openqasm_str(source: str, padded_system_size: int):
     return system_size, operations
 
 
-def parse_openqasm_file(path: str, padded_system_size: int):
+def parse_openqasm_file(path: str, padded_system_size: int | None = None):
     """Parse an OpenQASM file into SPD IR operations.
 
     Returns a tuple `(system_size, operations)`.
@@ -230,6 +231,12 @@ def _build_pauli_string(padded_system_size: int, assignments) -> str:
     for qubit, axis in assignments:
         pauli[qubit] = axis
     return "".join(pauli)
+
+
+def _resolve_padded_system_size(system_size: int, padded_system_size: int | None) -> int:
+    if padded_system_size is None:
+        return 32 * ((system_size + 31) // 32)
+    return padded_system_size
 
 
 def _evaluate_angle(expr: str) -> float:

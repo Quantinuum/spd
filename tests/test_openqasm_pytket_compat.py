@@ -7,7 +7,7 @@ import spd
 from spd.circuit_ir import PauliRotation, SingleQubitClifford, SkippedOperation, TwoQubitClifford
 from spd.openqasm_frontend import parse_openqasm_file, parse_openqasm_str
 from spd.pytket_frontend import parse_pytket_circuit
-from tests.helpers import to_term_dict
+from tests.helpers import make_initial_spo, to_term_dict
 
 pytest.importorskip("pytket.qasm", reason="pytket extra not installed")
 
@@ -96,7 +96,7 @@ def test_openqasm_sample_matches_pytket_lowered_ir():
     _assert_semantic_ir_match(native_ops, pytket_ops)
 
 
-def test_run_openqasm_str_matches_pytket_forward_execution(backend_name):
+def test_openqasm_ir_matches_pytket_forward_execution(backend_name):
     from pytket.qasm import circuit_from_qasm_str
 
     source = """
@@ -111,22 +111,14 @@ def test_run_openqasm_str_matches_pytket_forward_execution(backend_name):
     """
 
     pytket_circ = circuit_from_qasm_str(source)
+    _, native_ops = parse_openqasm_str(source, padded_system_size=32)
+    initial_spo = make_initial_spo(backend_name, [1], 3)
 
-    native_exp_val, native_final_spo = spd.run_openqasm_str(
-        source,
-        [1],
-        trunc_val=1e-12,
-        max_num_str=1000,
-        backend_name=backend_name,
-    )
-    pytket_exp_val, pytket_final_spo = spd.run_pytket_circuit(
-        pytket_circ,
-        [1],
-        trunc_val=1e-12,
-        max_num_str=1000,
-        backend_name=backend_name,
-    )
+    native_final_spo, _ = spd.evolve(initial_spo, native_ops, trunc_val=1e-12, max_num_str=1000)
+    pytket_final_spo, _ = spd.evolve(initial_spo, pytket_circ, trunc_val=1e-12, max_num_str=1000)
 
+    native_exp_val = native_final_spo.get_expectation_value()
+    pytket_exp_val = pytket_final_spo.get_expectation_value()
     assert np.isclose(float(np.asarray(native_exp_val)), float(np.asarray(pytket_exp_val)), atol=1e-6)
 
     module = BACKENDS[backend_name]
@@ -138,28 +130,20 @@ def test_run_openqasm_str_matches_pytket_forward_execution(backend_name):
 
 
 @pytest.mark.parametrize("backend_name", ["numpy"], ids=["numpy"])
-def test_run_openqasm_file_matches_pytket_forward_execution_on_sample(backend_name):
+def test_openqasm_file_ir_matches_pytket_forward_execution_on_sample(backend_name):
     from pytket.qasm import circuit_from_qasm
 
     path = "tests/fixtures/open_qasm/periodic_small_8q.qasm"
     pytket_circ = circuit_from_qasm(path)
     measurement = list(range(8))
+    _, native_ops = parse_openqasm_file(path, padded_system_size=32)
+    initial_spo = make_initial_spo(backend_name, measurement, 8)
 
-    native_exp_val, native_final_spo = spd.run_openqasm_file(
-        path,
-        measurement,
-        trunc_val=1e-4,
-        max_num_str=100000,
-        backend_name=backend_name,
-    )
-    pytket_exp_val, pytket_final_spo = spd.run_pytket_circuit(
-        pytket_circ,
-        measurement,
-        trunc_val=1e-4,
-        max_num_str=100000,
-        backend_name=backend_name,
-    )
+    native_final_spo, _ = spd.evolve(initial_spo, native_ops, trunc_val=1e-4, max_num_str=100000)
+    pytket_final_spo, _ = spd.evolve(initial_spo, pytket_circ, trunc_val=1e-4, max_num_str=100000)
 
+    native_exp_val = native_final_spo.get_expectation_value()
+    pytket_exp_val = pytket_final_spo.get_expectation_value()
     assert np.isclose(float(np.asarray(native_exp_val)), float(np.asarray(pytket_exp_val)), atol=1e-6)
     assert native_final_spo.get_size() == pytket_final_spo.get_size()
 

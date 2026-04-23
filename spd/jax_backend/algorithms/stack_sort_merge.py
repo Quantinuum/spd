@@ -8,6 +8,15 @@ from .. import kernels
 from ..sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 
 
+def _step_info_from_tail(c_concat, slice_size):
+    removed_coeffs = jnp.abs(c_concat[slice_size:])
+    return {
+        "num_str_truncated": int(c_concat.shape[0] - slice_size),
+        "truncated_l1_norm": float(jnp.sum(removed_coeffs)),
+        "truncated_l2_norm": float(jnp.sqrt(jnp.sum(removed_coeffs ** 2))),
+    }
+
+
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a batch of Pauli strings by rotation R_k(theta):
@@ -23,12 +32,14 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
         new_spo: SparsePauliOp
     """
     # t0 = time.time()
-    x_concat, c_concat, new_size, final_valid_count = forward_stack_sort_merge_jitted(spo, xzk, theta, trunc_val)
+    x_concat, c_concat, new_size, final_valid_count = forward_stack_sort_merge_jitted(
+        spo, xzk, theta, trunc_val
+    )
     jax.block_until_ready(new_size)
     # t1 = time.time()
 
+    # new_size is the next pow 2 of final_valid_count.
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
-    final_valid_count = min(int(final_valid_count), slice_size)
 
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
@@ -39,7 +50,7 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     #       "ms, Final size:", new_size, "Valid count:", final_valid_count,
     #       "Original size:", x_array_1.shape[0] + x_array_2.shape[0])
     new_spo = SparsePauliOp(x_, c_)
-    return new_spo, final_valid_count
+    return new_spo, min(int(final_valid_count), slice_size), _step_info_from_tail(c_concat, slice_size)
 
 @jax.jit
 def forward_stack_sort_merge_jitted(spo, xzk, theta, trunc_val):
@@ -76,20 +87,26 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
         spo_val_grad, xzk, theta, trunc_val
     )
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
-    final_valid_count = min(int(final_valid_count), slice_size)
 
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
 
-    return new_spo_val_grad, final_valid_count, grad_i
+    return (
+        new_spo_val_grad,
+        min(int(final_valid_count), slice_size),
+        grad_i,
+        _step_info_from_tail(c_concat, slice_size),
+    )
 
 @jax.jit
 def backward_jitted(spo_val_grad, xzk, theta, trunc_val):
     print("Recompile: backward_jitted", spo_val_grad.xz_array.shape,)
     spo_val_grad_1, spo_val_grad_2 = kernels.conjugate_pauli_rot_backward_batched_uint_(spo_val_grad, xzk, theta)
-    x_concat, c_concat, grad_c_concat, final_valid_count = kernels.merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val)
+    x_concat, c_concat, grad_c_concat, final_valid_count = kernels.merge_val_grad_(
+        spo_val_grad_1, spo_val_grad_2, trunc_val
+    )
     new_size = kernels.next_pow2(final_valid_count)
     return x_concat, c_concat, grad_c_concat, new_size, final_valid_count
 

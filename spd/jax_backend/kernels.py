@@ -31,7 +31,7 @@ def set_precision(precision: str):
     utils.set_precision(precision)
 
 
-DEFAULT_ALGORITHM = "search_update_merge"
+DEFAULT_ALGORITHM = "stack_sort_merge"
 SUPPORTED_ALGORITHMS = (
     "stack_sort_merge",
     "search_update_merge",
@@ -848,7 +848,9 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
 
     mask = jnp.abs(c_concat) > trunc_val
     final_valid_count = jnp.sum(mask.astype(jnp.int32))
-    c_concat = c_concat * mask.astype(c_concat.dtype)
+    ## Keep the discarded coefficient magnitudes in the tail so the algorithm
+    ## wrapper can report truncation norms from c_concat[slice_size:].
+    # c_concat = c_concat * mask.astype(c_concat.dtype)
 
     """
     # ---------------------------------------------------------------
@@ -926,8 +928,12 @@ def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
 
     mask = jnp.abs(c_concat) > trunc_val
     final_valid_count = jnp.sum(mask.astype(jnp.int32))
-    c_concat = c_concat * mask.astype(c_concat.dtype)
-    grad_c_concat = grad_c_concat * mask.astype(grad_c_concat.dtype)
+    ## Keep the discarded coefficient magnitudes in the tail so the algorithm
+    ## wrapper can report truncation norms from c_concat[slice_size:].
+    ## The sliced final state still only keeps the valid prefix.
+    # c_concat = c_concat * mask.astype(c_concat.dtype)
+    # grad_c_concat = grad_c_concat * mask.astype(grad_c_concat.dtype)
+
 
     # ---------------------------------------------------------------
     # [version 2]

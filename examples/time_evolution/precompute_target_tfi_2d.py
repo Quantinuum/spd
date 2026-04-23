@@ -35,22 +35,10 @@ if __name__ == "__main__":
     target_thetas = trotter_layer_parameters(TARGET_STEPS)
     target_circuit = build_2d_tfi_circuit(target_thetas)
 
-    _, target_spo_x = quiet_call(
-        spd.run_pytket_circuit,
-        target_circuit,
-        representative_x_dict(CONSTANT_SYSTEM_SIZE),
-        TRUNC_VAL,
-        MAX_NUM_STR,
-        backend=backend,
-    )
-    _, target_spo_z = quiet_call(
-        spd.run_pytket_circuit,
-        target_circuit,
-        representative_z_dict(CONSTANT_SYSTEM_SIZE),
-        TRUNC_VAL,
-        MAX_NUM_STR,
-        backend=backend,
-    )
+    initial_spo_x = backend.create_initial_spo(representative_x_dict(CONSTANT_SYSTEM_SIZE))
+    initial_spo_z = backend.create_initial_spo(representative_z_dict(CONSTANT_SYSTEM_SIZE))
+    target_spo_x = quiet_call(spd.evolve, initial_spo_x, target_circuit, TRUNC_VAL, MAX_NUM_STR, backend=backend)
+    target_spo_z = quiet_call(spd.evolve, initial_spo_z, target_circuit, TRUNC_VAL, MAX_NUM_STR, backend=backend)
 
     _save_pickle(TARGET_X_PATH, target_spo_x)
     _save_pickle(TARGET_Z_PATH, target_spo_z)

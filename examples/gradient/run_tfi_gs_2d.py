@@ -1,130 +1,118 @@
-import pickle
-import pytket
-from pytket import Circuit
 import numpy as np
-# np.random.seed(0)
+import scipy.optimize
 import spd
 import sys
+
 import tfi_setup
 
+
+def combine_grads(grads, number_of_parameters, system_size):
+    combined = []
+    for i in range(number_of_parameters // 2):
+        combined.append(np.array(grads[3 * i * system_size:(3 * i + 2) * system_size]).sum() * np.pi)
+        combined.append(np.array(grads[(3 * i + 2) * system_size:(3 * i + 3) * system_size]).sum() * np.pi)
+    return np.array(combined)
+
+
 if __name__ == "__main__":
+    precision = "double"
+    backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
+    backend.module.set_algorithm("stack_sort_merge")
 
-    backend_name = 'jax'
-
-    method = 'basinhopping'
-    number_of_parameters =  int(sys.argv[1])
+    method = "basinhopping"
+    number_of_parameters = int(sys.argv[1])
     system_size_x = number_of_parameters + 3
     system_size_y = system_size_x
     system_size = system_size_x * system_size_y
-    basis = '+'
+    basis = "+"
     g = 3.1
-
     niter = int(sys.argv[2])
 
-
     random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
-    # run_dim = 2
-    circ = tfi_setup.gen_2d_TFI_ansatz_circuit(random_thetas,
-                                               system_size_x,
-                                               system_size_y,
-                                               )
-    ham_dict = tfi_setup.gen_2d_Hamiltonian_dict(system_size_x,
-                                                 system_size_y,
-                                                 g=g,)
-                                                 # g=3.04438)
+    ham_dict = tfi_setup.gen_2d_Hamiltonian_dict(system_size_x, system_size_y, g=g)
+    E_weight = np.sqrt(np.sum(np.array(list(ham_dict.values())) ** 2))
+    lambda_ose = 0.0
 
     trunc_val = 1e-6
-    max_num_str = 1e6
+    max_num_str = int(1e6)
     print("\n Truncation Value:", trunc_val)
-    # for trunc_val in [1e-3, 3e-4, 1e-4, 3e-5, 1e-5, 3e-6, 1e-6]:
-    #     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
-
-    #     exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val,
-    #                                                 max_num_str=max_num_str,
-    #                                                 basis=basis, backend_name=backend_name)
-    #     print("\n Expectation Value:", exp_val)
-
-    # grads, backward_final_spo = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val,
-    #                                                             max_num_str=max_num_str,
-    #                                                             basis=basis, backend_name=backend_name)
-    # print("\n SPD Computed Gradients:", grads)
-
-
-    def combine_grads(grads, number_of_parameters, system_size):
-        combine_grads = []
-        for i in range(number_of_parameters//2):
-            combine_grads.append(np.array(grads[3*i*system_size:(3*i+2)*system_size]).sum() * np.pi)
-            combine_grads.append(np.array(grads[(3*i+2)*system_size:(3*i+3)*system_size]).sum() * np.pi)
-        # for i in range(number_of_parameters//3):
-        #     combine_grads.append(np.array(grads[4*i*system_size:(4*i+1)*system_size]).sum() * np.pi)
-        #     combine_grads.append(np.array(grads[(4*i+1)*system_size:(4*i+2)*system_size]).sum() * np.pi)
-        #     combine_grads.append(np.array(grads[(4*i+2)*system_size:(4*i+4)*system_size]).sum() * np.pi)
-
-        return np.array(combine_grads)
-
 
     history = []
-    def get_f_g(thetas):
-        circ = tfi_setup.gen_2d_TFI_ansatz_circuit(thetas,
-                                         system_size_x,
-                                         system_size_y,
-                                         )
 
-        exp_val, final_spo = spd.run_pytket_circuit(circ, ham_dict, trunc_val,
-                                                    max_num_str=max_num_str,
-                                                    basis=basis, backend_name=backend_name)
-        raw_grads, backward_final_spo = spd.run_pytket_circuit_backward(circ, final_spo, trunc_val,
-                                                                        max_num_str=max_num_str,
-                                                                        basis=basis, backend_name=backend_name)
+    def get_f_g(thetas):
+        circ = tfi_setup.gen_2d_TFI_ansatz_circuit(thetas, system_size_x, system_size_y)
+        initial_spo = spd.create_spo(ham_dict, backend=backend)
+        final_spo, forward_info = spd.evolve(
+            initial_spo,
+            circ,
+            trunc_val,
+            max_num_str=max_num_str,
+            backend=backend,
+        )
+        E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
+        OSE = final_spo.get_OSE()
+        exp_val = final_spo.get_expectation_value(basis=basis)
+        initial_spgo = spd.init_gradient_spo(
+            final_spo,
+            basis=basis,
+            lambda_ose=lambda_ose,
+            backend=backend,
+        )
+        _, raw_grads, backward_info = spd.backpropagate(
+            initial_spgo,
+            circ,
+            trunc_val,
+            max_num_str=max_num_str,
+            backend=backend,
+        )
         grads = combine_grads(raw_grads, number_of_parameters, system_size)
 
-        # Add weight regularization
-        lambda_reg = 0.00
-        cost = exp_val + lambda_reg * np.sum(thetas**2)
-        grad_reg = 2 * lambda_reg * thetas
-        print(f"cost: {cost}, <E>: {exp_val}, Reg: {0.03 * np.sum(thetas**2)}")
+        lambda_reg = 0.0
+        cost = exp_val + lambda_ose * OSE + lambda_reg * np.sum(thetas ** 2)
+        print("step = ", len(history), "num_param", number_of_parameters)
+        print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
         history.append(cost)
-        return exp_val, grads
+        return cost, grads
 
-
-    if method == 'adam':
+    if method == "adam":
         import optax
+
         optimizer = optax.adam(learning_rate=1e-2)
         opt_state = optimizer.init(random_thetas)
         thetas = random_thetas.copy()
         for _ in range(500):
-            print("===="*30)
+            print("====" * 30)
             print(f"Thetas[{_}]: ", thetas)
-            print("===="*30)
-            f, g = get_f_g(thetas)
-            updates, opt_state = optimizer.update(g, opt_state)
+            print("====" * 30)
+            _, grad = get_f_g(thetas)
+            updates, opt_state = optimizer.update(grad, opt_state)
             thetas = optax.apply_updates(thetas, updates)
+        raise SystemExit(0)
 
-        exit()
-
-    if method == 'basinhopping':
-        import scipy.optimize
-        minimizer_kwargs = {"method":"L-BFGS-B", "jac":True}
+    if method == "basinhopping":
+        minimizer_kwargs = {"method": "L-BFGS-B", "jac": True}
         from scipy.optimize import basinhopping
-        ret = basinhopping(get_f_g,
-                           random_thetas,
-                           minimizer_kwargs=minimizer_kwargs,
-                           niter=niter,
-                           )
-        print(ret)
-        np.savetxt(f'2D_bh_{system_size}_np_{number_of_parameters}_g_{g}_params.txt', ret.x,)
-        np.savetxt(f'2D_bh_{system_size}_np_{number_of_parameters}_g_{g}_history.txt', history)
 
+        ret = basinhopping(
+            get_f_g,
+            random_thetas,
+            minimizer_kwargs=minimizer_kwargs,
+            niter=niter,
+        )
+        print(ret)
+        np.savetxt(f"2D_bh_{system_size}_np_{number_of_parameters}_g_{g}_params.txt", ret.x)
+        np.savetxt(f"2D_bh_{system_size}_np_{number_of_parameters}_g_{g}_history.txt", history)
         import pickle
-        pickle.dump(ret, open(f'2D_bh_L_{system_size}_np_{number_of_parameters}_g_{g}_result.pkl', 'wb'))
-        exit()
-    else:
-        import scipy.optimize
-        result = scipy.optimize.minimize(get_f_g,
-                                         random_thetas,
-                                         method='L-BFGS-B',
-                                         jac=True,
-                                         options={'disp': True, 'gtol': 1e-5, 'maxiter': 100}
-                                         )
-        print(result)
+
+        pickle.dump(ret, open(f"2D_bh_L_{system_size}_np_{number_of_parameters}_g_{g}_result.pkl", "wb"))
+        raise SystemExit(0)
+
+    result = scipy.optimize.minimize(
+        get_f_g,
+        random_thetas,
+        method="L-BFGS-B",
+        jac=True,
+        options={"disp": True, "gtol": 1e-5, "maxiter": 100},
+    )
+    print(result)

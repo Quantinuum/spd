@@ -18,18 +18,17 @@ For the JAX backend, `c_array` and `grad_c_array` are stored as real-valued
 arrays only. Precision is selected globally within the backend as either
 single precision (`float32`) or double precision (`float64`).
 
-The default JAX algorithm is `search_update_merge`, which keeps the long-lived
-stored sparse-Pauli operator lexicographically sorted and updates it through
-binary-search partner matching. The legacy `stack_sort_merge` algorithm remains
-available as an alternate path.
+The default JAX algorithm is `stack_sort_merge`. The alternate
+`search_update_merge` algorithm remains available when lexicographically
+sorted long-lived storage is preferred.
 
 Algorithm selection is currently an internal JAX-backend setting:
 
 ```python
 import spd.jax_backend as jax_backend
 
-jax_backend.set_algorithm("search_update_merge")
 jax_backend.set_algorithm("stack_sort_merge")
+jax_backend.set_algorithm("search_update_merge")
 ```
 
 When using the higher-level runners, advanced users can combine this with a
@@ -39,7 +38,7 @@ reusable configured `BackendAdapter`:
 import spd
 
 backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
-backend.module.set_algorithm("search_update_merge")
+backend.module.set_algorithm("stack_sort_merge")
 ```
 
 The runner-facing `max_num_str` limit is applied after the active JIT path

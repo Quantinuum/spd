@@ -4,6 +4,7 @@ import spd
 from spd import jax_backend
 from spd.backend_adapter import BackendAdapter
 from pytket.circuit import Circuit
+from tests.helpers import padded_system_size
 
 MAX_NUM_STR = 1_000_000
 
@@ -33,22 +34,14 @@ def test_jax_double_precision_is_float64_across_forward_and_backward():
     adapter = BackendAdapter.from_name("jax", packbit=32, precision="double")
     assert adapter.module.utils.get_precision() == "double"
 
-    exp_val, final_spo = spd.run_pytket_circuit(
-        circ,
+    initial_spo = adapter.create_initial_spo(
         [0],
-        1e-12,
-        MAX_NUM_STR,
-        backend_name="jax",
-        precision="double",
+        padded_system_size(circ.n_qubits, adapter.packbit),
     )
-    grads, spgo = spd.run_pytket_circuit_backward(
-        circ,
-        final_spo,
-        1e-12,
-        MAX_NUM_STR,
-        backend_name="jax",
-        precision="double",
-    )
+    final_spo, _ = spd.evolve(initial_spo, circ, 1e-12, MAX_NUM_STR, backend=adapter)
+    initial_spgo = spd.init_gradient_spo(final_spo, backend=adapter)
+    spgo, grads, _ = spd.backpropagate(initial_spgo, circ, 1e-12, MAX_NUM_STR, backend=adapter)
+    exp_val = final_spo.get_expectation_value()
 
     assert np.asarray(final_spo.c_array).dtype == np.dtype(np.float64)
     assert np.asarray(spgo.c_array).dtype == np.dtype(np.float64)

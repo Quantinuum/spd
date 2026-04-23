@@ -16,6 +16,14 @@ from typing import Protocol
 from .circuit_ir import PauliRotation, SingleQubitClifford, SkippedOperation, TwoQubitClifford
 
 
+def _zero_step_info():
+    return {
+        "num_str_truncated": 0,
+        "truncated_l1_norm": 0.0,
+        "truncated_l2_norm": 0.0,
+    }
+
+
 class BackendModule(Protocol):
     utils: object
     SparsePauliOp: type
@@ -89,16 +97,23 @@ class BackendAdapter:
 
         return cls(name=backend_name, module=backend_module, packbit=packbit, precision=precision)
 
-    def create_initial_spo(self, measure_qubits_data, padded_system_size):
+    def create_initial_spo(self, measure_qubits_data, padded_system_size=None):
         if isinstance(measure_qubits_data, dict):
             key = next(iter(measure_qubits_data))
-            if isinstance(key, tuple):
-                return self.module.create_measurement_op(measure_qubits_data, padded_system_size)
             if isinstance(key, str):
                 return self.module.create_op(measure_qubits_data)
-            raise ValueError("measure_qubits_data dict key must be tuple or str")
+            if isinstance(key, tuple):
+                raise ValueError(
+                    "Tuple-key measurement dicts are no longer supported. "
+                    "Use a list of qubits for Z-basis measurements or a string-key dict for general Paulis."
+                )
+            raise ValueError("measure_qubits_data dict key must be str")
 
         if isinstance(measure_qubits_data, list):
+            if padded_system_size is None:
+                raise ValueError(
+                    "padded_system_size is required when measure_qubits_data is a list of qubits."
+                )
             measurement_dict = {tuple(measure_qubits_data): 1.0}
             return self.module.create_measurement_op(measurement_dict, padded_system_size)
 
@@ -126,25 +141,25 @@ class BackendAdapter:
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
             xzk = self.utils.pauli_str_to_uint(operation.pauli)
-            return self.module.conjugate_pauli_rot_forward(
+            next_state, num_string, step_info = self.module.conjugate_pauli_rot_forward(
                 spo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
             )
+            return next_state, num_string, None, step_info
 
         if isinstance(operation, SingleQubitClifford):
-            return self._clifford_forward_dispatch[operation.gate_name](spo, operation.qubit), None
+            next_state = self._clifford_forward_dispatch[operation.gate_name](spo, operation.qubit)
+            return next_state, next_state.get_size(), None, _zero_step_info()
 
         if isinstance(operation, TwoQubitClifford):
-            return (
-                self._clifford_forward_dispatch[operation.gate_name](
-                    spo,
-                    operation.control_qubit,
-                    operation.target_qubit,
-                ),
-                None,
+            next_state = self._clifford_forward_dispatch[operation.gate_name](
+                spo,
+                operation.control_qubit,
+                operation.target_qubit,
             )
+            return next_state, next_state.get_size(), None, _zero_step_info()
 
         if isinstance(operation, SkippedOperation):
-            return spo, None
+            return spo, None, None, None
 
         raise ValueError(f"Unsupported operation: {operation}")
 
@@ -168,16 +183,11 @@ class BackendAdapter:
                 )
             # Keep num_string as None so non-parameterized Clifford steps are not
             # appended to the parameter-gradient list in run_circuit.py.
-            return (
-                self._clifford_backward_dispatch[operation.gate_name](
-                    spgo, operation.qubit
-                ),
-                None,
-                None,
-            )
+            next_state = self._clifford_backward_dispatch[operation.gate_name](spgo, operation.qubit)
+            return next_state, next_state.get_size(), None, _zero_step_info()
 
         if isinstance(operation, SkippedOperation):
-            return spgo, None, None
+            return spgo, None, None, None
 
         raise ValueError(f"Unsupported operation in backward pass: {operation}")
 

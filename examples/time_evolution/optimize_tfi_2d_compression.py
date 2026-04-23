@@ -65,18 +65,18 @@ class CompressionObjective:
 
     def _run_forward(self, thetas: np.ndarray):
         circuit = self.circuit_builder(thetas)
-        _, spo_x = quiet_call(
-            spd.run_pytket_circuit,
+        spo_x = quiet_call(
+            spd.evolve,
+            self.backend.create_initial_spo(representative_x_dict(self.system_size)),
             circuit,
-            representative_x_dict(self.system_size),
             TRUNC_VAL,
             MAX_NUM_STR,
             backend=self.backend,
         )
-        _, spo_z = quiet_call(
-            spd.run_pytket_circuit,
+        spo_z = quiet_call(
+            spd.evolve,
+            self.backend.create_initial_spo(representative_z_dict(self.system_size)),
             circuit,
-            representative_z_dict(self.system_size),
             TRUNC_VAL,
             MAX_NUM_STR,
             backend=self.backend,
@@ -104,10 +104,10 @@ class CompressionObjective:
             target_spo=self.target_spo_x,
             backend=self.backend,
         )
-        raw_grads_x, _ = quiet_call(
-            spd.run_pytket_backward_from_spgo,
-            circuit,
+        _, raw_grads_x = quiet_call(
+            spd.backpropagate,
             initial_spgo_x,
+            circuit,
             TRUNC_VAL,
             MAX_NUM_STR,
             backend=self.backend,
@@ -119,10 +119,10 @@ class CompressionObjective:
             target_spo=self.target_spo_z,
             backend=self.backend,
         )
-        raw_grads_z, _ = quiet_call(
-            spd.run_pytket_backward_from_spgo,
-            circuit,
+        _, raw_grads_z = quiet_call(
+            spd.backpropagate,
             initial_spgo_z,
+            circuit,
             TRUNC_VAL,
             MAX_NUM_STR,
             backend=self.backend,
