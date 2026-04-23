@@ -47,8 +47,8 @@ def test_forward_rotation_threshold_info_matches_expected(backend_name):
             step_info,
             {
                 "num_str_truncated": 1,
-                "truncated_l1_norm": 0.0,
-                "truncated_l2_norm": 0.0,
+                "truncated_l1_norm": np.sqrt(0.5),
+                "truncated_l2_norm": np.sqrt(0.5),
             },
         )
 
@@ -111,8 +111,8 @@ def test_backward_rotation_threshold_info_matches_expected(backend_name):
             step_info,
             {
                 "num_str_truncated": 1,
-                "truncated_l1_norm": 0.0,
-                "truncated_l2_norm": 0.0,
+                "truncated_l1_norm": np.sqrt(0.5),
+                "truncated_l2_norm": np.sqrt(0.5),
             },
         )
 

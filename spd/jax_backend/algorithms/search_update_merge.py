@@ -164,7 +164,13 @@ def forward_search_update_merge_jitted(spo, xzk, theta, trunc_val):
     keep_mask = is_large_enough # & is_valid_row
 
     final_xz_masked = jnp.where(keep_mask[:, None], merged_xz, kernels.PAD_VAL)
-    final_c_masked  = jnp.where(keep_mask, merged_c, 0.0)
+    ## [Logic change] [Need to double check]
+    ## We don't strictly need to zero out the coefficients.
+    ## We are doing a lexsort based on xz and the PAD_VAL rows will sort to the bottom.
+    ## Keeping the coefficients let us track the truncation correctly in the step info.
+    # final_c_masked  = jnp.where(keep_mask, merged_c, 0.0)
+    final_c_masked = merged_c
+
 
     final_valid_count = jnp.sum(keep_mask.astype(jnp.int32))
     new_size = kernels.next_pow2(final_valid_count)
@@ -294,15 +300,20 @@ def backward_search_update_merge_jitted(spo_val_grad, xzk, theta, trunc_val):
 
     keep_mask = jnp.abs(merged_c) > trunc_val
     final_xz_masked = jnp.where(keep_mask[:, None], merged_xz, kernels.PAD_VAL)
-    final_c_masked = jnp.where(keep_mask, merged_c, 0.0)
-    final_grad_c_masked = jnp.where(keep_mask, merged_grad_c, 0.0)
+
+    ## We lexsort the XZ. The PAD_VAL in rows still sort to the bottom.
+    ## We don't mask the c_array.
+    ## Keep the discarded coefficient magnitudes in the tail so step-info can
+    ## read them after sorting.
+    # final_c_masked = jnp.where(keep_mask, merged_c, 0.0)
+    # final_grad_c_masked = jnp.where(keep_mask, merged_grad_c, 0.0)
 
     final_valid_count = jnp.sum(keep_mask.astype(jnp.int32))
     new_size = kernels.next_pow2(final_valid_count)
 
     sort_indices = jnp.lexsort(final_xz_masked.T[::-1])
     sorted_xz = final_xz_masked[sort_indices]
-    sorted_c = final_c_masked[sort_indices]
-    sorted_grad_c = final_grad_c_masked[sort_indices]
+    sorted_c = merged_c[sort_indices]
+    sorted_grad_c = merged_grad_c[sort_indices]
 
     return sorted_xz, sorted_c, sorted_grad_c, new_size, final_valid_count, grad_i
