@@ -832,7 +832,6 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
 
     # Assign group IDs: cumulative sum gives unique ID to each group
     group_ids = jnp.cumsum(boundaries) - 1
-    # return boundaries, group_ids
 
     # Use total_size as num_segments (safe, concrete int)
     c_concat = jax.ops.segment_sum(c_concat, group_ids,
@@ -847,7 +846,7 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
     c_concat = c_concat[c_sort_indices]
 
     mask = jnp.abs(c_concat) > trunc_val
-    final_valid_count = jnp.sum(mask.astype(jnp.int32))
+    num_above_trunc_val = jnp.sum(mask.astype(jnp.int32))
     ## Keep the discarded coefficient magnitudes in the tail so the algorithm
     ## wrapper can report truncation norms from c_concat[slice_size:].
     # c_concat = c_concat * mask.astype(c_concat.dtype)
@@ -876,9 +875,14 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
     # x_final = jnp.zeros_like(x_concat)
     # valid_indices = c_sort_indices[mask]  # Only the indices we actually want
     # x_concat = x_final.at[:jnp.sum(mask)].set(x_concat[valid_indices])
-    x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
 
-    return x_concat, c_concat, final_valid_count
+    ## We no more need to zero out the xz to indicate the invalid entries.
+    ## The trunc_val is a soft cutoff. We can have xz that is still kept
+    ## due to power-of-two storage.
+    # x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
+    x_concat = x_concat[c_sort_indices]
+
+    return x_concat, c_concat, num_above_trunc_val
 
 @jax.jit
 def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
@@ -927,7 +931,7 @@ def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
     grad_c_concat = grad_c_concat[c_sort_indices]
 
     mask = jnp.abs(c_concat) > trunc_val
-    final_valid_count = jnp.sum(mask.astype(jnp.int32))
+    num_above_trunc_val = jnp.sum(mask.astype(jnp.int32))
     ## Keep the discarded coefficient magnitudes in the tail so the algorithm
     ## wrapper can report truncation norms from c_concat[slice_size:].
     ## The sliced final state still only keeps the valid prefix.
@@ -942,9 +946,13 @@ def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
     # Then use advanced indexing which might be more JIT-friendly
     x_concat = jnp.zeros_like(x_concat).at[group_ids].add(x_concat)
     # ---------------------------------------------------------------
-    x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
+    ## Similar to the previous merge_, we dont need to explicitly mask out
+    ## the x_concat entries. The trunc_val is a soft cutoff, and we can have
+    ## some x_concat entries that are still kept due to power-of-two storage.
+    # x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
+    x_concat = x_concat[c_sort_indices]
 
-    return x_concat, c_concat, grad_c_concat, final_valid_count
+    return x_concat, c_concat, grad_c_concat, num_above_trunc_val
 
 
 def next_pow2(x):

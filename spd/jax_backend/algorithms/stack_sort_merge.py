@@ -17,6 +17,10 @@ def _step_info_from_tail(c_concat, slice_size):
     }
 
 
+def _count_stored_terms(c_array):
+    return int(jnp.sum(jnp.abs(c_array) > 0))
+
+
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a batch of Pauli strings by rotation R_k(theta):
@@ -32,38 +36,39 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
         new_spo: SparsePauliOp
     """
     # t0 = time.time()
-    x_concat, c_concat, new_size, final_valid_count = forward_stack_sort_merge_jitted(
+    x_concat, c_concat, new_size, num_above_trunc_val = forward_stack_sort_merge_jitted(
         spo, xzk, theta, trunc_val
     )
     jax.block_until_ready(new_size)
     # t1 = time.time()
 
-    # new_size is the next pow 2 of final_valid_count.
+    # new_size is the next pow 2 of num_above_trunc_val.
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
 
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     jax.block_until_ready(c_)
     # t2 = time.time()
+    num_stored_terms = _count_stored_terms(c_)
 
     # print("Merge time:", (t1 - t0) * 1000, "ms, Pad time:", (t2 - t1) * 1000,
-    #       "ms, Final size:", new_size, "Valid count:", final_valid_count,
+    #       "ms, Final size:", new_size, "Above trunc:", num_above_trunc_val,
     #       "Original size:", x_array_1.shape[0] + x_array_2.shape[0])
     new_spo = SparsePauliOp(x_, c_)
-    return new_spo, min(int(final_valid_count), slice_size), _step_info_from_tail(c_concat, slice_size)
+    return new_spo, num_stored_terms, _step_info_from_tail(c_concat, slice_size)
 
 @jax.jit
 def forward_stack_sort_merge_jitted(spo, xzk, theta, trunc_val):
     print("Recompile: forward_jitted", spo.xz_array.shape,)
     spo_1, spo_2 = kernels.conjugated_pauli_batched_uint_(spo, xzk, theta)
 
-    x_concat, c_concat, final_valid_count = kernels.merge_(
+    x_concat, c_concat, num_above_trunc_val = kernels.merge_(
         spo_1.xz_array, spo_1.c_array,
         spo_2.xz_array, spo_2.c_array,
         trunc_val)
 
-    new_size = kernels.next_pow2(final_valid_count)
-    return x_concat, c_concat, new_size, final_valid_count
+    new_size = kernels.next_pow2(num_above_trunc_val)
+    return x_concat, c_concat, new_size, num_above_trunc_val
 
 
 def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
@@ -83,7 +88,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     """
     grad_i = get_gradient(spo_val_grad, xzk, theta)
 
-    x_concat, c_concat, grad_c_concat, new_size, final_valid_count = backward_jitted(
+    x_concat, c_concat, grad_c_concat, new_size, num_above_trunc_val = backward_jitted(
         spo_val_grad, xzk, theta, trunc_val
     )
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
@@ -92,10 +97,11 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
+    num_stored_terms = _count_stored_terms(c_)
 
     return (
         new_spo_val_grad,
-        min(int(final_valid_count), slice_size),
+        num_stored_terms,
         grad_i,
         _step_info_from_tail(c_concat, slice_size),
     )
@@ -104,11 +110,11 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
 def backward_jitted(spo_val_grad, xzk, theta, trunc_val):
     print("Recompile: backward_jitted", spo_val_grad.xz_array.shape,)
     spo_val_grad_1, spo_val_grad_2 = kernels.conjugate_pauli_rot_backward_batched_uint_(spo_val_grad, xzk, theta)
-    x_concat, c_concat, grad_c_concat, final_valid_count = kernels.merge_val_grad_(
+    x_concat, c_concat, grad_c_concat, num_above_trunc_val = kernels.merge_val_grad_(
         spo_val_grad_1, spo_val_grad_2, trunc_val
     )
-    new_size = kernels.next_pow2(final_valid_count)
-    return x_concat, c_concat, grad_c_concat, new_size, final_valid_count
+    new_size = kernels.next_pow2(num_above_trunc_val)
+    return x_concat, c_concat, grad_c_concat, new_size, num_above_trunc_val
 
 
 @jax.jit
