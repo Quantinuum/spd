@@ -31,10 +31,13 @@ runtime internals indirectly.
 ### 4. Decide long-term fate of `stack_sort_merge`
 Current state:
 - `stack_sort_merge` remains available as a reference and fallback algorithm
+- its truncation/count semantics now differ from `search_update_merge`
 
 Deferred decision:
 - keep it permanently as a supported alternate path
 - or deprecate/remove it after the new JAX path has enough long-term confidence
+- or align its semantics back with `search_update_merge` if performance and API
+  consistency matter more than the newer soft-cutoff behavior
 
 ### 5. Separate IR from padded backend storage width
 Current state:

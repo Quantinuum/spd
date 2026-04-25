@@ -203,7 +203,7 @@ the problem if the matching coefficient is still nonzero.
 
 `slice_to_size_x_arr` and `slice_to_size_c_arr` do not implement the threshold
 decision. They only keep the first `slice_size` slots, where `slice_size`
-depends on `next_pow2(final_valid_count)` and `max_num_str`.
+depends on `next_pow2(num_above_trunc_val)` and `max_num_str`.
 
 So there are two separate choices:
 
@@ -252,7 +252,7 @@ The two JAX algorithms do not currently have the same truncation semantics.
 
 - rows below threshold are still converted to `PAD_VAL` before sorting
 - coefficients can still be kept for step-info accounting
-- the wrapper still uses `final_valid_count` as if it were the returned-state
+- the wrapper still uses the threshold count as if it were the returned-state
   size
 
 So right now:
@@ -261,6 +261,15 @@ So right now:
 - `search_update_merge` still follows the older threshold-masking behavior
 
 They are not yet equivalent.
+
+This difference matters in three places:
+
+1. the physical returned state
+2. the meaning of `num_string`
+3. the interpretation of truncation statistics
+
+At the moment, only `stack_sort_merge` follows the newer soft-cutoff
+interpretation consistently end to end.
 
 ## Remaining alignment plan
 

@@ -33,7 +33,7 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     jax.block_until_ready(c_)
 
-    new_spo = SparsePauliOp(x_, c_)
+    new_spo = SparsePauliOp(x_, c_, lexsorted=True)
     return new_spo, min(int(final_valid_count), slice_size), _step_info_from_tail(c_concat, slice_size)
 
 
@@ -213,7 +213,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
     jax.block_until_ready(grad_c_)
 
-    new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
+    new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_, lexsorted=True)
     return (
         new_spo_val_grad,
         min(int(final_valid_count), slice_size),

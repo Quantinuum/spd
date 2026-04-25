@@ -38,7 +38,6 @@ if __name__ == "__main__":
 
     full_H = False
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=full_H)
-    E_weight = np.sqrt(np.sum(np.array(list(ham_dict.values())) ** 2))
     factor = system_size if full_H else 1
 
     trunc_val = 1e-14
@@ -58,7 +57,7 @@ if __name__ == "__main__":
             backend=backend,
         )
 
-        E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
+        E_err_estimate = forward_info["total_truncated_l2_norm"]
         OSE = final_spo.get_OSE()
 
         exp_val = final_spo.get_expectation_value(basis=basis)
