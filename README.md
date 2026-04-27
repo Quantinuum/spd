@@ -132,9 +132,15 @@ final_spgo, raw_grads, backward_info = spd.backpropagate(
     max_num_str=max_num_str,
     backend=backend,
 )
+
+backward_spo = final_spgo.to_spo()
+overlap = initial_spo.dot(backward_spo)
 ```
 
 In the TFI example, `raw_grads` are then combined into parameter gradients for the optimizer.
+For overlap diagnostics, `to_spo()` extracts the primal SPO from the backward
+object and `dot(...)` compares matching Pauli-string coefficients. If you want a
+quantity that should be close to `1`, normalize that overlap in user code.
 
 ## Input To `create_spo`
 

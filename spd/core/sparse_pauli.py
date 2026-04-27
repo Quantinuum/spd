@@ -19,8 +19,12 @@ class BaseSparsePauliOp(ABC):
         """Return the expectation value in the requested product basis."""
 
     @abstractmethod
-    def get_pauli_weight_distribution(self) -> dict[int, int]:
-        """Return a histogram keyed by Pauli weight."""
+    def get_pauli_weight_distribution(self) -> dict[int, float]:
+        """Return squared coefficient mass keyed by Pauli weight."""
+
+    @abstractmethod
+    def get_pauli_weight_counts(self) -> dict[int, int]:
+        """Return term counts keyed by Pauli weight."""
 
     @abstractmethod
     def get_operator_stabilizer_entropy(self, alpha: float = 1):

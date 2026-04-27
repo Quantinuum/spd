@@ -36,7 +36,7 @@ def test_jax_sparse_pauli_op_rejects_complex_coefficients():
         })
 
 
-def test_sparse_pauli_op_weight_distribution(backend):
+def test_sparse_pauli_op_weight_distribution_and_counts(backend):
     _, module = backend
     spo = module.create_op({
         "IIII": 1.0,
@@ -45,11 +45,20 @@ def test_sparse_pauli_op_weight_distribution(backend):
         "XYZX": 4.0,
     })
 
-    distribution = spo.get_Pauli_weight_distribution()
+    distribution = spo.get_pauli_weight_distribution()
+    counts = spo.get_pauli_weight_counts()
 
     assert distribution == {
+        0: 1.0,
+        1: 4.0,
+        3: 9.0,
+        4: 16.0,
+    }
+    assert counts == {
         0: 1,
         1: 1,
         3: 1,
         4: 1,
     }
+    assert spo.get_pauli_weight_count() == counts
+    assert spo.get_Pauli_weight_distribution() == distribution

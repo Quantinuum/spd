@@ -26,6 +26,10 @@ This split supports multiple circuit frontends, including the built-in
 OpenQASM 2 frontend and the `pytket` frontend, without duplicating backend
 execution logic.
 
+`SPO.get_pauli_weight_distribution()` returns squared coefficient mass grouped
+by Pauli weight. `SPO.get_pauli_weight_counts()` returns the number of stored
+Pauli strings at each weight.
+
 ## Scope Of The Current IR
 
 The current internal IR is designed for the SPD-supported static circuit subset:

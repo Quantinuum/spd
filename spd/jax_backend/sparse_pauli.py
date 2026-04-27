@@ -83,20 +83,36 @@ class SparsePauliOp(BaseSparsePauliOp):
         exp_val = jnp.sum(self.c_array[mask])
         return jnp.real(exp_val)
 
-    def get_pauli_weight_distribution(self) -> dict[int, int]:
+    def get_pauli_weight_distribution(self) -> dict[int, float]:
         distribution = {}
+        pop = np.bitwise_count
+        xz_rows = np.asarray(self.xz_array)
+        c_vals = np.asarray(self.c_array)
+
+        for xz, coeff in zip(xz_rows, c_vals):
+            n_words = xz.shape[0] // 2
+            weight = int(pop(xz[:n_words] | xz[n_words:]).astype(np.int32).sum())
+            distribution[weight] = distribution.get(weight, 0.0) + float(np.abs(coeff) ** 2)
+
+        return distribution
+
+    def get_pauli_weight_counts(self) -> dict[int, int]:
+        counts = {}
         pop = np.bitwise_count
         xz_rows = np.asarray(self.xz_array)
 
         for xz in xz_rows:
             n_words = xz.shape[0] // 2
             weight = int(pop(xz[:n_words] | xz[n_words:]).astype(np.int32).sum())
-            distribution[weight] = distribution.get(weight, 0) + 1
+            counts[weight] = counts.get(weight, 0) + 1
 
-        return distribution
+        return counts
+
+    def get_pauli_weight_count(self) -> dict[int, int]:
+        return self.get_pauli_weight_counts()
 
     # Backward-compatible alias for existing callers.
-    def get_Pauli_weight_distribution(self) -> dict[int, int]:
+    def get_Pauli_weight_distribution(self) -> dict[int, float]:
         return self.get_pauli_weight_distribution()
 
     def get_operator_stabilizer_entropy(self, alpha: float = 1) -> float:

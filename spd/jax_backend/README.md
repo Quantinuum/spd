@@ -11,12 +11,21 @@ This backend uses JAX arrays for sparse-Pauli state and JIT-compiled kernels for
 
 ## Representation
 
-- `SparsePauliOp`: `(xz_array, c_array)`
-- `SparsePauliGradientOp`: `(xz_array, c_array, grad_c_array)`
+- `SparsePauliOp`: `(xz_array, c_array)` plus `lexsorted` metadata
+- `SparsePauliGradientOp`: `(xz_array, c_array, grad_c_array)` plus `lexsorted` metadata
 
 For the JAX backend, `c_array` and `grad_c_array` are stored as real-valued
 arrays only. Precision is selected globally within the backend as either
 single precision (`float32`) or double precision (`float64`).
+
+`SparsePauliOp.lexsort()` returns a lexicographically sorted copy with
+`lexsorted=True`. `SparsePauliOp.dot(...)` uses a JAX-native matching path and
+only requires one sorted haystack internally. `SparsePauliGradientOp.to_spo()`
+preserves the primal coefficients and the `lexsorted` flag.
+
+`SparsePauliOp.get_pauli_weight_distribution()` returns the squared coefficient
+mass, `|c|^2`, grouped by Pauli weight. `get_pauli_weight_counts()` returns the
+number of stored Pauli strings at each weight.
 
 The default JAX algorithm is `stack_sort_merge`. The alternate
 `search_update_merge` algorithm remains available when lexicographically
@@ -46,5 +55,8 @@ returns. JAX rounds that limit up to the next power of two and then caps the
 final slice size with `min(new_size, max_num_str)`. Because the two algorithms
 use different internal ordering and truncation strategies, they may retain
 different subsets near the `max_num_str` boundary.
+
+`create_op(...)` currently returns lexsorted storage. Other operations may
+conservatively clear that metadata when sorted output is not guaranteed.
 
 The custom classes in `sparse_pauli.py` are registered as JAX pytrees so they can continue to flow through `jit`-compiled kernels while exposing a clearer object interface.
