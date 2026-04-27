@@ -16,8 +16,8 @@ import spd
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 
-CONSTANT_L_X = 4
-CONSTANT_L_Y = 4
+CONSTANT_L_X = 10
+CONSTANT_L_Y = 10
 CONSTANT_SYSTEM_SIZE = CONSTANT_L_X * CONSTANT_L_Y
 
 RAMP_L_X = 14
@@ -26,7 +26,7 @@ RAMP_SYSTEM_SIZE = RAMP_L_X * RAMP_L_Y
 
 TOTAL_TIME = 0.3
 J_COUPLING = -1.0
-G_FIELD = -3.0
+G_FIELD = -3.1
 
 TARGET_STEPS = 100
 ANSATZ_STEPS = 5
@@ -53,6 +53,7 @@ GRAD_CHECK_ATOL = 2e-1
 TARGET_X_PATH = EXAMPLE_DIR / "target_spo_x.pkl"
 TARGET_Z_PATH = EXAMPLE_DIR / "target_spo_z.pkl"
 TARGET_METADATA_PATH = EXAMPLE_DIR / "target_metadata.json"
+TARGET_DATA_DIR = EXAMPLE_DIR / f"target_tfi_2d_{CONSTANT_L_X}x{CONSTANT_L_Y}"
 
 OPTIMIZATION_RESULT_PATH = EXAMPLE_DIR / "optimization_result.pkl"
 OPTIMIZATION_HISTORY_NPY_PATH = EXAMPLE_DIR / "optimization_history.npy"
@@ -102,6 +103,39 @@ def trotter_layer_parameters(
     return np.tile(np.asarray([theta_zz, theta_x], dtype=float), num_steps)
 
 
+def step_count_from_dt(total_time: float, dt: float) -> int:
+    """Return the integer step count implied by dt."""
+    if dt <= 0.0:
+        raise ValueError("dt must be positive.")
+    num_steps_float = total_time / dt
+    num_steps = round(num_steps_float)
+    if not math.isclose(num_steps_float, num_steps, rel_tol=1e-9, abs_tol=1e-12):
+        raise ValueError(f"dt={dt} does not divide total_time={total_time}.")
+    if num_steps < 1:
+        raise ValueError("dt is too large for the requested total_time.")
+    return num_steps
+
+
+def _path_float(value: float) -> str:
+    return f"{value:.12g}".replace("-", "m").replace(".", "p")
+
+
+def target_data_dir(
+    *,
+    total_time: float,
+    dt: float,
+    trotter_order: int,
+    trunc_val: float,
+    root: Path = TARGET_DATA_DIR,
+) -> Path:
+    """Build a stable directory for a target precompute run."""
+    return (
+        root
+        / f"T_{_path_float(total_time)}"
+        / f"dt_{_path_float(dt)}_order_{trotter_order}_trunc_{_path_float(trunc_val)}"
+    )
+
+
 def initial_ansatz_parameters() -> np.ndarray:
     """Use the coarse 5-step Trotter parameters as the deterministic initialization."""
     return trotter_layer_parameters(ANSATZ_STEPS)
@@ -132,20 +166,20 @@ def build_2d_tfi_circuit(
     *,
     system_size_x: int = CONSTANT_L_X,
     system_size_y: int = CONSTANT_L_Y,
+    trotter_order: int = 1,
 ) -> Circuit:
-    """Build a translationally invariant 2D TFI first-order Trotter circuit."""
+    """Build a translationally invariant 2D TFI Trotter circuit."""
     thetas = np.asarray(thetas, dtype=float)
     if thetas.ndim != 1 or thetas.size % 2 != 0:
         raise ValueError("thetas must be a flat array with alternating ZZ and X parameters.")
+    if trotter_order not in (1, 2, 4):
+        raise ValueError("trotter_order must be 1, 2, or 4.")
 
     system_size = system_size_x * system_size_y
     circ = Circuit(system_size, system_size)
     depth = thetas.size // 2
 
-    for layer in range(depth):
-        theta_zz = float(thetas[2 * layer])
-        theta_x = float(thetas[2 * layer + 1])
-
+    def add_zz_layer(theta_zz: float) -> None:
         for x in range(system_size_x):
             for y in range(system_size_y):
                 i = x * system_size_y + y
@@ -160,10 +194,61 @@ def build_2d_tfi_circuit(
 
         circ.add_barrier(list(range(system_size)))
 
+    def add_x_layer(theta_x: float) -> None:
         for qubit in range(system_size):
             circ.Rx(theta_x, qubit)
-
         circ.add_barrier(list(range(system_size)))
+
+    def emit_merged_x_zz_terms(terms: list[tuple[str, float]]) -> None:
+        pending_x = 0.0
+        for term_type, theta in terms:
+            if term_type == "x":
+                pending_x += theta
+            else:
+                if pending_x != 0.0:
+                    add_x_layer(pending_x)
+                    pending_x = 0.0
+                add_zz_layer(theta)
+        if pending_x != 0.0:
+            add_x_layer(pending_x)
+
+    def append_second_order_terms(
+        terms: list[tuple[str, float]],
+        theta_zz: float,
+        theta_x: float,
+        coefficient: float = 1.0,
+    ) -> None:
+        terms.extend(
+            [
+                ("x", coefficient * theta_x / 2.0),
+                ("zz", coefficient * theta_zz),
+                ("x", coefficient * theta_x / 2.0),
+            ]
+        )
+
+    if trotter_order == 1:
+        for layer in range(depth):
+            theta_zz = float(thetas[2 * layer])
+            theta_x = float(thetas[2 * layer + 1])
+            add_zz_layer(theta_zz)
+            add_x_layer(theta_x)
+    elif trotter_order == 2:
+        terms = []
+        for layer in range(depth):
+            theta_zz = float(thetas[2 * layer])
+            theta_x = float(thetas[2 * layer + 1])
+            append_second_order_terms(terms, theta_zz, theta_x)
+        emit_merged_x_zz_terms(terms)
+    else:
+        p = 1.0 / (4.0 - 4.0 ** (1.0 / 3.0))
+        coefficients = (p, p, 1.0 - 4.0 * p, p, p)
+        terms = []
+        for layer in range(depth):
+            theta_zz = float(thetas[2 * layer])
+            theta_x = float(thetas[2 * layer + 1])
+            for coefficient in coefficients:
+                append_second_order_terms(terms, theta_zz, theta_x, coefficient)
+        emit_merged_x_zz_terms(terms)
 
     for qubit in range(system_size):
         circ.Measure(qubit, qubit)
@@ -229,21 +314,30 @@ def representative_z_dict(system_size: int, site: int = 0) -> dict[str, float]:
     return {"".join(pauli): 1.0}
 
 
-def target_metadata() -> dict[str, object]:
+def target_metadata(
+    *,
+    total_time: float = TOTAL_TIME,
+    target_steps: int = TARGET_STEPS,
+    trotter_order: int = 1,
+    trunc_val: float = TRUNC_VAL,
+) -> dict[str, object]:
     return {
         "system_size_x": CONSTANT_L_X,
         "system_size_y": CONSTANT_L_Y,
         "system_size": CONSTANT_SYSTEM_SIZE,
-        "total_time": TOTAL_TIME,
-        "target_steps": TARGET_STEPS,
+        "total_time": total_time,
+        "dt": total_time / target_steps,
+        "target_steps": target_steps,
         "ansatz_steps": ANSATZ_STEPS,
         "j_coupling": J_COUPLING,
         "g_field": G_FIELD,
         "backend_name": BACKEND_NAME,
         "backend_algorithm": BACKEND_ALGORITHM,
         "precision": PRECISION,
-        "trunc_val": TRUNC_VAL,
+        "trunc_val": trunc_val,
         "max_num_str": MAX_NUM_STR,
+        "trotter_order": trotter_order,
+        "target_style": f"{trotter_order}_order_trotter",
     }
 
 

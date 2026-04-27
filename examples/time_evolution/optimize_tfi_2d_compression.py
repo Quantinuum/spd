@@ -65,7 +65,7 @@ class CompressionObjective:
 
     def _run_forward(self, thetas: np.ndarray):
         circuit = self.circuit_builder(thetas)
-        spo_x = quiet_call(
+        spo_x, _ = quiet_call(
             spd.evolve,
             self.backend.create_initial_spo(representative_x_dict(self.system_size)),
             circuit,
@@ -73,7 +73,7 @@ class CompressionObjective:
             MAX_NUM_STR,
             backend=self.backend,
         )
-        spo_z = quiet_call(
+        spo_z, _ = quiet_call(
             spd.evolve,
             self.backend.create_initial_spo(representative_z_dict(self.system_size)),
             circuit,
