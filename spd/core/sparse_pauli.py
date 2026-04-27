@@ -11,6 +11,10 @@ class BaseSparsePauliOp(ABC):
         """Return the squared norm of the operator coefficients."""
 
     @abstractmethod
+    def dot(self, other):
+        """Return the coefficient dot product with another sparse Pauli operator."""
+
+    @abstractmethod
     def get_expectation_value(self, basis: str = "0"):
         """Return the expectation value in the requested product basis."""
 
@@ -43,6 +47,10 @@ class BaseSparsePauliGradientOp(ABC):
     @abstractmethod
     def get_operator_stabilizer_entropy(self, alpha: float = 1):
         """Return the operator stabilizer entropy of the primal coefficients."""
+
+    @abstractmethod
+    def to_spo(self):
+        """Return the primal coefficients as a sparse Pauli operator."""
 
     @abstractmethod
     def __str__(self) -> str:

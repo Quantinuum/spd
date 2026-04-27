@@ -8,16 +8,17 @@ from . import utils
 
 @jax.tree_util.register_pytree_node_class
 class SparsePauliOp(BaseSparsePauliOp):
-    def __init__(self, xz_array: jnp.ndarray, c_array: jnp.ndarray):
+    def __init__(self, xz_array: jnp.ndarray, c_array: jnp.ndarray, *, lexsorted=False):
         self.xz_array = jnp.asarray(xz_array)
         self.c_array = utils.as_real_array(c_array)
+        self.lexsorted = bool(lexsorted)
 
     def tree_flatten(self):
-        return ((self.xz_array, self.c_array), None)
+        return ((self.xz_array, self.c_array), self.lexsorted)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
+        return cls(*children, lexsorted=aux_data)
 
     def __iter__(self):
         return iter((self.xz_array, self.c_array))
@@ -32,6 +33,43 @@ class SparsePauliOp(BaseSparsePauliOp):
 
     def get_norm_square(self):
         return jnp.sum(jnp.abs(self.c_array) ** 2)
+
+    def lexsort(self):
+        from .kernels import lexsort_spo_arrays
+
+        xz_array, c_array = lexsort_spo_arrays(self.xz_array, self.c_array)
+        return self.__class__(xz_array, c_array, lexsorted=True)
+
+    def dot(self, other):
+        if not isinstance(other, SparsePauliOp):
+            raise TypeError("other must be a JAX SparsePauliOp.")
+        if self.get_size() == 0 or other.get_size() == 0:
+            return jnp.asarray(0.0, dtype=self.c_array.dtype)
+
+        if self.lexsorted:
+            needle = other
+            haystack = self
+        elif other.lexsorted:
+            needle = self
+            haystack = other
+        elif self.get_size() >= other.get_size():
+            needle = other
+            haystack = self.lexsort()
+        else:
+            needle = self
+            haystack = other.lexsort()
+
+        from .kernels import sparse_pauli_dot_with_sorted_haystack
+
+        return sparse_pauli_dot_with_sorted_haystack(
+            needle.xz_array,
+            needle.c_array,
+            haystack.xz_array,
+            haystack.c_array,
+        )
+
+    def inner_product(self, other):
+        return self.dot(other)
 
     def get_expectation_value(self, basis: str = "0"):
         n_words = self.xz_array.shape[1] // 2
@@ -90,7 +128,7 @@ class SparsePauliOp(BaseSparsePauliOp):
 
     def __add__(self, other):
         if other == 0:
-            return self.__class__(self.xz_array, self.c_array)
+            return self.__class__(self.xz_array, self.c_array, lexsorted=self.lexsorted)
         if not isinstance(other, SparsePauliOp):
             return NotImplemented
         from .kernels import merge_, next_pow2, slice_to_size_c_arr, slice_to_size_x_arr
@@ -118,8 +156,9 @@ class SparsePauliOp(BaseSparsePauliOp):
             return self.__class__(
                 jnp.zeros((0, self.xz_array.shape[1]), dtype=self.xz_array.dtype),
                 utils.as_real_array([]),
+                lexsorted=True,
             )
-        return self.__class__(self.xz_array, scalar * self.c_array)
+        return self.__class__(self.xz_array, scalar * self.c_array, lexsorted=self.lexsorted)
 
     def __rmul__(self, scalar):
         return self * scalar
@@ -127,17 +166,25 @@ class SparsePauliOp(BaseSparsePauliOp):
 
 @jax.tree_util.register_pytree_node_class
 class SparsePauliGradientOp(BaseSparsePauliGradientOp):
-    def __init__(self, xz_array: jnp.ndarray, c_array: jnp.ndarray, grad_c_array: jnp.ndarray):
+    def __init__(
+        self,
+        xz_array: jnp.ndarray,
+        c_array: jnp.ndarray,
+        grad_c_array: jnp.ndarray,
+        *,
+        lexsorted=False,
+    ):
         self.xz_array = jnp.asarray(xz_array)
         self.c_array = utils.as_real_array(c_array)
         self.grad_c_array = utils.as_real_array(grad_c_array)
+        self.lexsorted = bool(lexsorted)
 
     def tree_flatten(self):
-        return ((self.xz_array, self.c_array, self.grad_c_array), None)
+        return ((self.xz_array, self.c_array, self.grad_c_array), self.lexsorted)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
+        return cls(*children, lexsorted=aux_data)
 
     def __iter__(self):
         return iter((self.xz_array, self.c_array, self.grad_c_array))
@@ -161,13 +208,21 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
         else:
             return (1 / (1 - alpha)) * jnp.log(jnp.sum(probabilities ** alpha) + 1e-12)
 
+    def to_spo(self):
+        return SparsePauliOp(self.xz_array, self.c_array, lexsorted=self.lexsorted)
+
     # alias for existing callers.
     def get_OSE(self, alpha: float = 1) -> float:
         return self.get_operator_stabilizer_entropy(alpha)
 
     def __add__(self, other):
         if other == 0:
-            return self.__class__(self.xz_array, self.c_array, self.grad_c_array)
+            return self.__class__(
+                self.xz_array,
+                self.c_array,
+                self.grad_c_array,
+                lexsorted=self.lexsorted,
+            )
         if not isinstance(other, SparsePauliGradientOp):
             return NotImplemented
         from .kernels import (
@@ -194,7 +249,12 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
 
     def __radd__(self, other):
         if other == 0:
-            return self.__class__(self.xz_array, self.c_array, self.grad_c_array)
+            return self.__class__(
+                self.xz_array,
+                self.c_array,
+                self.grad_c_array,
+                lexsorted=self.lexsorted,
+            )
         return self.__add__(other)
 
     def __mul__(self, scalar):
@@ -202,8 +262,13 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
         if np.isclose(np.asarray(scalar), 0.0):
             empty_xz = jnp.zeros((0, self.xz_array.shape[1]), dtype=self.xz_array.dtype)
             empty_c = utils.as_real_array([])
-            return self.__class__(empty_xz, empty_c, empty_c)
-        return self.__class__(self.xz_array, scalar * self.c_array, scalar * self.grad_c_array)
+            return self.__class__(empty_xz, empty_c, empty_c, lexsorted=True)
+        return self.__class__(
+            self.xz_array,
+            scalar * self.c_array,
+            scalar * self.grad_c_array,
+            lexsorted=self.lexsorted,
+        )
 
     def __rmul__(self, scalar):
         return self * scalar

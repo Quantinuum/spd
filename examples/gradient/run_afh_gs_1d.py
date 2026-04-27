@@ -35,7 +35,6 @@ if __name__ == "__main__":
     )
 
     ham_dict = heisenberg_setup.gen_1d_Hamiltonian_dict(system_size, full=full_H)
-    E_weight = np.sqrt(np.sum(np.array(list(ham_dict.values())) ** 2))
     trunc_val = 1e-3
     max_num_str = 1e6
     lambda_ose = 0.0
@@ -55,7 +54,7 @@ if __name__ == "__main__":
             max_num_str=max_num_str,
             backend=backend,
         )
-        E_err_estimate = forward_info["total_truncated_l2_norm"] * E_weight
+        E_err_estimate = forward_info["total_truncated_l2_norm"]
         OSE = final_spo.get_OSE()
         exp_val = final_spo.get_expectation_value(basis=basis)
         initial_spgo = spd.init_gradient_spo(

@@ -93,7 +93,7 @@ def create_op(pauli_dict):
     xz_array = jnp.asarray(xz_list)[sorted_indices]
     c_array = utils.as_real_array(c_list)[sorted_indices]
 
-    spo = SparsePauliOp(xz_array, c_array)
+    spo = SparsePauliOp(xz_array, c_array, lexsorted=True)
 
     # spo = SparsePauliOp(jnp.asarray(xz_list), utils.as_real_array(c_list))
     return spo
@@ -111,7 +111,12 @@ def init_gradient_from_basis_expectation(spo, basis='0'):
         raise NotImplementedError(f"Expectation value in basis {basis} not implemented.")
 
     grad_c_array = jnp.where(mask, jnp.ones_like(c_array), jnp.zeros_like(c_array))
-    gradient_spo = SparsePauliGradientOp(xz_array, c_array, grad_c_array)
+    gradient_spo = SparsePauliGradientOp(
+        xz_array,
+        c_array,
+        grad_c_array,
+        lexsorted=spo.lexsorted,
+    )
     return gradient_spo
 
 def init_gradient_from_ose(spo, alpha=1.0):
@@ -131,13 +136,38 @@ def init_gradient_from_ose(spo, alpha=1.0):
             / ((1.0 - alpha) * denom)
         )
 
-    return SparsePauliGradientOp(spo.xz_array, c_array, grad_c_array)
+    return SparsePauliGradientOp(
+        spo.xz_array,
+        c_array,
+        grad_c_array,
+        lexsorted=spo.lexsorted,
+    )
 
 def _sort_rows_and_coeffs(xz_array, c_array):
     if xz_array.shape[0] == 0:
         return xz_array, c_array
     sort_indices = jnp.lexsort([xz_array[:, i] for i in range(xz_array.shape[1] - 1, -1, -1)])
     return xz_array[sort_indices], c_array[sort_indices]
+
+
+@jax.jit
+def lexsort_spo_arrays(xz_array, c_array):
+    sort_indices = jnp.lexsort(xz_array.T[::-1])
+    return xz_array[sort_indices], c_array[sort_indices]
+
+
+@jax.jit
+def sparse_pauli_dot_with_sorted_haystack(
+    needle_xz,
+    needle_c,
+    haystack_xz,
+    haystack_c,
+):
+    is_duplicate, indices_in_haystack = find_row_duplications(needle_xz, haystack_xz)
+    safe_indices = jnp.minimum(indices_in_haystack, haystack_xz.shape[0] - 1)
+    matched_c = haystack_c[safe_indices]
+    products = jnp.where(is_duplicate, needle_c * matched_c, 0.0)
+    return jnp.sum(products)
 
 def _filter_nonzero_spo_arrays(spo):
     mask = jnp.abs(spo.c_array) > 0

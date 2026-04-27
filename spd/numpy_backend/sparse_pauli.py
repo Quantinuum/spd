@@ -20,6 +20,18 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
         vals = np.fromiter(self.values(), dtype=utils.get_real_dtype())
         return np.linalg.norm(vals) ** 2
 
+    def dot(self, other):
+        if not isinstance(other, SparsePauliOp):
+            raise TypeError("other must be a NumPy SparsePauliOp.")
+
+        if len(self) <= len(other):
+            return sum(coeff * other[key] for key, coeff in self.items() if key in other)
+
+        return sum(self[key] * coeff for key, coeff in other.items() if key in self)
+
+    def inner_product(self, other):
+        return self.dot(other)
+
     def get_expectation_value(self, basis: str = "0"):
         exp_val = 0
         n_words = len(next(iter(self))) // 2
@@ -146,6 +158,12 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
             return -np.sum(probabilities * np.log(probabilities + 1e-12))
         else:
             return 1 / (1 - alpha) * np.log(np.sum(probabilities ** alpha) + 1e-12)
+
+    def to_spo(self):
+        result = SparsePauliOp()
+        for key, value_grad in self.items():
+            result[key] = value_grad[0]
+        return result
 
     # alias for existing callers.
     def get_OSE(self, alpha: float = 1.) -> float:
