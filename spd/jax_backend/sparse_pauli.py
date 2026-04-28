@@ -156,7 +156,7 @@ class SparsePauliOp(BaseSparsePauliOp):
             other.c_array,
             0.0,
         )
-        slice_size = max(1, int(next_pow2(valid_count)))
+        slice_size = min(max(1, int(next_pow2(valid_count))), xz_array.shape[0])
         xz_array = slice_to_size_x_arr(xz_array, slice_size)
         c_array = slice_to_size_c_arr(c_array, slice_size)
         return self.__class__(xz_array, c_array)
@@ -253,7 +253,7 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
             other,
             0.0,
         )
-        slice_size = max(1, int(next_pow2(valid_count)))
+        slice_size = min(max(1, int(next_pow2(valid_count))), xz_array.shape[0])
         xz_array = slice_to_size_x_arr(xz_array, slice_size)
         c_array = slice_to_size_c_arr(c_array, slice_size)
         grad_c_array = slice_to_size_c_arr(grad_c_array, slice_size)

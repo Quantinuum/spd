@@ -202,7 +202,7 @@ def _union_support_xz(spo, target_spo):
     )
     return x_union[:int(union_size)]
 
-def init_gradient_from_l2_difference(spo, target_spo):
+def init_gradient_from_l2_difference_union(spo, target_spo):
     support_xz = _union_support_xz(spo, target_spo)
     current_xz, current_c = _filter_nonzero_spo_arrays(spo)
     target_xz, target_c = _filter_nonzero_spo_arrays(target_spo)
@@ -210,6 +210,14 @@ def init_gradient_from_l2_difference(spo, target_spo):
     target_coeffs = _align_coeffs_to_support(support_xz, target_xz, target_c)
     grad_coeffs = 2.0 * (current_coeffs - target_coeffs)
     return SparsePauliGradientOp(support_xz, current_coeffs, grad_coeffs)
+
+
+def init_gradient_from_l2_difference(spo, target_spo):
+    current_xz, current_c = _filter_nonzero_spo_arrays(spo)
+    target_xz, target_c = _filter_nonzero_spo_arrays(target_spo)
+    target_coeffs = _align_coeffs_to_support(current_xz, target_xz, target_c)
+    grad_coeffs = 2.0 * (current_c - target_coeffs)
+    return SparsePauliGradientOp(current_xz, current_c, grad_coeffs)
 
 def init_gradient_spo(
     spo,

@@ -66,6 +66,98 @@ def test_spgo_arithmetic_exact(backend):
     assert cancelled_terms == {}
 
 
+def test_jax_spo_add_handles_non_power_of_two_merged_size():
+    from spd import jax_backend
+
+    jax_backend.utils.set_packbit(32)
+    spo_a = _make_jax_spo(jax_backend, {"IIII": 1.0, "IIIX": 2.0, "IIIZ": 3.0, "IIXI": 4.0})
+    spo_b = _make_jax_spo(
+        jax_backend,
+        {
+            "IXII": 5.0,
+            "IXIX": 6.0,
+            "IXIZ": 7.0,
+            "IXXI": 8.0,
+            "IZII": 9.0,
+            "IZIX": 10.0,
+            "IZIZ": 11.0,
+            "IZXI": 12.0,
+        },
+    )
+
+    summed = spo_a + spo_b
+
+    assert summed.get_size() == 12
+    _assert_term_dict_matches(
+        to_term_dict("jax", jax_backend, summed, n_qubits=4),
+        {
+            "IIII": 1.0,
+            "IIIX": 2.0,
+            "IIIZ": 3.0,
+            "IIXI": 4.0,
+            "IXII": 5.0,
+            "IXIX": 6.0,
+            "IXIZ": 7.0,
+            "IXXI": 8.0,
+            "IZII": 9.0,
+            "IZIX": 10.0,
+            "IZIZ": 11.0,
+            "IZXI": 12.0,
+        },
+    )
+
+
+def test_jax_spgo_add_handles_non_power_of_two_merged_size():
+    from spd import jax_backend
+
+    jax_backend.utils.set_packbit(32)
+    spgo_a = _make_spgo(
+        "jax",
+        jax_backend,
+        {
+            "IIII": (1.0, 0.1),
+            "IIIX": (2.0, 0.2),
+            "IIIZ": (3.0, 0.3),
+            "IIXI": (4.0, 0.4),
+        },
+    )
+    spgo_b = _make_spgo(
+        "jax",
+        jax_backend,
+        {
+            "IXII": (5.0, 0.5),
+            "IXIX": (6.0, 0.6),
+            "IXIZ": (7.0, 0.7),
+            "IXXI": (8.0, 0.8),
+            "IZII": (9.0, 0.9),
+            "IZIX": (10.0, 1.0),
+            "IZIZ": (11.0, 1.1),
+            "IZXI": (12.0, 1.2),
+        },
+    )
+
+    summed = spgo_a + spgo_b
+
+    assert summed.get_size() == 12
+    _assert_grad_term_dict_matches(
+        to_grad_term_dict("jax", jax_backend, summed, n_qubits=4),
+        {
+            "IIII": (1.0, 0.1),
+            "IIIX": (2.0, 0.2),
+            "IIIZ": (3.0, 0.3),
+            "IIXI": (4.0, 0.4),
+            "IXII": (5.0, 0.5),
+            "IXIX": (6.0, 0.6),
+            "IXIZ": (7.0, 0.7),
+            "IXXI": (8.0, 0.8),
+            "IZII": (9.0, 0.9),
+            "IZIX": (10.0, 1.0),
+            "IZIZ": (11.0, 1.1),
+            "IZXI": (12.0, 1.2),
+        },
+    )
+
+
 def test_spgo_to_spo_keeps_primal_coefficients(backend):
     backend_name, module = backend
     spgo = _make_spgo(

@@ -104,7 +104,7 @@ class CompressionObjective:
             target_spo=self.target_spo_x,
             backend=self.backend,
         )
-        _, raw_grads_x = quiet_call(
+        _, raw_grads_x, _ = quiet_call(
             spd.backpropagate,
             initial_spgo_x,
             circuit,
@@ -119,7 +119,7 @@ class CompressionObjective:
             target_spo=self.target_spo_z,
             backend=self.backend,
         )
-        _, raw_grads_z = quiet_call(
+        _, raw_grads_z, _ = quiet_call(
             spd.backpropagate,
             initial_spgo_z,
             circuit,
