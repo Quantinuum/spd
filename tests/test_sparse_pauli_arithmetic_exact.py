@@ -266,10 +266,21 @@ def test_init_gradient_from_l2_difference_exact(backend):
     spo = module.create_op({"Z": 1.0, "X": 0.5})
     target_spo = module.create_op({"Z": 0.25, "Y": -1.0})
 
-    spgo = module.init_gradient_from_l2_difference(spo, target_spo)
+    spgo = module.init_gradient_from_l2_difference_union(spo, target_spo)
     grad_terms = to_grad_term_dict(backend_name, module, spgo, n_qubits=1)
 
     _assert_grad_term_dict_matches(grad_terms, {"Z": (1.0, 1.5), "X": (0.5, 1.0), "Y": (0.0, 2.0)})
+
+
+def test_init_gradient_from_l2_difference_current_support_exact(backend):
+    backend_name, module = backend
+    spo = module.create_op({"Z": 1.0, "X": 0.5})
+    target_spo = module.create_op({"Z": 0.25, "Y": -1.0})
+
+    spgo = module.init_gradient_from_l2_difference(spo, target_spo)
+    grad_terms = to_grad_term_dict(backend_name, module, spgo, n_qubits=1)
+
+    _assert_grad_term_dict_matches(grad_terms, {"Z": (1.0, 1.5), "X": (0.5, 1.0)})
 
 
 def test_init_gradient_from_ose_exact_for_equal_weights(backend):

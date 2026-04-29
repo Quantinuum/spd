@@ -2,39 +2,42 @@
 
 from __future__ import annotations
 
+import argparse
 import pickle
+from pathlib import Path
 
 import numpy as np
 import spd
 
 from common import (
     ANSATZ_STEPS,
+    ANSATZ_TROTTER_ORDER,
     BACKEND_NAME,
     CONSTANT_SYSTEM_SIZE,
     GRAD_CHECK_ATOL,
     GRAD_CHECK_INDICES,
     GRAD_CHECK_RTOL,
     MAX_NUM_STR,
-    OPTIMIZATION_HISTORY_NPY_PATH,
-    OPTIMIZATION_HISTORY_TXT_PATH,
-    OPTIMIZATION_RESULT_PATH,
     OPTIMIZER_METHOD,
     OPTIMIZER_OPTIONS,
     TARGET_METADATA_PATH,
     TARGET_X_PATH,
     TARGET_Z_PATH,
     TRUNC_VAL,
-    build_2d_tfi_circuit,
+    ansatz_parameter_count,
+    build_2d_tfi_ansatz_circuit,
     build_backend,
     compress_tfi_gradients,
     finite_difference,
     initial_ansatz_parameters,
     l2_cost,
     load_metadata,
+    optimization_output_paths,
     quiet_call,
     representative_x_dict,
     representative_z_dict,
-    validate_metadata,
+    target_file_paths,
+    validate_target_metadata_for_optimization,
 )
 
 
@@ -52,14 +55,24 @@ class CompressionObjective:
         *,
         num_steps: int = ANSATZ_STEPS,
         system_size: int = CONSTANT_SYSTEM_SIZE,
-        circuit_builder=build_2d_tfi_circuit,
+        trunc_val: float = TRUNC_VAL,
+        max_num_str: int = MAX_NUM_STR,
+        trotter_order: int = ANSATZ_TROTTER_ORDER,
+        circuit_builder=None,
     ):
         self.target_spo_x = target_spo_x
         self.target_spo_z = target_spo_z
         self.backend = backend
         self.num_steps = num_steps
         self.system_size = system_size
-        self.circuit_builder = circuit_builder
+        self.trunc_val = trunc_val
+        self.max_num_str = max_num_str
+        self.trotter_order = trotter_order
+        self.circuit_builder = (
+            (lambda thetas: build_2d_tfi_ansatz_circuit(thetas, trotter_order=self.trotter_order))
+            if circuit_builder is None
+            else circuit_builder
+        )
         self.history = []
         self.eval_count = 0
 
@@ -69,16 +82,16 @@ class CompressionObjective:
             spd.evolve,
             self.backend.create_initial_spo(representative_x_dict(self.system_size)),
             circuit,
-            TRUNC_VAL,
-            MAX_NUM_STR,
+            self.trunc_val,
+            self.max_num_str,
             backend=self.backend,
         )
         spo_z, _ = quiet_call(
             spd.evolve,
             self.backend.create_initial_spo(representative_z_dict(self.system_size)),
             circuit,
-            TRUNC_VAL,
-            MAX_NUM_STR,
+            self.trunc_val,
+            self.max_num_str,
             backend=self.backend,
         )
         return circuit, spo_x, spo_z
@@ -89,7 +102,7 @@ class CompressionObjective:
 
     def __call__(self, thetas):
         thetas = np.asarray(thetas, dtype=float)
-        expected_shape = (2 * self.num_steps,)
+        expected_shape = (ansatz_parameter_count(self.num_steps, trotter_order=self.trotter_order),)
         if thetas.shape != expected_shape:
             raise ValueError(f"Expected parameter vector of shape {expected_shape}, got {thetas.shape}.")
 
@@ -108,8 +121,8 @@ class CompressionObjective:
             spd.backpropagate,
             initial_spgo_x,
             circuit,
-            TRUNC_VAL,
-            MAX_NUM_STR,
+            self.trunc_val,
+            self.max_num_str,
             backend=self.backend,
         )
 
@@ -123,8 +136,8 @@ class CompressionObjective:
             spd.backpropagate,
             initial_spgo_z,
             circuit,
-            TRUNC_VAL,
-            MAX_NUM_STR,
+            self.trunc_val,
+            self.max_num_str,
             backend=self.backend,
         )
 
@@ -132,11 +145,13 @@ class CompressionObjective:
             raw_grads_x,
             system_size=self.system_size,
             num_steps=self.num_steps,
+            trotter_order=self.trotter_order,
         )
         grad_z = compress_tfi_gradients(
             raw_grads_z,
             system_size=self.system_size,
             num_steps=self.num_steps,
+            trotter_order=self.trotter_order,
         )
         total_grad = grad_x + grad_z
         total_cost = cost_x + cost_z
@@ -171,7 +186,7 @@ def run_gradient_sanity_checks(objective: CompressionObjective, initial_params: 
         )
 
     base_cost, analytical_grad = objective(initial_params)
-    expected_shape = (2 * objective.num_steps,)
+    expected_shape = (ansatz_parameter_count(objective.num_steps, trotter_order=objective.trotter_order),)
     if analytical_grad.shape != expected_shape:
         raise AssertionError(
             f"Expected analytical gradient shape {expected_shape}, got {analytical_grad.shape}."
@@ -218,6 +233,36 @@ def save_history(history, npy_path, txt_path) -> None:
     )
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--target-dir",
+        type=Path,
+        default=None,
+        help="Directory containing target_spo_x.pkl, target_spo_z.pkl, and target_metadata.json.",
+    )
+    parser.add_argument("--target-x-path", type=Path, default=TARGET_X_PATH)
+    parser.add_argument("--target-z-path", type=Path, default=TARGET_Z_PATH)
+    parser.add_argument("--target-metadata-path", type=Path, default=TARGET_METADATA_PATH)
+    parser.add_argument("--ansatz-steps", type=int, default=ANSATZ_STEPS)
+    parser.add_argument("--ansatz-order", type=int, choices=(1, 2), default=ANSATZ_TROTTER_ORDER)
+    parser.add_argument("--ansatz-total-t", type=float, default=None)
+    parser.add_argument("--trunc-val", type=float, default=TRUNC_VAL)
+    parser.add_argument("--max-num-str", type=int, default=MAX_NUM_STR)
+    parser.add_argument("--skip-grad-checks", action="store_true")
+    parser.add_argument("--result-path", type=Path, default=None)
+    parser.add_argument("--history-npy-path", type=Path, default=None)
+    parser.add_argument("--history-txt-path", type=Path, default=None)
+    return parser.parse_args()
+
+
+def resolve_target_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
+    if args.target_dir is not None:
+        paths = target_file_paths(args.target_dir)
+        return paths["target_x"], paths["target_z"], paths["metadata"]
+    return args.target_x_path, args.target_z_path, args.target_metadata_path
+
+
 if __name__ == "__main__":
     try:
         import scipy.optimize
@@ -226,28 +271,61 @@ if __name__ == "__main__":
             "SciPy is required for this example. Install it in the active environment to run L-BFGS-B."
         ) from exc
 
-    metadata = load_metadata(TARGET_METADATA_PATH)
-    validate_metadata(metadata)
+    args = parse_args()
+    target_x_path, target_z_path, target_metadata_path = resolve_target_paths(args)
+    metadata = load_metadata(target_metadata_path)
+    validate_target_metadata_for_optimization(metadata)
 
-    target_spo_x = _load_pickle(TARGET_X_PATH)
-    target_spo_z = _load_pickle(TARGET_Z_PATH)
+    target_spo_x = _load_pickle(target_x_path)
+    target_spo_z = _load_pickle(target_z_path)
     backend = build_backend()
+    ansatz_total_time = metadata["total_time"] if args.ansatz_total_t is None else args.ansatz_total_t
+    system_size_x = int(metadata["system_size_x"])
+    system_size_y = int(metadata["system_size_y"])
+    system_size = int(metadata["system_size"])
+    output_paths = optimization_output_paths(
+        num_steps=args.ansatz_steps,
+        trotter_order=args.ansatz_order,
+    )
+    result_path = output_paths["result"] if args.result_path is None else args.result_path
+    history_npy_path = output_paths["history_npy"] if args.history_npy_path is None else args.history_npy_path
+    history_txt_path = output_paths["history_txt"] if args.history_txt_path is None else args.history_txt_path
 
     objective = CompressionObjective(
         target_spo_x,
         target_spo_z,
         backend,
-        num_steps=ANSATZ_STEPS,
-        system_size=CONSTANT_SYSTEM_SIZE,
-        circuit_builder=build_2d_tfi_circuit,
+        num_steps=args.ansatz_steps,
+        system_size=system_size,
+        trunc_val=args.trunc_val,
+        max_num_str=args.max_num_str,
+        trotter_order=args.ansatz_order,
+        circuit_builder=lambda thetas: build_2d_tfi_ansatz_circuit(
+            thetas,
+            system_size_x=system_size_x,
+            system_size_y=system_size_y,
+            trotter_order=args.ansatz_order,
+        ),
     )
-    initial_params = initial_ansatz_parameters()
+    initial_params = initial_ansatz_parameters(
+        num_steps=args.ansatz_steps,
+        total_time=ansatz_total_time,
+        trotter_order=args.ansatz_order,
+    )
 
     print("Loaded cached target data for time-evolution compression.")
     print(f"Target metadata backend: {metadata['backend_name']} ({metadata.get('backend_algorithm', 'default')})")
+    print(f"Target metadata path: {target_metadata_path}")
+    print(f"Ansatz order: {args.ansatz_order}")
+    print(f"Ansatz steps: {args.ansatz_steps}")
+    print(f"Ansatz total time: {ansatz_total_time}")
+    print(f"Optimization truncation: {args.trunc_val} | max_num_str: {args.max_num_str}")
     print(f"Initial parameter vector shape: {initial_params.shape}")
 
-    run_gradient_sanity_checks(objective, initial_params)
+    if args.skip_grad_checks:
+        print("Skipping gradient sanity checks.")
+    else:
+        run_gradient_sanity_checks(objective, initial_params)
 
     result = scipy.optimize.minimize(
         objective,
@@ -265,8 +343,8 @@ if __name__ == "__main__":
                 f"Optimization did not decrease the cost: initial={initial_cost}, final={final_cost}."
             )
 
-    save_history(objective.history, OPTIMIZATION_HISTORY_NPY_PATH, OPTIMIZATION_HISTORY_TXT_PATH)
-    with OPTIMIZATION_RESULT_PATH.open("wb") as handle:
+    save_history(objective.history, history_npy_path, history_txt_path)
+    with result_path.open("wb") as handle:
         pickle.dump(result, handle)
 
     print(f"Optimization backend: {BACKEND_NAME}")
@@ -274,6 +352,6 @@ if __name__ == "__main__":
     print(f"Optimizer message: {result.message}")
     print(f"Final cost: {result.fun}")
     print(f"Final parameters: {result.x}")
-    print(f"Saved result: {OPTIMIZATION_RESULT_PATH}")
-    print(f"Saved history (.npy): {OPTIMIZATION_HISTORY_NPY_PATH}")
-    print(f"Saved history (.txt): {OPTIMIZATION_HISTORY_TXT_PATH}")
+    print(f"Saved result: {result_path}")
+    print(f"Saved history (.npy): {history_npy_path}")
+    print(f"Saved history (.txt): {history_txt_path}")

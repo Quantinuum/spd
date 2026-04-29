@@ -142,6 +142,14 @@ For overlap diagnostics, `to_spo()` extracts the primal SPO from the backward
 object and `dot(...)` compares matching Pauli-string coefficients. If you want a
 quantity that should be close to `1`, normalize that overlap in user code.
 
+## L2 Gradient Support
+
+For `loss_type="l2_difference"`, `spd.init_gradient_spo(...)` builds the
+terminal gradient object on the support of the current `spo`.
+
+If you need the union support of the current and target operators, use the
+backend helper `init_gradient_from_l2_difference_union(...)` directly.
+
 ## Input To `create_spo`
 
 `create_spo(...)` accepts two common forms:
