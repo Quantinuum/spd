@@ -104,10 +104,18 @@ def init_gradient_from_ose(spo, alpha=1.0):
 
     return gradient_spo
 
-def init_gradient_from_l2_difference(spo, target_spo):
+def init_gradient_from_l2_difference_union(spo, target_spo):
     gradient_spo = SparsePauliGradientOp()
     for packed in set(spo.keys()) | set(target_spo.keys()):
         coeff = spo.get(packed, 0.0)
+        target_coeff = target_spo.get(packed, 0.0)
+        gradient_spo[packed] = (coeff, 2.0 * (coeff - target_coeff))
+    return gradient_spo
+
+
+def init_gradient_from_l2_difference(spo, target_spo):
+    gradient_spo = SparsePauliGradientOp()
+    for packed, coeff in spo.items():
         target_coeff = target_spo.get(packed, 0.0)
         gradient_spo[packed] = (coeff, 2.0 * (coeff - target_coeff))
     return gradient_spo

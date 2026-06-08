@@ -34,6 +34,10 @@ ANSATZ_STEPS = 5
 BACKEND_NAME = "jax"
 BACKEND_ALGORITHM = "search_update_merge"
 PRECISION = "single"
+TARGET_TROTTER_ORDER = 1
+TARGET_TRUNC_VAL = 5e-4
+TARGET_MAX_NUM_STR = int(1e7)
+ANSATZ_TROTTER_ORDER = 1
 TRUNC_VAL = 5e-4
 MAX_NUM_STR = int(1e7)
 
@@ -136,9 +140,72 @@ def target_data_dir(
     )
 
 
-def initial_ansatz_parameters() -> np.ndarray:
-    """Use the coarse 5-step Trotter parameters as the deterministic initialization."""
-    return trotter_layer_parameters(ANSATZ_STEPS)
+def target_file_paths(target_dir: Path) -> dict[str, Path]:
+    return {
+        "target_x": target_dir / "target_spo_x.pkl",
+        "target_z": target_dir / "target_spo_z.pkl",
+        "metadata": target_dir / "target_metadata.json",
+        "x_info": target_dir / "x_info.json",
+        "z_info": target_dir / "z_info.json",
+    }
+
+
+def optimization_output_paths(
+    *,
+    num_steps: int,
+    trotter_order: int,
+    root: Path = EXAMPLE_DIR,
+) -> dict[str, Path]:
+    stem = f"optimization_order_{trotter_order}_steps_{num_steps}"
+    return {
+        "result": root / f"{stem}.pkl",
+        "history_npy": root / f"{stem}.npy",
+        "history_txt": root / f"{stem}.txt",
+    }
+
+
+def initial_ansatz_parameters(
+    *,
+    num_steps: int = ANSATZ_STEPS,
+    total_time: float = TOTAL_TIME,
+    j_coupling: float = J_COUPLING,
+    g_field: float = G_FIELD,
+    trotter_order: int = ANSATZ_TROTTER_ORDER,
+) -> np.ndarray:
+    """Use coarse Trotter parameters as the deterministic initialization."""
+    trotter_params = trotter_layer_parameters(
+        num_steps,
+        total_time=total_time,
+        j_coupling=j_coupling,
+        g_field=g_field,
+    )
+    if trotter_order == 1:
+        return trotter_params
+    if trotter_order == 2:
+        theta_zz = float(trotter_params[0])
+        theta_x = float(trotter_params[1])
+        x_layers = [theta_x / 2.0]
+        x_layers.extend([theta_x] * max(0, num_steps - 1))
+        x_layers.append(theta_x / 2.0)
+
+        params = []
+        for layer in range(num_steps):
+            params.extend([x_layers[layer], theta_zz])
+        params.append(x_layers[-1])
+        return np.asarray(params, dtype=float)
+    raise NotImplementedError(f"Ansatz initialization is not implemented for trotter_order={trotter_order}.")
+
+
+def ansatz_parameter_count(
+    num_steps: int,
+    *,
+    trotter_order: int = ANSATZ_TROTTER_ORDER,
+) -> int:
+    if trotter_order == 1:
+        return 2 * num_steps
+    if trotter_order == 2:
+        return 2 * num_steps + 1
+    raise NotImplementedError(f"Ansatz parameter count is not implemented for trotter_order={trotter_order}.")
 
 
 def linear_ramp_first_order_parameters(
@@ -256,6 +323,66 @@ def build_2d_tfi_circuit(
     return circ
 
 
+def build_2d_tfi_ansatz_circuit(
+    thetas: np.ndarray | list[float],
+    *,
+    system_size_x: int = CONSTANT_L_X,
+    system_size_y: int = CONSTANT_L_Y,
+    trotter_order: int = ANSATZ_TROTTER_ORDER,
+) -> Circuit:
+    """Build the variational 2D TFI ansatz circuit used by the optimizer."""
+    thetas = np.asarray(thetas, dtype=float)
+    system_size = system_size_x * system_size_y
+    circ = Circuit(system_size, system_size)
+
+    def add_zz_layer(theta_zz: float) -> None:
+        for x in range(system_size_x):
+            for y in range(system_size_y):
+                i = x * system_size_y + y
+                j = ((x + 1) % system_size_x) * system_size_y + y
+                circ.ZZPhase(theta_zz, i, j)
+
+        for x in range(system_size_x):
+            for y in range(system_size_y):
+                i = x * system_size_y + y
+                j = x * system_size_y + (y + 1) % system_size_y
+                circ.ZZPhase(theta_zz, i, j)
+
+        circ.add_barrier(list(range(system_size)))
+
+    def add_x_layer(theta_x: float) -> None:
+        for qubit in range(system_size):
+            circ.Rx(theta_x, qubit)
+        circ.add_barrier(list(range(system_size)))
+
+    if trotter_order == 1:
+        if thetas.ndim != 1 or thetas.size % 2 != 0:
+            raise ValueError("First-order ansatz expects alternating ZZ/X parameters.")
+        depth = thetas.size // 2
+        for layer in range(depth):
+            add_zz_layer(float(thetas[2 * layer]))
+            add_x_layer(float(thetas[2 * layer + 1]))
+    elif trotter_order == 2:
+        if thetas.ndim != 1 or thetas.size < 3 or thetas.size % 2 == 0:
+            raise ValueError("Second-order ansatz expects X/ZZ/.../X parameters of odd length.")
+        num_steps = (thetas.size - 1) // 2
+        x_layers = thetas[0::2]
+        zz_layers = thetas[1::2]
+        if x_layers.size != num_steps + 1 or zz_layers.size != num_steps:
+            raise ValueError("Invalid second-order ansatz parameter layout.")
+        add_x_layer(float(x_layers[0]))
+        for layer in range(num_steps):
+            add_zz_layer(float(zz_layers[layer]))
+            add_x_layer(float(x_layers[layer + 1]))
+    else:
+        raise NotImplementedError(f"Ansatz circuit is not implemented for trotter_order={trotter_order}.")
+
+    for qubit in range(system_size):
+        circ.Measure(qubit, qubit)
+
+    return circ
+
+
 def build_second_order_linear_ramp_tfi_circuit(
     *,
     num_steps: int = RAMP_TARGET_STEPS,
@@ -318,8 +445,9 @@ def target_metadata(
     *,
     total_time: float = TOTAL_TIME,
     target_steps: int = TARGET_STEPS,
-    trotter_order: int = 1,
-    trunc_val: float = TRUNC_VAL,
+    trotter_order: int = TARGET_TROTTER_ORDER,
+    trunc_val: float = TARGET_TRUNC_VAL,
+    max_num_str: int = TARGET_MAX_NUM_STR,
 ) -> dict[str, object]:
     return {
         "system_size_x": CONSTANT_L_X,
@@ -335,7 +463,7 @@ def target_metadata(
         "backend_algorithm": BACKEND_ALGORITHM,
         "precision": PRECISION,
         "trunc_val": trunc_val,
-        "max_num_str": MAX_NUM_STR,
+        "max_num_str": max_num_str,
         "trotter_order": trotter_order,
         "target_style": f"{trotter_order}_order_trotter",
     }
@@ -403,33 +531,105 @@ def validate_metadata_against_expected(metadata: dict[str, object], expected: di
         raise ValueError(f"Target metadata mismatch:\n{mismatch_str}")
 
 
-def expected_raw_gradient_count(system_size: int, num_steps: int = ANSATZ_STEPS) -> int:
-    return num_steps * (3 * system_size)
+def validate_target_metadata_for_optimization(
+    metadata: dict[str, object],
+    *,
+    expected_total_time: float | None = None,
+    expected_system_size_x: int | None = None,
+    expected_system_size_y: int | None = None,
+) -> None:
+    required_keys = (
+        "system_size_x",
+        "system_size_y",
+        "system_size",
+        "total_time",
+        "backend_name",
+    )
+    missing = [key for key in required_keys if key not in metadata]
+    if missing:
+        raise ValueError(f"Target metadata is missing required keys: {missing}")
+
+    mismatches = []
+    if expected_total_time is not None and metadata.get("total_time") != expected_total_time:
+        mismatches.append(
+            f"total_time: expected {expected_total_time!r}, got {metadata.get('total_time')!r}"
+        )
+    if expected_system_size_x is not None and metadata.get("system_size_x") != expected_system_size_x:
+        mismatches.append(
+            f"system_size_x: expected {expected_system_size_x!r}, got {metadata.get('system_size_x')!r}"
+        )
+    if expected_system_size_y is not None and metadata.get("system_size_y") != expected_system_size_y:
+        mismatches.append(
+            f"system_size_y: expected {expected_system_size_y!r}, got {metadata.get('system_size_y')!r}"
+        )
+
+    if mismatches:
+        raise ValueError("Target metadata mismatch:\n" + "\n".join(mismatches))
 
 
-def compress_tfi_gradients(raw_grads, *, system_size: int, num_steps: int = ANSATZ_STEPS) -> np.ndarray:
+def expected_raw_gradient_count(
+    system_size: int,
+    num_steps: int = ANSATZ_STEPS,
+    trotter_order: int = ANSATZ_TROTTER_ORDER,
+) -> int:
+    if trotter_order == 1:
+        return num_steps * (3 * system_size)
+    if trotter_order == 2:
+        return num_steps * (3 * system_size) + system_size
+    raise NotImplementedError(f"Gradient compression is not implemented for trotter_order={trotter_order}.")
+
+
+def compress_tfi_gradients(
+    raw_grads,
+    *,
+    system_size: int,
+    num_steps: int = ANSATZ_STEPS,
+    trotter_order: int = ANSATZ_TROTTER_ORDER,
+) -> np.ndarray:
     """Reduce sitewise SPD gradients into shared translationally invariant layer parameters."""
     raw = np.asarray(raw_grads, dtype=float)
-    expected_size = expected_raw_gradient_count(system_size, num_steps)
+    expected_size = expected_raw_gradient_count(
+        system_size,
+        num_steps,
+        trotter_order=trotter_order,
+    )
     if raw.shape != (expected_size,):
         raise ValueError(
             f"Expected {expected_size} raw gradients for {num_steps} layers, got shape {raw.shape}."
         )
 
     layer_gradients = np.zeros(2 * num_steps, dtype=float)
-    layer_span = 3 * system_size
     zz_terms_per_layer = 2 * system_size
 
-    for layer in range(num_steps):
-        start = layer * layer_span
-        zz_slice = raw[start : start + zz_terms_per_layer]
-        x_slice = raw[start + zz_terms_per_layer : start + layer_span]
-        # SPD gradients are with respect to the internal angle theta = param * pi.
-        # Convert to pytket parameters by multiplying by pi after summing shared gates.
-        layer_gradients[2 * layer] = float(np.sum(zz_slice) * math.pi)
-        layer_gradients[2 * layer + 1] = float(np.sum(x_slice) * math.pi)
+    if trotter_order == 1:
+        layer_span = 3 * system_size
+        for layer in range(num_steps):
+            start = layer * layer_span
+            zz_slice = raw[start : start + zz_terms_per_layer]
+            x_slice = raw[start + zz_terms_per_layer : start + layer_span]
+            layer_gradients[2 * layer] = float(np.sum(zz_slice) * math.pi)
+            layer_gradients[2 * layer + 1] = float(np.sum(x_slice) * math.pi)
+        return layer_gradients
 
-    return layer_gradients
+    if trotter_order == 2:
+        cursor = 0
+        x_layer_sums = [float(np.sum(raw[cursor : cursor + system_size]))]
+        cursor += system_size
+        zz_layer_sums = []
+        for _ in range(num_steps):
+            zz_layer_sums.append(float(np.sum(raw[cursor : cursor + zz_terms_per_layer])))
+            cursor += zz_terms_per_layer
+            x_layer_sums.append(float(np.sum(raw[cursor : cursor + system_size])))
+            cursor += system_size
+
+        grad_params = np.zeros(2 * num_steps + 1, dtype=float)
+        for layer in range(num_steps):
+            grad_params[2 * layer] = x_layer_sums[layer] * math.pi
+            grad_params[2 * layer + 1] = zz_layer_sums[layer] * math.pi
+        grad_params[-1] = x_layer_sums[-1] * math.pi
+        return grad_params
+
+    raise NotImplementedError(f"Gradient compression is not implemented for trotter_order={trotter_order}.")
 
 
 def l2_cost(current_spo, target_spo) -> float:

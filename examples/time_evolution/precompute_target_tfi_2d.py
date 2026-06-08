@@ -10,10 +10,11 @@ import spd
 
 from common import (
     CONSTANT_SYSTEM_SIZE,
-    MAX_NUM_STR,
+    TARGET_MAX_NUM_STR,
     TARGET_STEPS,
+    TARGET_TROTTER_ORDER,
+    TARGET_TRUNC_VAL,
     TOTAL_TIME,
-    TRUNC_VAL,
     build_2d_tfi_circuit,
     build_backend,
     quiet_call,
@@ -47,15 +48,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--trunc-val",
         type=float,
-        default=TRUNC_VAL,
+        default=TARGET_TRUNC_VAL,
         help="Forward evolution truncation value.",
     )
     parser.add_argument(
         "--trotter-order",
         type=int,
         choices=(1, 2, 4),
-        default=1,
+        default=TARGET_TROTTER_ORDER,
         help="Use first-order, second-order, or fourth-order Trotter layers.",
+    )
+    parser.add_argument(
+        "--max-num-str",
+        type=int,
+        default=TARGET_MAX_NUM_STR,
+        help="Forward evolution max_num_str limit.",
     )
     parser.add_argument(
         "--output-dir",
@@ -102,7 +109,7 @@ if __name__ == "__main__":
         initial_spo_x,
         target_circuit,
         args.trunc_val,
-        MAX_NUM_STR,
+        args.max_num_str,
         backend=backend,
     )
     target_spo_z, z_info = quiet_call(
@@ -110,7 +117,7 @@ if __name__ == "__main__":
         initial_spo_z,
         target_circuit,
         args.trunc_val,
-        MAX_NUM_STR,
+        args.max_num_str,
         backend=backend,
     )
 
@@ -125,6 +132,7 @@ if __name__ == "__main__":
             target_steps=target_steps,
             trotter_order=args.trotter_order,
             trunc_val=args.trunc_val,
+            max_num_str=args.max_num_str,
         ),
     )
 
@@ -132,6 +140,7 @@ if __name__ == "__main__":
     print(f"Target circuit steps: {target_steps}")
     print(f"dt: {dt}")
     print(f"Trotter order: {args.trotter_order}")
+    print(f"max_num_str: {args.max_num_str}")
     print(f"Target X SPO size: {target_spo_x.get_size()} | norm^2: {target_spo_x.get_norm_square()}")
     print(f"Target Z SPO size: {target_spo_z.get_size()} | norm^2: {target_spo_z.get_norm_square()}")
     print(f"Target X total truncated l2 norm: {x_info['total_truncated_l2_norm']}")
