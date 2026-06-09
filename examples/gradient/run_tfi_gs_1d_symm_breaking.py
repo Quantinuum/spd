@@ -23,8 +23,7 @@ if __name__ == "__main__":
     backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
     backend.module.set_algorithm("stack_sort_merge")
 
-    method = "adam"
-    run_method = "adam_lbfgsb"
+    method = "lbfgs"
     number_of_parameters = int(sys.argv[1])
     num_layers = int(number_of_parameters // 3)
     system_size = 2 * num_layers + 3
@@ -41,7 +40,14 @@ if __name__ == "__main__":
         f"precision: {precision} | basis: {basis}"
     )
 
-    random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
+    init_mode = "random"
+    init_params_path = None
+    run_utils.validate_method(method, niter)
+    initial_thetas, init_metadata = run_utils.init_thetas(
+        num_params=number_of_parameters,
+        init_mode=init_mode,
+        init_params_path=init_params_path,
+    )
 
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=False)
     run_name = run_utils.format_run_name(
@@ -50,17 +56,19 @@ if __name__ == "__main__":
         size=system_size,
         num_params=number_of_parameters,
         g=g,
-        method=run_method,
+        method=method,
+        init_mode=init_mode,
         trunc_val=trunc_val,
         max_num_str=max_num_str,
         lambda_ose="schedule",
     )
     run_dir = run_utils.make_run_dir(run_name)
-    initial_params = random_thetas.copy()
+    print(initial_thetas)
     optimizer_options = {
         "adam_learning_rate": 3e-2,
         "adam_steps": 100,
-        "lbfgsb": {"disp": True, "gtol": 1e-4, "maxiter": 1000},
+        "lbfgs": {"disp": True, "gtol": 1e-4, "maxiter": 1000},
+        "basinhopping": {"niter": niter, "minimizer_kwargs": {"method": "L-BFGS-B", "jac": True}},
     }
     metadata = {
         "model": "tfi_symm_breaking",
@@ -77,8 +85,9 @@ if __name__ == "__main__":
         "precision": precision,
         "packbit": backend.packbit,
         "algorithm": "stack_sort_merge",
-        "method": run_method,
+        "method": method,
         "optimizer_options": optimizer_options,
+        "init": init_metadata,
         "seed": 0,
         "script": __file__,
         "argv": sys.argv[1:],
@@ -142,15 +151,29 @@ if __name__ == "__main__":
         # during line search. We attach the latest matching eval if available.
         run_utils.record_step(history, params_history, last_eval, thetas)
 
-    initial_cost, initial_grads = get_f_g(random_thetas)
-    log_step(random_thetas)
+    initial_cost, initial_grads = get_f_g(initial_thetas)
+    log_step(initial_thetas)
     print("\n Expectation Value:", initial_cost)
     print("\n SPD Computed Gradients:", initial_grads)
 
-    if method == "adam":
+    if method == "eval_only":
+        final = run_utils.make_final_summary(None, evals, initial_thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=initial_thetas,
+        )
+        raise SystemExit(0)
+
+    elif method == "adam":
         optimizer = optax.adam(learning_rate=optimizer_options["adam_learning_rate"])
-        opt_state = optimizer.init(random_thetas)
-        thetas = random_thetas.copy()
+        opt_state = optimizer.init(initial_thetas)
+        thetas = initial_thetas.copy()
         for _ in range(optimizer_options["adam_steps"]):
             print("====" * 30)
             print(f"Thetas[{_}]: ", thetas)
@@ -160,16 +183,26 @@ if __name__ == "__main__":
             thetas = optax.apply_updates(thetas, updates)
             log_step(thetas)
 
-        random_thetas = thetas
+        final = run_utils.make_final_summary(None, evals, thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=thetas,
+        )
+        raise SystemExit(0)
 
-    if method == "basinhopping":
-        minimizer_kwargs = {"method": "L-BFGS-B", "jac": True}
+    elif method == "basinhopping":
         from scipy.optimize import basinhopping
 
         ret = basinhopping(
             get_f_g,
-            random_thetas,
-            minimizer_kwargs=minimizer_kwargs,
+            initial_thetas,
+            minimizer_kwargs=optimizer_options["basinhopping"]["minimizer_kwargs"],
             niter=niter,
             callback=lambda x, f, accept: log_step(x) if accept else None,
         )
@@ -182,31 +215,32 @@ if __name__ == "__main__":
             evals=evals,
             history=history,
             params_history=params_history,
-            initial_params=initial_params,
+            initial_params=initial_thetas,
             final_params=ret.x,
             result=ret,
         )
         raise SystemExit(0)
 
-    result = scipy.optimize.minimize(
-        get_f_g,
-        random_thetas,
-        method="L-BFGS-B",
-        jac=True,
-        callback=log_step,
-        options=optimizer_options["lbfgsb"],
-    )
-    print(result)
-    print("params: ", result.x)
-    final = run_utils.make_final_summary(result, evals, result.x)
-    run_utils.save_run_outputs(
-        run_dir,
-        metadata=metadata,
-        final=final,
-        evals=evals,
-        history=history,
-        params_history=params_history,
-        initial_params=initial_params,
-        final_params=result.x,
-        result=result,
-    )
+    elif method == "lbfgs":
+        result = scipy.optimize.minimize(
+            get_f_g,
+            initial_thetas,
+            method="L-BFGS-B",
+            jac=True,
+            callback=log_step,
+            options=optimizer_options["lbfgs"],
+        )
+        print(result)
+        print("params: ", result.x)
+        final = run_utils.make_final_summary(result, evals, result.x)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=result.x,
+            result=result,
+        )

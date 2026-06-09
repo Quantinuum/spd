@@ -29,8 +29,18 @@ if __name__ == "__main__":
     full_H = False
     factor = system_size if full_H else 1
 
-    random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
-    # random_thetas[:4] += np.array([-7.519e-02, -3.286e-02, -1.151e-02,  2.213e-01])
+    method = "lbfgs"
+    init_mode = "random"
+    init_params_path = None
+    if method not in {"eval_only", "lbfgs"}:
+        raise ValueError("AFH scripts currently support method='eval_only' or method='lbfgs'.")
+    run_utils.validate_method(method, niter)
+    initial_thetas, init_metadata = run_utils.init_thetas(
+        num_params=number_of_parameters,
+        init_mode=init_mode,
+        init_params_path=init_params_path,
+    )
+    # initial_thetas[:4] += np.array([-7.519e-02, -3.286e-02, -1.151e-02,  2.213e-01])
 
     stagger_signs = heisenberg_setup.gen_2d_stagger_signs(system_size_x, system_size_y)
     grad_multiplicities = heisenberg_setup.gen_afh_grad_multiplicities(
@@ -44,16 +54,16 @@ if __name__ == "__main__":
     max_num_str = int(1e6)
     lambda_ose = 1e-2
 
-    print(random_thetas)
+    print(initial_thetas)
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
 
-    method = "lbfgsb"
     run_name = run_utils.format_run_name(
         model="afh",
         dim=2,
         size=(system_size_x, system_size_y),
         num_params=number_of_parameters,
         method=method,
+        init_mode=init_mode,
         trunc_val=trunc_val,
         max_num_str=max_num_str,
         lambda_ose=lambda_ose,
@@ -79,6 +89,7 @@ if __name__ == "__main__":
         "algorithm": "stack_sort_merge",
         "method": method,
         "optimizer_options": optimizer_options,
+        "init": init_metadata,
         "seed": None,
         "script": __file__,
         "argv": sys.argv[1:],
@@ -145,13 +156,13 @@ if __name__ == "__main__":
         # during line search. We attach the latest matching eval if available.
         run_utils.record_step(history, params_history, last_eval, thetas)
 
-    initial_cost, initial_grads = get_f_g(random_thetas)
-    log_step(random_thetas)
+    initial_cost, initial_grads = get_f_g(initial_thetas)
+    log_step(initial_thetas)
     print("\n Expectation Value:", initial_cost)
     print("\n SPD Computed Gradients:", initial_grads)
 
-    if niter == 0:
-        final = run_utils.make_final_summary(None, evals, random_thetas)
+    if method == "eval_only":
+        final = run_utils.make_final_summary(None, evals, initial_thetas)
         run_utils.save_run_outputs(
             run_dir,
             metadata=metadata,
@@ -159,30 +170,33 @@ if __name__ == "__main__":
             evals=evals,
             history=history,
             params_history=params_history,
-            initial_params=random_thetas,
-            final_params=random_thetas,
+            initial_params=initial_thetas,
+            final_params=initial_thetas,
         )
         raise SystemExit(0)
 
-    result = scipy.optimize.minimize(
-        get_f_g,
-        random_thetas,
-        method="L-BFGS-B",
-        jac=True,
-        callback=log_step,
-        options=optimizer_options,
-    )
-    print(result)
-    print("params: ", result.x)
-    final = run_utils.make_final_summary(result, evals, result.x)
-    run_utils.save_run_outputs(
-        run_dir,
-        metadata=metadata,
-        final=final,
-        evals=evals,
-        history=history,
-        params_history=params_history,
-        initial_params=random_thetas,
-        final_params=result.x,
-        result=result,
-    )
+    elif method == "lbfgs":
+        result = scipy.optimize.minimize(
+            get_f_g,
+            initial_thetas,
+            method="L-BFGS-B",
+            jac=True,
+            callback=log_step,
+            options=optimizer_options,
+        )
+        print(result)
+        print("params: ", result.x)
+        final = run_utils.make_final_summary(result, evals, result.x)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=result.x,
+            result=result,
+        )
+    else:
+        raise ValueError(f"Unsupported method={method}.")

@@ -59,6 +59,12 @@ def _format_size(size):
     return str(int(size))
 
 
+def _format_init_mode(init_mode):
+    if init_mode == "from_file":
+        return "file"
+    return str(init_mode)
+
+
 def format_run_name(
     *,
     model,
@@ -66,6 +72,7 @@ def format_run_name(
     size,
     num_params,
     method,
+    init_mode,
     trunc_val,
     max_num_str,
     lambda_ose,
@@ -81,6 +88,7 @@ def format_run_name(
     parts.extend(
         [
             method,
+            f"init{_format_init_mode(init_mode)}",
             f"tv{_format_value(trunc_val)}",
             f"mns{_format_value(max_num_str)}",
             f"lo{_format_value(lambda_ose)}",
@@ -93,6 +101,58 @@ def make_run_dir(run_name):
     run_dir = Path(run_name)
     run_dir.mkdir()
     return run_dir
+
+
+def validate_method(method, niter=None):
+    valid_methods = {"eval_only", "adam", "lbfgs", "basinhopping"}
+    if method not in valid_methods:
+        raise ValueError(f"Unsupported method={method}. Expected one of {sorted(valid_methods)}.")
+    if method != "eval_only" and niter is not None and niter <= 0:
+        raise ValueError("niter must be positive unless method='eval_only'.")
+
+
+def init_thetas(
+    *,
+    num_params,
+    init_mode,
+    init_params_path=None,
+    random_scale=0.1,
+):
+    random_init = (np.random.rand(num_params) - 0.5) * random_scale
+    metadata = {
+        "mode": init_mode,
+        "path": init_params_path,
+        "target_num_params": int(num_params),
+        "random_scale": float(random_scale),
+    }
+
+    if init_mode == "random":
+        metadata.update(
+            {
+                "source_num_params": None,
+                "resize_rule": None,
+                "num_copied": 0,
+            }
+        )
+        return random_init, metadata
+
+    if init_mode == "from_file":
+        if init_params_path is None:
+            raise ValueError("init_params_path is required when init_mode='from_file'.")
+        loaded_thetas = np.atleast_1d(np.loadtxt(init_params_path))
+        thetas = random_init.copy()
+        num_copied = min(len(loaded_thetas), num_params)
+        thetas[:num_copied] = loaded_thetas[:num_copied]
+        metadata.update(
+            {
+                "source_num_params": int(len(loaded_thetas)),
+                "resize_rule": "copy_prefix_random_tail",
+                "num_copied": int(num_copied),
+            }
+        )
+        return thetas, metadata
+
+    raise ValueError("init_mode must be 'random' or 'from_file'.")
 
 
 def record_eval(
@@ -177,6 +237,7 @@ def make_final_summary(result, evals, final_params):
         "num_iterations": getattr(result, "nit", None),
         "final_cost": getattr(result, "fun", last_record.get("cost")),
         "final_energy": last_record.get("energy"),
+        "final_energy_error": last_record.get("energy_error"),
         "final_ose": last_record.get("ose"),
         "final_grad_norm": last_record.get("grad_norm"),
         "final_theta_norm": float(np.linalg.norm(final_params)),

@@ -22,7 +22,7 @@ if __name__ == "__main__":
     backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
     backend.module.set_algorithm("stack_sort_merge")
 
-    method = "lbfgsb"
+    method = "lbfgs"
     number_of_parameters = int(sys.argv[1])
     num_layers = int(number_of_parameters // 2)
     system_size = 2 * num_layers + 3
@@ -33,8 +33,15 @@ if __name__ == "__main__":
     niter = int(sys.argv[4])
     assert basis in ["0", "+"]
 
-    random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
-    print(random_thetas)
+    init_mode = "random"
+    init_params_path = None
+    run_utils.validate_method(method, niter)
+    initial_thetas, init_metadata = run_utils.init_thetas(
+        num_params=number_of_parameters,
+        init_mode=init_mode,
+        init_params_path=init_params_path,
+    )
+    print(initial_thetas)
 
     full_H = False
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=full_H)
@@ -51,6 +58,7 @@ if __name__ == "__main__":
         num_params=number_of_parameters,
         g=g,
         method=method,
+        init_mode=init_mode,
         trunc_val=trunc_val,
         max_num_str=max_num_str,
         lambda_ose=lambda_ose,
@@ -75,6 +83,7 @@ if __name__ == "__main__":
         "algorithm": "stack_sort_merge",
         "method": method,
         "optimizer_options": optimizer_options,
+        "init": init_metadata,
         "seed": 0,
         "script": __file__,
         "argv": sys.argv[1:],
@@ -141,17 +150,31 @@ if __name__ == "__main__":
         # during line search. We attach the latest matching eval if available.
         run_utils.record_step(history, params_history, last_eval, thetas)
 
-    initial_cost, initial_grads = get_f_g(random_thetas)
-    log_step(random_thetas)
+    initial_cost, initial_grads = get_f_g(initial_thetas)
+    log_step(initial_thetas)
     print("\n Expectation Value:", initial_cost)
     print("\n SPD Computed Gradients:", initial_grads)
 
-    if method == "adam":
+    if method == "eval_only":
+        final = run_utils.make_final_summary(None, evals, initial_thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=initial_thetas,
+        )
+        raise SystemExit(0)
+
+    elif method == "adam":
         import optax
 
         optimizer = optax.adam(learning_rate=1e-2)
-        opt_state = optimizer.init(random_thetas)
-        thetas = random_thetas.copy()
+        opt_state = optimizer.init(initial_thetas)
+        thetas = initial_thetas.copy()
         for _ in range(500):
             print("====" * 30)
             print(f"Thetas[{_}]: ", thetas)
@@ -159,14 +182,28 @@ if __name__ == "__main__":
             _, grad = get_f_g(thetas)
             updates, opt_state = optimizer.update(grad, opt_state)
             thetas = optax.apply_updates(thetas, updates)
+            log_step(thetas)
 
-    if method == "basinhopping":
+        final = run_utils.make_final_summary(None, evals, thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=thetas,
+        )
+        raise SystemExit(0)
+
+    elif method == "basinhopping":
         minimizer_kwargs = {"method": "L-BFGS-B", "jac": True}
         from scipy.optimize import basinhopping
 
         ret = basinhopping(
             get_f_g,
-            random_thetas,
+            initial_thetas,
             minimizer_kwargs=minimizer_kwargs,
             niter=niter,
             callback=lambda x, f, accept: log_step(x) if accept else None,
@@ -180,32 +217,33 @@ if __name__ == "__main__":
             evals=evals,
             history=history,
             params_history=params_history,
-            initial_params=random_thetas,
+            initial_params=initial_thetas,
             final_params=ret.x,
             result=ret,
         )
         raise SystemExit(0)
 
-    result = scipy.optimize.minimize(
-        get_f_g,
-        random_thetas,
-        method="L-BFGS-B",
-        jac=True,
-        callback=log_step,
-        options=optimizer_options,
-    )
-    print(result)
-    print("params: ", result.x)
-    print(history)
-    final = run_utils.make_final_summary(result, evals, result.x)
-    run_utils.save_run_outputs(
-        run_dir,
-        metadata=metadata,
-        final=final,
-        evals=evals,
-        history=history,
-        params_history=params_history,
-        initial_params=random_thetas,
-        final_params=result.x,
-        result=result,
-    )
+    elif method == "lbfgs":
+        result = scipy.optimize.minimize(
+            get_f_g,
+            initial_thetas,
+            method="L-BFGS-B",
+            jac=True,
+            callback=log_step,
+            options=optimizer_options,
+        )
+        print(result)
+        print("params: ", result.x)
+        print(history)
+        final = run_utils.make_final_summary(result, evals, result.x)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=result.x,
+            result=result,
+        )
