@@ -3,6 +3,7 @@ import scipy.optimize
 import spd
 import sys
 
+import run_utils
 import tfi_setup
 
 
@@ -36,7 +37,47 @@ if __name__ == "__main__":
     max_num_str = int(1e6)
     print("\n Truncation Value:", trunc_val)
 
+    run_name = run_utils.format_run_name(
+        model="tfi",
+        dim=2,
+        size=(system_size_x, system_size_y),
+        num_params=number_of_parameters,
+        g=g,
+        method=method,
+        trunc_val=trunc_val,
+        max_num_str=max_num_str,
+        lambda_ose=lambda_ose,
+    )
+    run_dir = run_utils.make_run_dir(run_name)
+    minimizer_kwargs = {"method": "L-BFGS-B", "jac": True}
+    optimizer_options = {"niter": niter, "minimizer_kwargs": minimizer_kwargs}
+    metadata = {
+        "model": "tfi",
+        "dim": 2,
+        "system_size": system_size,
+        "system_size_x": system_size_x,
+        "system_size_y": system_size_y,
+        "num_params": number_of_parameters,
+        "g": g,
+        "basis": basis,
+        "trunc_val": trunc_val,
+        "max_num_str": max_num_str,
+        "lambda_ose": lambda_ose,
+        "backend": backend.name,
+        "precision": precision,
+        "packbit": backend.packbit,
+        "algorithm": "stack_sort_merge",
+        "method": method,
+        "optimizer_options": optimizer_options,
+        "seed": None,
+        "script": __file__,
+        "argv": sys.argv[1:],
+    }
+
+    evals = []
     history = []
+    params_history = []
+    last_eval = {}
 
     def get_f_g(thetas):
         circ = tfi_setup.gen_2d_TFI_ansatz_circuit(thetas, system_size_x, system_size_y)
@@ -68,11 +109,31 @@ if __name__ == "__main__":
 
         lambda_reg = 0.0
         cost = exp_val + lambda_ose * OSE + lambda_reg * np.sum(thetas ** 2)
-        print("step = ", len(history), "num_param", number_of_parameters)
+        print("eval = ", len(evals), "num_param", number_of_parameters)
         print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
-        history.append(cost)
+        run_utils.record_eval(
+            evals,
+            last_eval,
+            thetas,
+            cost=cost,
+            energy=exp_val,
+            energy_error=E_err_estimate,
+            ose=OSE,
+            grad_norm=np.linalg.norm(grads),
+            lambda_ose=lambda_ose,
+        )
         return cost, grads
+
+    def log_step(thetas):
+        # SciPy callback reports accepted parameters, while get_f_g is also called
+        # during line search. We attach the latest matching eval if available.
+        run_utils.record_step(history, params_history, last_eval, thetas)
+
+    initial_cost, initial_grads = get_f_g(random_thetas)
+    log_step(random_thetas)
+    print("\n Expectation Value:", initial_cost)
+    print("\n SPD Computed Gradients:", initial_grads)
 
     if method == "adam":
         import optax
@@ -87,10 +148,21 @@ if __name__ == "__main__":
             _, grad = get_f_g(thetas)
             updates, opt_state = optimizer.update(grad, opt_state)
             thetas = optax.apply_updates(thetas, updates)
+            log_step(thetas)
+        final = run_utils.make_final_summary(None, evals, thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=random_thetas,
+            final_params=thetas,
+        )
         raise SystemExit(0)
 
     if method == "basinhopping":
-        minimizer_kwargs = {"method": "L-BFGS-B", "jac": True}
         from scipy.optimize import basinhopping
 
         ret = basinhopping(
@@ -98,20 +170,43 @@ if __name__ == "__main__":
             random_thetas,
             minimizer_kwargs=minimizer_kwargs,
             niter=niter,
+            callback=lambda x, f, accept: log_step(x) if accept else None,
         )
         print(ret)
-        np.savetxt(f"2D_bh_{system_size}_np_{number_of_parameters}_g_{g}_params.txt", ret.x)
-        np.savetxt(f"2D_bh_{system_size}_np_{number_of_parameters}_g_{g}_history.txt", history)
-        import pickle
-
-        pickle.dump(ret, open(f"2D_bh_L_{system_size}_np_{number_of_parameters}_g_{g}_result.pkl", "wb"))
+        final = run_utils.make_final_summary(ret, evals, ret.x)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=random_thetas,
+            final_params=ret.x,
+            result=ret,
+        )
         raise SystemExit(0)
 
+    optimizer_options = {"disp": True, "gtol": 1e-5, "maxiter": 100}
+    metadata["optimizer_options"] = optimizer_options
     result = scipy.optimize.minimize(
         get_f_g,
         random_thetas,
         method="L-BFGS-B",
         jac=True,
-        options={"disp": True, "gtol": 1e-5, "maxiter": 100},
+        callback=log_step,
+        options=optimizer_options,
     )
     print(result)
+    final = run_utils.make_final_summary(result, evals, result.x)
+    run_utils.save_run_outputs(
+        run_dir,
+        metadata=metadata,
+        final=final,
+        evals=evals,
+        history=history,
+        params_history=params_history,
+        initial_params=random_thetas,
+        final_params=result.x,
+        result=result,
+    )

@@ -4,6 +4,7 @@ import spd
 import sys
 
 import heisenberg_setup
+import run_utils
 
 
 # np.random.seed(0)
@@ -27,7 +28,6 @@ if __name__ == "__main__":
     full_H = False
     factor = system_size if full_H else 1
 
-    base_filename = f"L_{system_size}_layers_{num_layers}_np_{number_of_parameters}"
     random_thetas = (np.random.rand(number_of_parameters) - 0.5) * 0.1
     stagger_signs = heisenberg_setup.gen_1d_stagger_signs(system_size)
     grad_multiplicities = heisenberg_setup.gen_afh_grad_multiplicities(
@@ -36,13 +36,50 @@ if __name__ == "__main__":
 
     ham_dict = heisenberg_setup.gen_1d_Hamiltonian_dict(system_size, full=full_H)
     trunc_val = 1e-3
-    max_num_str = 1e6
+    max_num_str = int(1e6)
     lambda_ose = 0.0
 
     print(random_thetas)
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
 
+    method = "lbfgsb"
+    run_name = run_utils.format_run_name(
+        model="afh",
+        dim=1,
+        size=system_size,
+        num_params=number_of_parameters,
+        method=method,
+        trunc_val=trunc_val,
+        max_num_str=max_num_str,
+        lambda_ose=lambda_ose,
+    )
+    run_dir = run_utils.make_run_dir(run_name)
+    optimizer_options = {"disp": True, "gtol": 1e-6, "maxiter": niter}
+    metadata = {
+        "model": "afh",
+        "dim": 1,
+        "system_size": system_size,
+        "num_layers": num_layers,
+        "num_params": number_of_parameters,
+        "basis": basis,
+        "full_H": full_H,
+        "trunc_val": trunc_val,
+        "max_num_str": max_num_str,
+        "lambda_ose": lambda_ose,
+        "backend": backend.name,
+        "precision": precision,
+        "packbit": backend.packbit,
+        "algorithm": "stack_sort_merge",
+        "method": method,
+        "optimizer_options": optimizer_options,
+        "seed": None,
+        "script": __file__,
+        "argv": sys.argv[1:],
+    }
+    evals = []
     history = []
+    params_history = []
+    last_eval = {}
 
     def get_f_g(thetas):
         circ = heisenberg_setup.gen_1d_AFH_ansatz_circuit(thetas, system_size)
@@ -77,17 +114,44 @@ if __name__ == "__main__":
         E_err_estimate /= factor
         grads /= factor
         cost = exp_val + lambda_ose * OSE
-        history.append(cost)
-        print("step = ", len(history) - 1, "num_param", number_of_parameters)
+        print("eval = ", len(evals), "num_param", number_of_parameters)
         print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
+        run_utils.record_eval(
+            evals,
+            last_eval,
+            thetas,
+            cost=cost,
+            energy=exp_val,
+            energy_error=E_err_estimate,
+            ose=OSE,
+            grad_norm=np.linalg.norm(grads),
+            lambda_ose=lambda_ose,
+        )
         return cost, grads
 
+    def log_step(thetas):
+        # SciPy callback reports accepted parameters, while get_f_g is also called
+        # during line search. We attach the latest matching eval if available.
+        run_utils.record_step(history, params_history, last_eval, thetas)
+
     initial_cost, initial_grads = get_f_g(random_thetas)
+    log_step(random_thetas)
     print("\n Expectation Value:", initial_cost)
     print("\n SPD Computed Gradients:", initial_grads)
 
     if niter == 0:
+        final = run_utils.make_final_summary(None, evals, random_thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=random_thetas,
+            final_params=random_thetas,
+        )
         raise SystemExit(0)
 
     result = scipy.optimize.minimize(
@@ -95,9 +159,20 @@ if __name__ == "__main__":
         random_thetas,
         method="L-BFGS-B",
         jac=True,
-        options={"disp": True, "gtol": 1e-6, "maxiter": niter},
+        callback=log_step,
+        options=optimizer_options,
     )
     print(result)
     print("params: ", result.x)
-    np.savetxt(base_filename + "_params.txt", result.x)
-    np.savetxt(base_filename + "_history.txt", history)
+    final = run_utils.make_final_summary(result, evals, result.x)
+    run_utils.save_run_outputs(
+        run_dir,
+        metadata=metadata,
+        final=final,
+        evals=evals,
+        history=history,
+        params_history=params_history,
+        initial_params=random_thetas,
+        final_params=result.x,
+        result=result,
+    )
