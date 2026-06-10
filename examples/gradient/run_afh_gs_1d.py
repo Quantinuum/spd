@@ -1,7 +1,8 @@
+import argparse
+
 import numpy as np
 import scipy.optimize
 import spd
-import sys
 
 import heisenberg_setup
 import run_utils
@@ -11,33 +12,50 @@ import run_utils
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("num_layers", type=int)
+    parser.add_argument("niter", type=int)
+    parser.add_argument("--system-size", type=int, default=None)
+    run_utils.add_common_args(
+        parser,
+        method="lbfgs",
+        methods=("eval_only", "lbfgs"),
+        trunc_val=1e-3,
+        max_num_str=int(1e6),
+        lambda_ose=0.0,
+    )
+    args = parser.parse_args()
+
     precision = "double"
     basis = "0"
 
     backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
     backend.module.set_algorithm("stack_sort_merge")
 
-    num_layers = int(sys.argv[1])
-    niter = int(sys.argv[2])
+    num_layers = args.num_layers
+    niter = args.niter
 
     number_of_parameters = 4 * num_layers
     # The light cone spread out by +2 in one spatial direction per gate type.
     # There are XX, YY, ZZ gates.
     # So per layer it increases + 6
-    system_size = num_layers * 6 + 2
+    system_size = args.system_size
+    if system_size is None:
+        system_size = num_layers * 6 + 2
+    elif system_size <= 0:
+        raise ValueError("system_size must be positive.")
     full_H = False
     factor = system_size if full_H else 1
 
-    method = "lbfgs"
-    init_mode = "random"
-    init_params_path = None
-    if method not in {"eval_only", "lbfgs"}:
-        raise ValueError("AFH scripts currently support method='eval_only' or method='lbfgs'.")
+    method = args.method
+    init_params_path = args.init_params_path
+    init_mode = run_utils.infer_init_mode(init_params_path)
     run_utils.validate_method(method, niter)
     initial_thetas, init_metadata = run_utils.init_thetas(
         num_params=number_of_parameters,
         init_mode=init_mode,
         init_params_path=init_params_path,
+        random_scale=args.random_scale,
     )
     stagger_signs = heisenberg_setup.gen_1d_stagger_signs(system_size)
     grad_multiplicities = heisenberg_setup.gen_afh_grad_multiplicities(
@@ -45,9 +63,9 @@ if __name__ == "__main__":
     )
 
     ham_dict = heisenberg_setup.gen_1d_Hamiltonian_dict(system_size, full=full_H)
-    trunc_val = 1e-3
-    max_num_str = int(1e6)
-    lambda_ose = 0.0
+    trunc_val = args.trunc_val
+    max_num_str = args.max_num_str
+    lambda_ose = args.lambda_ose
 
     print(initial_thetas)
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
@@ -85,8 +103,13 @@ if __name__ == "__main__":
         "init": init_metadata,
         "seed": None,
         "script": __file__,
-        "argv": sys.argv[1:],
+        "argv": vars(args),
     }
+    run_utils.init_run_outputs(
+        run_dir,
+        metadata=metadata,
+        initial_params=initial_thetas,
+    )
     evals = []
     history = []
     params_history = []
@@ -138,13 +161,14 @@ if __name__ == "__main__":
             ose=OSE,
             grad_norm=np.linalg.norm(grads),
             lambda_ose=lambda_ose,
+            run_dir=run_dir,
         )
         return cost, grads
 
     def log_step(thetas):
         # SciPy callback reports accepted parameters, while get_f_g is also called
         # during line search. We attach the latest matching eval if available.
-        run_utils.record_step(history, params_history, last_eval, thetas)
+        run_utils.record_step(history, params_history, last_eval, thetas, run_dir=run_dir)
 
     initial_cost, initial_grads = get_f_g(initial_thetas)
     log_step(initial_thetas)

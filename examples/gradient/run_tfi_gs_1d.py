@@ -1,7 +1,8 @@
+import argparse
+
 import numpy as np
 import scipy.optimize
 import spd
-import sys
 
 import run_utils
 import tfi_setup
@@ -18,28 +19,46 @@ def combine_grads(grads, number_of_parameters, system_size):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("number_of_parameters", type=int)
+    parser.add_argument("g", type=float)
+    parser.add_argument("basis", choices=("0", "+"))
+    parser.add_argument("niter", type=int)
+    parser.add_argument("--system-size", type=int, default=None)
+    run_utils.add_common_args(
+        parser,
+        trunc_val=1e-14,
+        max_num_str=int(1e5),
+        lambda_ose=0.0,
+    )
+    args = parser.parse_args()
+
     precision = "double"
     backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
     backend.module.set_algorithm("stack_sort_merge")
 
-    method = "lbfgs"
-    number_of_parameters = int(sys.argv[1])
+    method = args.method
+    number_of_parameters = args.number_of_parameters
     num_layers = int(number_of_parameters // 2)
-    system_size = 2 * num_layers + 3
-    lambda_ose = 0.0
+    system_size = args.system_size
+    if system_size is None:
+        system_size = 2 * num_layers + 3
+    elif system_size <= 0:
+        raise ValueError("system_size must be positive.")
+    lambda_ose = args.lambda_ose
 
-    g = float(sys.argv[2])
-    basis = sys.argv[3]
-    niter = int(sys.argv[4])
-    assert basis in ["0", "+"]
+    g = args.g
+    basis = args.basis
+    niter = args.niter
 
-    init_mode = "random"
-    init_params_path = None
+    init_params_path = args.init_params_path
+    init_mode = run_utils.infer_init_mode(init_params_path)
     run_utils.validate_method(method, niter)
     initial_thetas, init_metadata = run_utils.init_thetas(
         num_params=number_of_parameters,
         init_mode=init_mode,
         init_params_path=init_params_path,
+        random_scale=args.random_scale,
     )
     print(initial_thetas)
 
@@ -47,8 +66,8 @@ if __name__ == "__main__":
     ham_dict = tfi_setup.gen_1d_Hamiltonian_dict(system_size, g=g, full=full_H)
     factor = system_size if full_H else 1
 
-    trunc_val = 1e-14
-    max_num_str = int(1e5)
+    trunc_val = args.trunc_val
+    max_num_str = args.max_num_str
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
 
     run_name = run_utils.format_run_name(
@@ -86,8 +105,13 @@ if __name__ == "__main__":
         "init": init_metadata,
         "seed": 0,
         "script": __file__,
-        "argv": sys.argv[1:],
+        "argv": vars(args),
     }
+    run_utils.init_run_outputs(
+        run_dir,
+        metadata=metadata,
+        initial_params=initial_thetas,
+    )
 
     evals = []
     history = []
@@ -142,13 +166,14 @@ if __name__ == "__main__":
             ose=OSE,
             grad_norm=np.linalg.norm(grads),
             lambda_ose=lambda_ose,
+            run_dir=run_dir,
         )
         return cost, grads
 
     def log_step(thetas):
         # SciPy callback reports accepted parameters, while get_f_g is also called
         # during line search. We attach the latest matching eval if available.
-        run_utils.record_step(history, params_history, last_eval, thetas)
+        run_utils.record_step(history, params_history, last_eval, thetas, run_dir=run_dir)
 
     initial_cost, initial_grads = get_f_g(initial_thetas)
     log_step(initial_thetas)

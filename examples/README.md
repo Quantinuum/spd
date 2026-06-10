@@ -26,6 +26,18 @@ These are still intentionally kept because they are useful for inspection, compa
 
 [`gradient/`](gradient/) contains the larger TFI and AFH workflows. The scripts there are still research-oriented, but [`gradient/run_tfi_gs_1d.py`](gradient/run_tfi_gs_1d.py) is also one of the main end-to-end examples for the current SPD workflow.
 
+The gradient scripts use positional arguments for model size and iteration count, plus shared optional flags:
+
+```bash
+python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --method lbfgs
+python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --init-params-path previous/final_params.txt
+python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --lambda-ose 0.1
+python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --system-size 15
+python examples/gradient/run_tfi_gs_2d.py 6 100 --linear-system-size 12
+```
+
+If `--init-params-path` is omitted, parameters are initialized randomly. If it is provided, the script initializes from that file. `lambda_ose` is constant within one training run and is stored in `metadata.json`. To decrease it, start a new run from the previous `final_params.txt` with a smaller `--lambda-ose`.
+
 ## OpenQASM
 
 [`open_qasm/run_openqasm_file.py`](open_qasm/run_openqasm_file.py) is available if you want the built-in OpenQASM frontend, but it is not the main example path in this repo.

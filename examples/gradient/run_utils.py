@@ -97,6 +97,29 @@ def format_run_name(
     return "_".join(parts)
 
 
+def add_common_args(
+    parser,
+    *,
+    method="lbfgs",
+    methods=("eval_only", "adam", "lbfgs", "basinhopping"),
+    trunc_val,
+    max_num_str,
+    lambda_ose,
+):
+    parser.add_argument("--method", choices=methods, default=method)
+    parser.add_argument("--init-params-path", default=None)
+    parser.add_argument("--random-scale", type=float, default=0.1)
+    parser.add_argument("--trunc-val", type=float, default=trunc_val)
+    parser.add_argument("--max-num-str", type=int, default=max_num_str)
+    parser.add_argument("--lambda-ose", type=float, default=lambda_ose)
+
+
+def infer_init_mode(init_params_path):
+    if init_params_path is None:
+        return "random"
+    return "from_file"
+
+
 def make_run_dir(run_name):
     run_dir = Path(run_name)
     run_dir.mkdir()
@@ -166,6 +189,7 @@ def record_eval(
     ose,
     grad_norm,
     lambda_ose,
+    run_dir=None,
 ):
     record = {
         "eval": len(evals),
@@ -180,27 +204,33 @@ def record_eval(
     evals.append(record)
     last_eval["thetas"] = np.array(thetas, copy=True)
     last_eval["record"] = record
+    if run_dir is not None:
+        _append_csv_row(Path(run_dir) / "evals.csv", record, EVAL_FIELDS)
     return record
 
 
-def record_step(history, params_history, last_eval, thetas):
+def record_step(history, params_history, last_eval, thetas, run_dir=None):
     matched_record = {}
     if "thetas" in last_eval and np.allclose(thetas, last_eval["thetas"]):
         matched_record = last_eval.get("record", {})
 
-    history.append(
-        {
-            "step": len(history),
-            "cost": matched_record.get("cost"),
-            "energy": matched_record.get("energy"),
-            "energy_error": matched_record.get("energy_error"),
-            "ose": matched_record.get("ose"),
-            "theta_norm": float(np.linalg.norm(thetas)),
-            "grad_norm": matched_record.get("grad_norm"),
-            "lambda_ose": matched_record.get("lambda_ose"),
-        }
-    )
-    params_history.append(np.array(thetas, copy=True))
+    record = {
+        "step": len(history),
+        "cost": matched_record.get("cost"),
+        "energy": matched_record.get("energy"),
+        "energy_error": matched_record.get("energy_error"),
+        "ose": matched_record.get("ose"),
+        "theta_norm": float(np.linalg.norm(thetas)),
+        "grad_norm": matched_record.get("grad_norm"),
+        "lambda_ose": matched_record.get("lambda_ose"),
+    }
+    params = np.array(thetas, copy=True)
+    history.append(record)
+    params_history.append(params)
+    if run_dir is not None:
+        run_dir = Path(run_dir)
+        _append_csv_row(run_dir / "history.csv", record, HISTORY_FIELDS)
+        _append_params_history_row(run_dir / "params_history.csv", record["step"], params)
 
 
 def _write_json(path, data):
@@ -216,16 +246,54 @@ def _write_csv(path, rows, fields):
         writer.writerows(rows)
 
 
+def _write_csv_header(path, fields):
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+
+
+def _append_csv_row(path, row, fields):
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writerow(row)
+
+
+def _params_history_fields(num_params):
+    return ["step"] + [f"theta_{i}" for i in range(num_params)]
+
+
+def _params_history_row(step, params):
+    row = {"step": step}
+    row.update({f"theta_{i}": float(value) for i, value in enumerate(params)})
+    return row
+
+
+def _append_params_history_row(path, step, params):
+    fields = _params_history_fields(len(params))
+    row = _params_history_row(step, params)
+    _append_csv_row(path, row, fields)
+
+
 def _write_params_history(path, params_history):
     max_params = max((len(params) for params in params_history), default=0)
-    fields = ["step"] + [f"theta_{i}" for i in range(max_params)]
+    fields = _params_history_fields(max_params)
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         for step, params in enumerate(params_history):
-            row = {"step": step}
-            row.update({f"theta_{i}": float(value) for i, value in enumerate(params)})
-            writer.writerow(row)
+            writer.writerow(_params_history_row(step, params))
+
+
+def init_run_outputs(run_dir, *, metadata, initial_params):
+    run_dir = Path(run_dir)
+    _write_json(run_dir / "metadata.json", metadata)
+    np.savetxt(run_dir / "initial_params.txt", np.asarray(initial_params))
+    _write_csv_header(run_dir / "evals.csv", EVAL_FIELDS)
+    _write_csv_header(run_dir / "history.csv", HISTORY_FIELDS)
+    _write_csv_header(
+        run_dir / "params_history.csv",
+        _params_history_fields(len(initial_params)),
+    )
 
 
 def make_final_summary(result, evals, final_params):
