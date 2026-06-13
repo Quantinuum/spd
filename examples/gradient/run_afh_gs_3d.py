@@ -30,7 +30,8 @@ if __name__ == "__main__":
     basis = "0"
 
     backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
-    backend.module.set_algorithm("stack_sort_merge")
+    algorithm = args.algorithm
+    backend.module.set_algorithm(algorithm)
 
     num_layers = args.num_layers
     niter = args.niter
@@ -76,6 +77,12 @@ if __name__ == "__main__":
 
     print(initial_thetas)
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
+    memory_estimate = run_utils.print_jax_memory_estimate(
+        system_size,
+        max_num_str,
+        packbit=backend.packbit,
+        precision=precision,
+    )
 
     run_name = run_utils.format_run_name(
         model="afh",
@@ -107,7 +114,8 @@ if __name__ == "__main__":
         "backend": backend.name,
         "precision": precision,
         "packbit": backend.packbit,
-        "algorithm": "stack_sort_merge",
+        "algorithm": algorithm,
+        "memory_estimate": memory_estimate,
         "method": method,
         "optimizer_options": optimizer_options,
         "init": init_metadata,
@@ -124,6 +132,7 @@ if __name__ == "__main__":
     history = []
     params_history = []
     last_eval = {}
+    start_time = run_utils.start_timer()
 
     def get_f_g(thetas):
         circ = heisenberg_setup.gen_3d_AFH_ansatz_circuit(
@@ -174,13 +183,21 @@ if __name__ == "__main__":
             grad_norm=np.linalg.norm(grads),
             lambda_ose=lambda_ose,
             run_dir=run_dir,
+            start_time=start_time,
         )
         return cost, grads
 
     def log_step(thetas):
         # SciPy callback reports accepted parameters, while get_f_g is also called
         # during line search. We attach the latest matching eval if available.
-        run_utils.record_step(history, params_history, last_eval, thetas, run_dir=run_dir)
+        run_utils.record_step(
+            history,
+            params_history,
+            last_eval,
+            thetas,
+            run_dir=run_dir,
+            start_time=start_time,
+        )
 
     initial_cost, initial_grads = get_f_g(initial_thetas)
     log_step(initial_thetas)

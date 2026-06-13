@@ -4,51 +4,50 @@ import numpy as np
 import scipy.optimize
 import spd
 
-import heisenberg_setup
 import run_utils
+import tfi_setup
 
 
-# np.random.seed(0)
+def combine_grads(grads, number_of_parameters, system_size):
+    combined = []
+    for i in range(number_of_parameters // 2):
+        combined.append(np.array(grads[4 * i * system_size:(4 * i + 3) * system_size]).sum() * np.pi)
+        combined.append(np.array(grads[(4 * i + 3) * system_size:(4 * i + 4) * system_size]).sum() * np.pi)
+    return np.array(combined)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("num_layers", type=int)
+    parser.add_argument("number_of_parameters", type=int)
     parser.add_argument("niter", type=int)
-    parser.add_argument("--system-size", type=int, default=None)
+    parser.add_argument("--linear-system-size", type=int, default=None)
     run_utils.add_common_args(
         parser,
-        method="lbfgs",
-        methods=("eval_only", "lbfgs"),
-        trunc_val=1e-3,
+        trunc_val=1e-6,
         max_num_str=int(1e6),
         lambda_ose=0.0,
     )
     args = parser.parse_args()
 
     precision = "double"
-    basis = "0"
-
     backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
     algorithm = args.algorithm
     backend.module.set_algorithm(algorithm)
 
-    num_layers = args.num_layers
+    method = args.method
+    number_of_parameters = args.number_of_parameters
+    system_size_x = args.linear_system_size
+    if system_size_x is None:
+        system_size_x = number_of_parameters + 3
+    elif system_size_x <= 0:
+        raise ValueError("linear_system_size must be positive.")
+    system_size_y = system_size_x
+    system_size_z = system_size_x
+    system_size = system_size_x * system_size_y * system_size_z
+    basis = "+"
+    g = 3.1
     niter = args.niter
 
-    number_of_parameters = 4 * num_layers
-    # The light cone spread out by +2 in one spatial direction per gate type.
-    # There are XX, YY, ZZ gates.
-    # So per layer it increases + 6
-    system_size = args.system_size
-    if system_size is None:
-        system_size = num_layers * 6 + 2
-    elif system_size <= 0:
-        raise ValueError("system_size must be positive.")
-    full_H = False
-    factor = system_size if full_H else 1
-
-    method = args.method
     init_params_path = args.init_params_path
     init_mode = run_utils.infer_init_mode(init_params_path)
     run_utils.validate_method(method, niter)
@@ -58,18 +57,17 @@ if __name__ == "__main__":
         init_params_path=init_params_path,
         random_scale=args.random_scale,
     )
-    stagger_signs = heisenberg_setup.gen_1d_stagger_signs(system_size)
-    grad_multiplicities = heisenberg_setup.gen_afh_grad_multiplicities(
-        num_layers, spatial_dim=1
+    ham_dict = tfi_setup.gen_3d_Hamiltonian_dict(
+        system_size_x,
+        system_size_y,
+        system_size_z,
+        g=g,
     )
-
-    ham_dict = heisenberg_setup.gen_1d_Hamiltonian_dict(system_size, full=full_H)
-    trunc_val = args.trunc_val
-    max_num_str = args.max_num_str
     lambda_ose = args.lambda_ose
 
-    print(initial_thetas)
-    print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
+    trunc_val = args.trunc_val
+    max_num_str = args.max_num_str
+    print("\n Truncation Value:", trunc_val)
     memory_estimate = run_utils.print_jax_memory_estimate(
         system_size,
         max_num_str,
@@ -78,10 +76,11 @@ if __name__ == "__main__":
     )
 
     run_name = run_utils.format_run_name(
-        model="afh",
-        dim=1,
-        size=system_size,
+        model="tfi",
+        dim=3,
+        size=(system_size_x, system_size_y, system_size_z),
         num_params=number_of_parameters,
+        g=g,
         method=method,
         init_mode=init_mode,
         trunc_val=trunc_val,
@@ -89,15 +88,18 @@ if __name__ == "__main__":
         lambda_ose=lambda_ose,
     )
     run_dir = run_utils.make_run_dir(run_name)
-    optimizer_options = {"disp": True, "gtol": 1e-6, "maxiter": niter}
+    minimizer_kwargs = {"method": "L-BFGS-B", "jac": True}
+    optimizer_options = {"niter": niter, "minimizer_kwargs": minimizer_kwargs}
     metadata = {
-        "model": "afh",
-        "dim": 1,
+        "model": "tfi",
+        "dim": 3,
         "system_size": system_size,
-        "num_layers": num_layers,
+        "system_size_x": system_size_x,
+        "system_size_y": system_size_y,
+        "system_size_z": system_size_z,
         "num_params": number_of_parameters,
+        "g": g,
         "basis": basis,
-        "full_H": full_H,
         "trunc_val": trunc_val,
         "max_num_str": max_num_str,
         "lambda_ose": lambda_ose,
@@ -118,6 +120,7 @@ if __name__ == "__main__":
         metadata=metadata,
         initial_params=initial_thetas,
     )
+
     evals = []
     history = []
     params_history = []
@@ -125,7 +128,12 @@ if __name__ == "__main__":
     start_time = run_utils.start_timer()
 
     def get_f_g(thetas):
-        circ = heisenberg_setup.gen_1d_AFH_ansatz_circuit(thetas, system_size)
+        circ = tfi_setup.gen_3d_TFI_ansatz_circuit(
+            thetas,
+            system_size_x,
+            system_size_y,
+            system_size_z,
+        )
         initial_spo = spd.create_spo(ham_dict, backend=backend)
         final_spo, forward_info = spd.evolve(
             initial_spo,
@@ -150,13 +158,10 @@ if __name__ == "__main__":
             max_num_str=max_num_str,
             backend=backend,
         )
-        grads = heisenberg_setup.combine_afh_parameter_grads(
-            raw_grads, system_size, stagger_signs, grad_multiplicities
-        )
-        exp_val /= factor
-        E_err_estimate /= factor
-        grads /= factor
-        cost = exp_val + lambda_ose * OSE
+        grads = combine_grads(raw_grads, number_of_parameters, system_size)
+
+        lambda_reg = 0.0
+        cost = exp_val + lambda_ose * OSE + lambda_reg * np.sum(thetas ** 2)
         print("eval = ", len(evals), "num_param", number_of_parameters)
         print(f"cost: {cost}, <E>: {exp_val} ± {E_err_estimate}, OSE: {OSE}")
         print(f"||theta||: {np.linalg.norm(thetas)}, ||grad||: {np.linalg.norm(grads)}")
@@ -206,7 +211,61 @@ if __name__ == "__main__":
         )
         raise SystemExit(0)
 
+    elif method == "adam":
+        import optax
+
+        optimizer = optax.adam(learning_rate=1e-2)
+        opt_state = optimizer.init(initial_thetas)
+        thetas = initial_thetas.copy()
+        for _ in range(500):
+            print("====" * 30)
+            print(f"Thetas[{_}]: ", thetas)
+            print("====" * 30)
+            _, grad = get_f_g(thetas)
+            updates, opt_state = optimizer.update(grad, opt_state)
+            thetas = optax.apply_updates(thetas, updates)
+            log_step(thetas)
+        final = run_utils.make_final_summary(None, evals, thetas)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=thetas,
+        )
+        raise SystemExit(0)
+
+    elif method == "basinhopping":
+        from scipy.optimize import basinhopping
+
+        ret = basinhopping(
+            get_f_g,
+            initial_thetas,
+            minimizer_kwargs=minimizer_kwargs,
+            niter=niter,
+            callback=lambda x, f, accept: log_step(x) if accept else None,
+        )
+        print(ret)
+        final = run_utils.make_final_summary(ret, evals, ret.x)
+        run_utils.save_run_outputs(
+            run_dir,
+            metadata=metadata,
+            final=final,
+            evals=evals,
+            history=history,
+            params_history=params_history,
+            initial_params=initial_thetas,
+            final_params=ret.x,
+            result=ret,
+        )
+        raise SystemExit(0)
+
     elif method == "lbfgs":
+        optimizer_options = {"disp": True, "gtol": 1e-5, "maxiter": 100}
+        metadata["optimizer_options"] = optimizer_options
         result = scipy.optimize.minimize(
             get_f_g,
             initial_thetas,
@@ -216,7 +275,6 @@ if __name__ == "__main__":
             options=optimizer_options,
         )
         print(result)
-        print("params: ", result.x)
         final = run_utils.make_final_summary(result, evals, result.x)
         run_utils.save_run_outputs(
             run_dir,
@@ -229,5 +287,3 @@ if __name__ == "__main__":
             final_params=result.x,
             result=result,
         )
-    else:
-        raise ValueError(f"Unsupported method={method}.")

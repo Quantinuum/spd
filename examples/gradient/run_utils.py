@@ -1,13 +1,18 @@
 import csv
 import json
+import math
 import pickle
+import time
 from pathlib import Path
 
 import numpy as np
 
 
+JAX_ALGORITHMS = ("stack_sort_merge", "search_update_merge")
+
 EVAL_FIELDS = [
     "eval",
+    "elapsed_s",
     "cost",
     "energy",
     "energy_error",
@@ -18,6 +23,7 @@ EVAL_FIELDS = [
 ]
 HISTORY_FIELDS = [
     "step",
+    "elapsed_s",
     "cost",
     "energy",
     "energy_error",
@@ -107,6 +113,7 @@ def add_common_args(
     lambda_ose,
 ):
     parser.add_argument("--method", choices=methods, default=method)
+    parser.add_argument("--algorithm", choices=JAX_ALGORITHMS, default="stack_sort_merge")
     parser.add_argument("--init-params-path", default=None)
     parser.add_argument("--random-scale", type=float, default=0.1)
     parser.add_argument("--trunc-val", type=float, default=trunc_val)
@@ -132,6 +139,56 @@ def validate_method(method, niter=None):
         raise ValueError(f"Unsupported method={method}. Expected one of {sorted(valid_methods)}.")
     if method != "eval_only" and niter is not None and niter <= 0:
         raise ValueError("niter must be positive unless method='eval_only'.")
+
+
+def start_timer():
+    return time.perf_counter()
+
+
+def elapsed_seconds(start_time):
+    return float(time.perf_counter() - start_time)
+
+
+def estimate_jax_memory_usage(system_size, max_num_str, *, packbit=32, precision="double"):
+    if system_size <= 0:
+        raise ValueError("system_size must be positive.")
+    if max_num_str <= 0:
+        raise ValueError("max_num_str must be positive.")
+    if packbit <= 0:
+        raise ValueError("packbit must be positive.")
+
+    rounded_rows = 1 << (int(max_num_str) - 1).bit_length()
+    words_per_row = math.ceil(system_size / packbit)
+    pauli_bytes = 2 * words_per_row * (packbit // 8)
+    coeff_bytes = 8 if precision == "double" else 4
+    spo_bytes = rounded_rows * (pauli_bytes + coeff_bytes)
+    spgo_bytes = rounded_rows * (pauli_bytes + 2 * coeff_bytes)
+    return {
+        "rounded_rows": rounded_rows,
+        "spo_gib": spo_bytes / 1024**3,
+        "spgo_gib": spgo_bytes / 1024**3,
+    }
+
+
+def print_jax_memory_estimate(system_size, max_num_str, *, packbit=32, precision="double"):
+    estimate = estimate_jax_memory_usage(
+        system_size,
+        max_num_str,
+        packbit=packbit,
+        precision=precision,
+    )
+    print(
+        "Estimated JAX storage at rounded max rows "
+        f"{estimate['rounded_rows']}: "
+        f"SPO ~{estimate['spo_gib']:.2f} GiB, "
+        f"SPGO ~{estimate['spgo_gib']:.2f} GiB."
+    )
+    if estimate["spgo_gib"] >= 4.0:
+        print(
+            "Warning: large gradient runs can use much more memory than this "
+            "stored-array estimate because of intermediates and allocator behavior."
+        )
+    return estimate
 
 
 def init_thetas(
@@ -190,9 +247,11 @@ def record_eval(
     grad_norm,
     lambda_ose,
     run_dir=None,
+    start_time=None,
 ):
     record = {
         "eval": len(evals),
+        "elapsed_s": elapsed_seconds(start_time) if start_time is not None else None,
         "cost": float(cost),
         "energy": float(energy),
         "energy_error": float(energy_error),
@@ -209,13 +268,14 @@ def record_eval(
     return record
 
 
-def record_step(history, params_history, last_eval, thetas, run_dir=None):
+def record_step(history, params_history, last_eval, thetas, run_dir=None, start_time=None):
     matched_record = {}
     if "thetas" in last_eval and np.allclose(thetas, last_eval["thetas"]):
         matched_record = last_eval.get("record", {})
 
     record = {
         "step": len(history),
+        "elapsed_s": elapsed_seconds(start_time) if start_time is not None else None,
         "cost": matched_record.get("cost"),
         "energy": matched_record.get("energy"),
         "energy_error": matched_record.get("energy_error"),

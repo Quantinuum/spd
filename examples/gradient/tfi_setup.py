@@ -105,6 +105,42 @@ def gen_2d_TFI_ansatz_circuit(thetas,
 
     return circ
 
+def gen_3d_TFI_ansatz_circuit(thetas,
+                              system_size_x: int = 3,
+                              system_size_y: int = 3,
+                              system_size_z: int = 3,
+                              ) -> Circuit:
+    system_size = system_size_x * system_size_y * system_size_z
+    plane_size = system_size_y * system_size_z
+    circ = Circuit(system_size, system_size)
+
+    assert len(thetas) % 2 == 0, "The length of thetas should be a multiple of 2."
+    depth = len(thetas) // 2
+
+    for d in range(depth):
+        for x in range(system_size_x):
+            for y in range(system_size_y):
+                for z in range(system_size_z):
+                    i = x * plane_size + y * system_size_z + z
+                    jx = ((x + 1) % system_size_x) * plane_size + y * system_size_z + z
+                    jy = x * plane_size + ((y + 1) % system_size_y) * system_size_z + z
+                    jz = x * plane_size + y * system_size_z + (z + 1) % system_size_z
+                    circ.ZZPhase(thetas[2*d], i, jx)
+                    circ.ZZPhase(thetas[2*d], i, jy)
+                    circ.ZZPhase(thetas[2*d], i, jz)
+
+        circ.add_barrier(list(range(system_size)), )
+
+        for i in range(system_size):
+            circ.Rx(thetas[2*d+1], i)
+
+        circ.add_barrier(list(range(system_size)), )
+
+    for i in range(system_size):
+        circ.Measure(i, i)
+
+    return circ
+
 def gen_1d_Hamiltonian_dict(system_size, g, full=True):
     if not full:
         ham_dict = {}
@@ -196,4 +232,3 @@ def gen_3d_Hamiltonian_dict(system_size_x, system_size_y, system_size_z, g):
     pauli_str[0] = 'X'
     ham_dict[''.join(pauli_str)] = -g
     return ham_dict
-
