@@ -4,6 +4,7 @@ from pytket.circuit import Circuit
 
 import spd
 from spd import jax_backend, numpy_backend
+from spd.jax_backend.algorithms import stack_sort_merge
 from spd.backend_adapter import BackendAdapter
 from spd.circuit_ir import PauliRotation
 from tests.helpers import assert_info_consistent, make_initial_spo, shift_case, to_term_dict
@@ -109,6 +110,50 @@ def test_jax_forward_algorithms_match_numpy_through_backend_adapter(jax_forward_
     assert actual_terms == pytest.approx(expected_terms, abs=1e-6)
     assert step_info_jax["num_str_truncated"] >= 0
     assert step_info_numpy["num_str_truncated"] >= 0
+
+
+def test_stack_sort_merge_does_not_keep_below_threshold_terms_live():
+    _configure_rotation_backends()
+    jax_backend.set_algorithm("stack_sort_merge")
+
+    spo = jax_backend.create_op({"XIII": 1.0})
+    sigma = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
+
+    spo_out, num_string, step_info = jax_backend.conjugate_pauli_rot_forward(
+        spo,
+        sigma,
+        np.pi / 4,
+        trunc_val=0.8,
+        max_num_str=1000,
+    )
+
+    assert num_string == 0
+    assert to_term_dict("jax", jax_backend, spo_out, n_qubits=4) == {}
+    assert float(np.asarray(spo_out.get_expectation_value(basis="X"))) == pytest.approx(0.0)
+    assert step_info["num_str_truncated"] == 2
+    assert step_info["truncated_l1_norm"] == pytest.approx(np.sqrt(2), abs=1e-6)
+    assert step_info["truncated_l2_norm"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_stack_sort_merge_soft_cutoff_forward_keeps_old_tail_behavior():
+    _configure_rotation_backends()
+
+    spo = jax_backend.create_op({"XIII": 1.0})
+    sigma = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
+
+    spo_out, num_string, step_info = stack_sort_merge.forward_step_soft_cutoff(
+        spo,
+        sigma,
+        np.pi / 4,
+        trunc_val=0.8,
+        max_num_str=1000,
+    )
+
+    assert num_string == 1
+    assert len(to_term_dict("jax", jax_backend, spo_out, n_qubits=4)) == 1
+    assert step_info["num_str_truncated"] == 1
+    assert step_info["truncated_l1_norm"] == pytest.approx(np.sqrt(0.5), abs=1e-6)
+    assert step_info["truncated_l2_norm"] == pytest.approx(np.sqrt(0.5), abs=1e-6)
 
 
 @pytest.mark.parametrize("jax_forward_algorithm", JAX_FORWARD_ALGORITHMS, indirect=True)

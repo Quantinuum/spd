@@ -29,7 +29,9 @@ number of stored Pauli strings at each weight.
 
 The default JAX algorithm is `stack_sort_merge`. The alternate
 `search_update_merge` algorithm remains available when lexicographically
-sorted long-lived storage is preferred.
+sorted long-lived storage is preferred. The experimental
+`search_update_merge_donate` algorithm uses the same search/update/merge logic,
+but donates full JIT steps after storage reaches `max_num_str`.
 
 Algorithm selection is currently an internal JAX-backend setting:
 
@@ -38,6 +40,7 @@ import spd.jax_backend as jax_backend
 
 jax_backend.set_algorithm("stack_sort_merge")
 jax_backend.set_algorithm("search_update_merge")
+jax_backend.set_algorithm("search_update_merge_donate")
 ```
 
 When using the higher-level runners, advanced users can combine this with a

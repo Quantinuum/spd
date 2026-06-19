@@ -33,24 +33,16 @@ def test_forward_rotation_threshold_info_matches_expected(backend_name):
     )
 
     assert num_string == 0
-    if backend_name == "numpy":
-        assert_step_info_close(
-            step_info,
-            {
-                "num_str_truncated": 2,
-                "truncated_l1_norm": np.sqrt(2),
-                "truncated_l2_norm": 1.0,
-            },
-        )
-    else:
-        assert_step_info_close(
-            step_info,
-            {
-                "num_str_truncated": 1,
-                "truncated_l1_norm": np.sqrt(0.5),
-                "truncated_l2_norm": np.sqrt(0.5),
-            },
-        )
+    if backend_name == "jax":
+        assert np.count_nonzero(np.asarray(spo_out.c_array)) == 0
+    assert_step_info_close(
+        step_info,
+        {
+            "num_str_truncated": 2,
+            "truncated_l1_norm": np.sqrt(2),
+            "truncated_l2_norm": 1.0,
+        },
+    )
 
 
 def test_forward_rotation_max_num_str_info_matches_expected(backend_name):
@@ -97,24 +89,17 @@ def test_backward_rotation_threshold_info_matches_expected(backend_name):
     )
 
     assert num_string == 0
-    if backend_name == "numpy":
-        assert_step_info_close(
-            step_info,
-            {
-                "num_str_truncated": 2,
-                "truncated_l1_norm": np.sqrt(2),
-                "truncated_l2_norm": 1.0,
-            },
-        )
-    else:
-        assert_step_info_close(
-            step_info,
-            {
-                "num_str_truncated": 1,
-                "truncated_l1_norm": np.sqrt(0.5),
-                "truncated_l2_norm": np.sqrt(0.5),
-            },
-        )
+    if backend_name == "jax":
+        assert np.count_nonzero(np.asarray(spgo_out.c_array)) == 0
+        assert np.count_nonzero(np.asarray(spgo_out.grad_c_array)) == 0
+    assert_step_info_close(
+        step_info,
+        {
+            "num_str_truncated": 2,
+            "truncated_l1_norm": np.sqrt(2),
+            "truncated_l2_norm": 1.0,
+        },
+    )
 
 
 def test_backward_rotation_max_num_str_info_matches_expected(backend_name):

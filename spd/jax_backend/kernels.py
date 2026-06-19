@@ -35,6 +35,7 @@ DEFAULT_ALGORITHM = "stack_sort_merge"
 SUPPORTED_ALGORITHMS = (
     "stack_sort_merge",
     "search_update_merge",
+    "search_update_merge_donate",
 )
 _ACTIVE_ALGORITHM = DEFAULT_ALGORITHM
 
@@ -59,6 +60,8 @@ def _load_algorithm_module(algorithm: str | None = None):
         from .algorithms import stack_sort_merge as algorithm_module
     elif selected_algorithm == "search_update_merge":
         from .algorithms import search_update_merge as algorithm_module
+    elif selected_algorithm == "search_update_merge_donate":
+        from .algorithms import search_update_merge_donate as algorithm_module
     else:
         raise ValueError(
             f"Unsupported JAX algorithm '{selected_algorithm}'. "

@@ -7,13 +7,57 @@ from .. import kernels
 from ..sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 
 
+@jax.jit
+def _step_info_values_from_tail(c_concat, slice_size):
+    magnitudes = jnp.abs(c_concat)
+    indices = jnp.arange(c_concat.shape[0])
+    removed_mask = indices >= slice_size
+    removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
+    return (
+        jnp.sum(removed_mask),
+        jnp.sum(removed_coeffs),
+        jnp.sqrt(jnp.sum(removed_coeffs ** 2)),
+    )
+
+
 def _step_info_from_tail(c_concat, slice_size):
-    removed_coeffs = jnp.abs(c_concat[slice_size:])
+    num_str_truncated, truncated_l1_norm, truncated_l2_norm = _step_info_values_from_tail(
+        c_concat, slice_size
+    )
     return {
-        "num_str_truncated": int(c_concat.shape[0] - slice_size),
-        "truncated_l1_norm": float(jnp.sum(removed_coeffs)),
-        "truncated_l2_norm": float(jnp.sqrt(jnp.sum(removed_coeffs ** 2))),
+        "num_str_truncated": int(num_str_truncated),
+        "truncated_l1_norm": float(truncated_l1_norm),
+        "truncated_l2_norm": float(truncated_l2_norm),
     }
+
+
+@jax.jit
+def _step_info_values_from_removed(c_concat, trunc_val, slice_size):
+    magnitudes = jnp.abs(c_concat)
+    indices = jnp.arange(c_concat.shape[0])
+    removed_mask = ((magnitudes <= trunc_val) | (indices >= slice_size)) & (magnitudes > 0)
+    removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
+    return (
+        jnp.sum(removed_mask),
+        jnp.sum(removed_coeffs),
+        jnp.sqrt(jnp.sum(removed_coeffs ** 2)),
+    )
+
+
+def _step_info_from_removed(c_concat, trunc_val, slice_size):
+    num_str_truncated, truncated_l1_norm, truncated_l2_norm = _step_info_values_from_removed(
+        c_concat, trunc_val, slice_size
+    )
+    return {
+        "num_str_truncated": int(num_str_truncated),
+        "truncated_l1_norm": float(truncated_l1_norm),
+        "truncated_l2_norm": float(truncated_l2_norm),
+    }
+
+
+def _apply_hard_cutoff(c_array, trunc_val):
+    keep_mask = jnp.abs(c_array) > trunc_val
+    return jnp.where(keep_mask, c_array, 0.0), keep_mask
 
 
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
@@ -31,10 +75,11 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
+    c_, _ = _apply_hard_cutoff(c_, trunc_val)
     jax.block_until_ready(c_)
 
     new_spo = SparsePauliOp(x_, c_, lexsorted=True)
-    return new_spo, min(int(final_valid_count), slice_size), _step_info_from_tail(c_concat, slice_size)
+    return new_spo, min(int(final_valid_count), slice_size), _step_info_from_removed(c_concat, trunc_val, slice_size)
 
 
 @jax.jit
@@ -211,6 +256,8 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
+    c_, keep_mask = _apply_hard_cutoff(c_, trunc_val)
+    grad_c_ = jnp.where(keep_mask, grad_c_, 0.0)
     jax.block_until_ready(grad_c_)
 
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_, lexsorted=True)
@@ -218,7 +265,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
         new_spo_val_grad,
         min(int(final_valid_count), slice_size),
         grad_i,
-        _step_info_from_tail(c_concat, slice_size),
+        _step_info_from_removed(c_concat, trunc_val, slice_size),
     )
 
 

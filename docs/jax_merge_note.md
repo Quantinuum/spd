@@ -222,65 +222,48 @@ together for those extra terms.
 
 ## Current stack/sort behavior
 
-The current `stack_sort_merge` path now follows the soft-truncation
-interpretation:
+The current `stack_sort_merge` path uses hard cutoff semantics for the live
+returned state:
 
-- `trunc_val` is treated as a storage target, not a hard mathematical cutoff
-- power-of-two padding may keep some additional valid low-weight terms
-- `num_above_trunc_val` means "how many terms are above threshold"
-- the wrapper computes `num_string` from the actual returned sliced state
+- `merge_` and `merge_val_grad_` still sort by coefficient magnitude and return
+  `next_pow2(num_above_trunc_val)` as the target storage size
+- the Python wrapper slices to that storage size
+- after slicing, the wrapper zeroes/PADs any coefficient with
+  `abs(c) <= trunc_val`
+- `num_string` is computed from the actual nonzero returned coefficients
+- `step_info` includes both removed tail entries and below-threshold entries
+  removed from the returned slice
 
-So in the current stack/sort path:
+So power-of-two padding can still exist, but below-threshold padded-prefix terms
+are not live mathematical terms.
 
-1. `merge_` and `merge_val_grad_` keep `xz` rows and coefficients aligned after
-   the magnitude sort
-2. below-threshold terms may still be present in the returned padded state
-3. the returned operator is still mathematically valid because every nonzero
-   coefficient still has a matching `xz` row
+The previous soft-cutoff behavior is still available as explicit internal
+helpers, `forward_step_soft_cutoff` and `backward_step_soft_cutoff`. The
+selected `stack_sort_merge` algorithm path uses `forward_step` and
+`backward_step`, so hard cutoff is the default.
 
-## Difference from `search_update_merge`
+## Relationship to `search_update_merge`
 
-The two JAX algorithms do not currently have the same truncation semantics.
+The two JAX algorithms now use the same hard cutoff semantics for the live
+returned state and `step_info`.
 
 ### `stack_sort_merge`
 
-- below-threshold terms may survive in the padded returned state
-- the wrapper reports the actual number of stored returned terms
-- `num_above_trunc_val` is kept separate from the returned-state size
+- below-threshold terms do not survive as live returned coefficients
+- the wrapper reports the actual number of nonzero returned terms
+- the wrapper reports hard-cutoff removals from both the returned slice and tail
+- `num_above_trunc_val` is kept separate from the returned storage size
 
 ### `search_update_merge`
 
 - rows below threshold are still converted to `PAD_VAL` before sorting
-- coefficients can still be kept for step-info accounting
-- the wrapper still uses the threshold count as if it were the returned-state
-  size
+- coefficients are kept long enough for step-info accounting
+- the wrapper reports hard-cutoff removals from both the returned slice and tail
 
-So right now:
+The internal storage order still differs:
 
-- `stack_sort_merge` uses soft-cutoff semantics
-- `search_update_merge` still follows the older threshold-masking behavior
+- `stack_sort_merge` sorts by coefficient magnitude after merging
+- `search_update_merge` returns lexicographically sorted storage
 
-They are not yet equivalent.
-
-This difference matters in three places:
-
-1. the physical returned state
-2. the meaning of `num_string`
-3. the interpretation of truncation statistics
-
-At the moment, only `stack_sort_merge` follows the newer soft-cutoff
-interpretation consistently end to end.
-
-## Remaining alignment plan
-
-If the goal is to make both JAX algorithms behave the same way, the remaining
-work is:
-
-1. decide whether `search_update_merge` should also move to soft-cutoff
-   semantics
-2. if yes, stop invalidating `xz` rows below threshold there as well
-3. rename the threshold count there to `num_above_trunc_val`
-4. make the wrapper report the actual stored returned size, as done for
-   `stack_sort_merge`
-5. add parity tests that compare not only coefficients but also truncation/count
-   semantics between the two JAX paths
+That storage-order difference should not change the represented operator or the
+meaning of truncation statistics.
