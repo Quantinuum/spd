@@ -8,9 +8,6 @@ import run_utils
 import tfi_setup
 
 
-np.random.seed(0)
-
-
 def combine_grads(grads, number_of_parameters, system_size):
     combined = []
     for i in range(number_of_parameters):
@@ -55,6 +52,7 @@ if __name__ == "__main__":
     init_params_path = args.init_params_path
     init_mode = run_utils.infer_init_mode(init_params_path)
     run_utils.validate_method(method, niter)
+    np.random.seed(args.seed)
     initial_thetas, init_metadata = run_utils.init_thetas(
         num_params=number_of_parameters,
         init_mode=init_mode,
@@ -111,7 +109,7 @@ if __name__ == "__main__":
         "method": method,
         "optimizer_options": optimizer_options,
         "init": init_metadata,
-        "seed": 0,
+        "seed": args.seed,
         "script": __file__,
         "argv": vars(args),
     }

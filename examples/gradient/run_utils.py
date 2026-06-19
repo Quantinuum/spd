@@ -116,6 +116,7 @@ def add_common_args(
     parser.add_argument("--algorithm", choices=JAX_ALGORITHMS, default="stack_sort_merge")
     parser.add_argument("--init-params-path", default=None)
     parser.add_argument("--random-scale", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--trunc-val", type=float, default=trunc_val)
     parser.add_argument("--max-num-str", type=int, default=max_num_str)
     parser.add_argument("--lambda-ose", type=float, default=lambda_ose)
