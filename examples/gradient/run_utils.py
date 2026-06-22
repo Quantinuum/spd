@@ -82,6 +82,7 @@ def format_run_name(
     trunc_val,
     max_num_str,
     lambda_ose,
+    alpha,
     g=None,
 ):
     parts = [
@@ -98,6 +99,7 @@ def format_run_name(
             f"tv{_format_value(trunc_val)}",
             f"mns{_format_value(max_num_str)}",
             f"lo{_format_value(lambda_ose)}",
+            f"a{_format_value(alpha)}",
         ]
     )
     return "_".join(parts)
@@ -120,6 +122,7 @@ def add_common_args(
     parser.add_argument("--trunc-val", type=float, default=trunc_val)
     parser.add_argument("--max-num-str", type=int, default=max_num_str)
     parser.add_argument("--lambda-ose", type=float, default=lambda_ose)
+    parser.add_argument("--alpha", type=float, default=1.0)
 
 
 def infer_init_mode(init_params_path):

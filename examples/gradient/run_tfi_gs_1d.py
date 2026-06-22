@@ -44,6 +44,7 @@ if __name__ == "__main__":
     elif system_size <= 0:
         raise ValueError("system_size must be positive.")
     lambda_ose = args.lambda_ose
+    alpha = args.alpha
 
     g = args.g
     basis = args.basis
@@ -86,6 +87,7 @@ if __name__ == "__main__":
         trunc_val=trunc_val,
         max_num_str=max_num_str,
         lambda_ose=lambda_ose,
+        alpha=alpha,
     )
     run_dir = run_utils.make_run_dir(run_name)
     optimizer_options = {"disp": True, "gtol": 1e-6, "maxiter": 1000}
@@ -101,6 +103,7 @@ if __name__ == "__main__":
         "trunc_val": trunc_val,
         "max_num_str": max_num_str,
         "lambda_ose": lambda_ose,
+        "alpha": alpha,
         "backend": backend.name,
         "precision": precision,
         "packbit": backend.packbit,
@@ -137,13 +140,14 @@ if __name__ == "__main__":
         )
 
         E_err_estimate = forward_info["total_truncated_l2_norm"]
-        OSE = final_spo.get_OSE()
+        OSE = final_spo.get_OSE(alpha=alpha)
 
         exp_val = final_spo.get_expectation_value(basis=basis)
         initial_spgo = spd.init_gradient_spo(
             final_spo,
             basis=basis,
             lambda_ose=lambda_ose,
+            alpha=alpha,
             backend=backend,
         )
         _, raw_grads, backward_info = spd.backpropagate(

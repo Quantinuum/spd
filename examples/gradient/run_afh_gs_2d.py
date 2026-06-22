@@ -70,6 +70,7 @@ if __name__ == "__main__":
     trunc_val = args.trunc_val
     max_num_str = args.max_num_str
     lambda_ose = args.lambda_ose
+    alpha = args.alpha
 
     print(initial_thetas)
     print(f"\n Truncation Value: {trunc_val} | max num str: {max_num_str}")
@@ -90,6 +91,7 @@ if __name__ == "__main__":
         trunc_val=trunc_val,
         max_num_str=max_num_str,
         lambda_ose=lambda_ose,
+        alpha=alpha,
     )
     run_dir = run_utils.make_run_dir(run_name)
     optimizer_options = {"disp": True, "gtol": 1e-6, "maxiter": niter}
@@ -106,6 +108,7 @@ if __name__ == "__main__":
         "trunc_val": trunc_val,
         "max_num_str": max_num_str,
         "lambda_ose": lambda_ose,
+        "alpha": alpha,
         "backend": backend.name,
         "precision": precision,
         "packbit": backend.packbit,
@@ -147,6 +150,7 @@ if __name__ == "__main__":
             final_spo,
             basis=basis,
             lambda_ose=lambda_ose,
+            alpha=alpha,
             backend=backend,
         )
         _, raw_grads, backward_info = spd.backpropagate(
@@ -159,7 +163,7 @@ if __name__ == "__main__":
         grads = heisenberg_setup.combine_afh_parameter_grads(
             raw_grads, system_size, stagger_signs, grad_multiplicities
         )
-        OSE = final_spo.get_OSE()
+        OSE = final_spo.get_OSE(alpha=alpha)
         exp_val /= factor
         E_err_estimate /= factor
         grads /= factor
