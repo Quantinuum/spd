@@ -29,9 +29,11 @@ number of stored Pauli strings at each weight.
 
 The default JAX algorithm is `stack_sort_merge`. The alternate
 `search_update_merge` algorithm remains available when lexicographically
-sorted long-lived storage is preferred. The experimental
-`search_update_merge_donate` algorithm uses the same search/update/merge logic,
-but donates full JIT steps after storage reaches `max_num_str`.
+sorted long-lived storage is preferred. It applies `max_num_str` caps by
+selecting the largest live coefficients with a top-k step, then lexsorts the
+retained rows before returning storage. The experimental
+`search_update_merge_donate` algorithm uses the same top-k search/update/merge
+logic, but donates full JIT steps after storage reaches `max_num_str`.
 
 Algorithm selection is currently an internal JAX-backend setting:
 
@@ -53,11 +55,13 @@ backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
 backend.module.set_algorithm("stack_sort_merge")
 ```
 
-The runner-facing `max_num_str` limit is applied after the active JIT path
-returns. JAX rounds that limit up to the next power of two and then caps the
-final slice size with `min(new_size, max_num_str)`. Because the two algorithms
-use different internal ordering and truncation strategies, they may retain
-different subsets near the `max_num_str` boundary.
+The runner-facing `max_num_str` limit is normalized to a JAX-friendly power of
+two. The selected algorithms choose live retained rows by coefficient magnitude
+before the final slice, so representation order should not change which
+operator is represented at the `max_num_str` boundary. The
+`search_update_merge` implementation keeps this behavior in the
+`forward_search_update_merge_top_k_jitted` and
+`backward_search_update_merge_top_k_jitted` helpers.
 
 `create_op(...)` currently returns lexsorted storage. Other operations may
 conservatively clear that metadata when sorted output is not guaranteed.

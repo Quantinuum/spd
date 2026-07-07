@@ -156,6 +156,38 @@ def test_stack_sort_merge_soft_cutoff_forward_keeps_old_tail_behavior():
     assert step_info["truncated_l2_norm"] == pytest.approx(np.sqrt(0.5), abs=1e-6)
 
 
+def test_search_update_merge_max_num_str_cap_keeps_largest_terms_like_stack_sort():
+    _configure_rotation_backends()
+    sigma = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
+    outputs = {}
+
+    for algorithm in JAX_FORWARD_ALGORITHMS:
+        jax_backend.set_algorithm(algorithm)
+        spo = jax_backend.create_op({"XIII": 1.0, "ZIII": 0.5})
+        spo_out, num_string, step_info = jax_backend.conjugate_pauli_rot_forward(
+            spo,
+            sigma,
+            np.pi / 3,
+            trunc_val=1e-12,
+            max_num_str=2,
+        )
+        outputs[algorithm] = (
+            to_term_dict("jax", jax_backend, spo_out, n_qubits=4),
+            num_string,
+            step_info,
+        )
+
+    assert outputs["search_update_merge"][0] == pytest.approx(
+        outputs["stack_sort_merge"][0],
+        abs=1e-6,
+    )
+    assert outputs["search_update_merge"][1] == outputs["stack_sort_merge"][1]
+    assert outputs["search_update_merge"][2] == pytest.approx(
+        outputs["stack_sort_merge"][2],
+        abs=1e-6,
+    )
+
+
 @pytest.mark.parametrize("jax_forward_algorithm", JAX_FORWARD_ALGORITHMS, indirect=True)
 def test_jax_forward_algorithms_match_numpy_on_multistep_runner_flow(jax_forward_algorithm):
     _configure_rotation_backends()

@@ -28,6 +28,9 @@ The default algorithm is now `stack_sort_merge`.
 - updates matched rows directly
 - inserts missing partners
 - filters by coefficient magnitude
+- applies `max_num_str` caps with top-k coefficient selection in
+  `forward_search_update_merge_top_k_jitted` and
+  `backward_search_update_merge_top_k_jitted`
 - returns lexicographically sorted storage
 
 ### `stack_sort_merge`
@@ -37,9 +40,10 @@ The default algorithm is now `stack_sort_merge`.
 
 ## Important Semantics
 - The two JAX algorithms intentionally do not share the same internal ordering.
-- `max_num_str` behavior may differ near the truncation boundary.
-- `search_update_merge` is allowed to diverge from the previous
-  coefficient-ranked JAX truncation behavior when that improves performance.
+- Both selected algorithms now apply `max_num_str` caps by coefficient
+  magnitude before returning live storage.
+- `search_update_merge` restores lexicographic storage after choosing the
+  retained top-coefficient terms.
 - Public `SparsePauliOp` / `SparsePauliGradientOp` semantics remain unchanged.
 
 ## Gradient Support
@@ -53,6 +57,7 @@ The switch work included:
 - direct kernel parity tests against NumPy
 - selected forward-only JAX dual-algorithm matrix tests
 - selected backward-only JAX dual-algorithm matrix tests
+- capped top-k parity tests against `stack_sort_merge`
 - JAX precision checks
 - runner-level conformance checks
 

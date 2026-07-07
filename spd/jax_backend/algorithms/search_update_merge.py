@@ -1,5 +1,7 @@
 """JAX search/update/merge algorithm with lexicographically sorted storage."""
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 
@@ -60,26 +62,46 @@ def _apply_hard_cutoff(c_array, trunc_val):
     return jnp.where(keep_mask, c_array, 0.0), keep_mask
 
 
+def _step_info_dict(num_str_truncated, truncated_l1_norm, truncated_l2_norm):
+    return {
+        "num_str_truncated": int(num_str_truncated),
+        "truncated_l1_norm": float(truncated_l1_norm),
+        "truncated_l2_norm": float(truncated_l2_norm),
+    }
+
+
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a sparse-Pauli operator using the lexicographic search/update path.
     """
-    x_concat, c_concat, new_size, final_valid_count = forward_search_update_merge_jitted(
+    (
+        x_concat,
+        c_concat,
+        new_size,
+        final_valid_count,
+        num_str_truncated,
+        truncated_l1_norm,
+        truncated_l2_norm,
+    ) = forward_search_update_merge_top_k_jitted(
         spo,
         xzk,
         theta,
         trunc_val,
+        max_num_str,
     )
     jax.block_until_ready(new_size)
 
     slice_size = min(int(new_size), max_num_str, x_concat.shape[0])
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
-    c_, _ = _apply_hard_cutoff(c_, trunc_val)
     jax.block_until_ready(c_)
 
     new_spo = SparsePauliOp(x_, c_, lexsorted=True)
-    return new_spo, min(int(final_valid_count), slice_size), _step_info_from_removed(c_concat, trunc_val, slice_size)
+    return (
+        new_spo,
+        min(int(final_valid_count), slice_size),
+        _step_info_dict(num_str_truncated, truncated_l1_norm, truncated_l2_norm),
+    )
 
 
 @jax.jit
@@ -230,6 +252,82 @@ def forward_search_update_merge_jitted(spo, xzk, theta, trunc_val):
     return sorted_xz, sorted_c, new_size, final_valid_count
 
 
+@partial(jax.jit, static_argnames=("max_num_str",))
+def forward_search_update_merge_top_k_jitted(spo, xzk, theta, trunc_val, max_num_str):
+    """
+    Forward search/update with cap truncation by largest coefficient magnitude.
+
+    The output shapes match forward_search_update_merge_jitted. Rows not kept by
+    either the coefficient threshold or the max_num_str top-k cap are PAD/zeroed
+    before the final lexsort, and the removed coefficient magnitudes are returned
+    for step-info accounting.
+    """
+    print("Recompile: forward_search_update_merge_top_k_jitted", spo.xz_array.shape,)
+    xz_array = spo.xz_array
+    c_array = spo.c_array
+
+    N = xz_array.shape[1] // 2
+    comm_val = jnp.sum(jax.lax.population_count(xz_array[:, N:] & xzk[:N]), axis=1) - \
+               jnp.sum(jax.lax.population_count(xz_array[:, :N] & xzk[N:]), axis=1)
+    mask_anti_commute = (comm_val % 2).astype(bool)
+
+    xz_array_conj, sign_array = kernels.pauli_product_phase_sign_second_uint(xzk, xz_array,)
+    is_duplicate, indices_in_existing = kernels.find_row_duplications(xz_array_conj, xz_array)
+
+    val_self = c_array
+    safe_indices = jnp.minimum(indices_in_existing, xz_array.shape[0]-1)
+    val_pair_raw = c_array[safe_indices]
+    val_pair = jnp.where(is_duplicate, val_pair_raw, 0.0)
+
+    theta_eff = jnp.where(mask_anti_commute, theta, 0.0)
+    cos_t = jnp.cos(theta_eff)
+    sin_t = jnp.sin(theta_eff)
+
+    c_array_updated = val_self * cos_t - val_pair * sin_t * sign_array
+
+    mask_insert = mask_anti_commute & (~is_duplicate)
+    new_xz = jnp.where(mask_insert[:, None], xz_array_conj, kernels.PAD_VAL)
+    new_c_val = val_self * sin_t * sign_array
+    new_c = jnp.where(mask_insert, new_c_val, 0.0)
+
+    merged_xz = jnp.concatenate([xz_array, new_xz], axis=0)
+    merged_c = jnp.concatenate([c_array_updated, new_c], axis=0)
+
+    magnitudes = jnp.abs(merged_c)
+    live_mask = magnitudes > trunc_val
+    scores = jnp.where(live_mask, magnitudes, -jnp.inf)
+    k = min(int(max_num_str), merged_c.shape[0])
+    _, top_indices = jax.lax.top_k(scores, k)
+    selected_mask = jnp.zeros(merged_c.shape[0], dtype=bool).at[top_indices].set(True)
+    final_keep_mask = live_mask & selected_mask
+
+    final_xz_masked = jnp.where(final_keep_mask[:, None], merged_xz, kernels.PAD_VAL)
+    final_c_masked = jnp.where(final_keep_mask, merged_c, 0.0)
+
+    removed_mask = (magnitudes > 0) & (~final_keep_mask)
+    removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
+    num_str_truncated = jnp.sum(removed_mask.astype(jnp.int32))
+    truncated_l1_norm = jnp.sum(removed_coeffs)
+    truncated_l2_norm = jnp.sqrt(jnp.sum(removed_coeffs ** 2))
+
+    final_valid_count = jnp.sum(final_keep_mask.astype(jnp.int32))
+    new_size = kernels.next_pow2(final_valid_count)
+
+    sort_indices = jnp.lexsort(final_xz_masked.T[::-1])
+    sorted_xz = final_xz_masked[sort_indices]
+    sorted_c = final_c_masked[sort_indices]
+
+    return (
+        sorted_xz,
+        sorted_c,
+        new_size,
+        final_valid_count,
+        num_str_truncated,
+        truncated_l1_norm,
+        truncated_l2_norm,
+    )
+
+
 def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     """
     Backward conjugation for the lexicographic search/update path.
@@ -246,8 +344,20 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
         grad_i: float - gradient value
 
     """
-    x_concat, c_concat, grad_c_concat, new_size, final_valid_count, grad_i = (
-        backward_search_update_merge_jitted(spo_val_grad, xzk, theta, trunc_val)
+    (
+        x_concat,
+        c_concat,
+        grad_c_concat,
+        new_size,
+        final_valid_count,
+        grad_i,
+        num_str_truncated,
+        truncated_l1_norm,
+        truncated_l2_norm,
+    ) = (
+        backward_search_update_merge_top_k_jitted(
+            spo_val_grad, xzk, theta, trunc_val, max_num_str
+        )
     )
     jax.block_until_ready(new_size)
 
@@ -256,8 +366,6 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
-    c_, keep_mask = _apply_hard_cutoff(c_, trunc_val)
-    grad_c_ = jnp.where(keep_mask, grad_c_, 0.0)
     jax.block_until_ready(grad_c_)
 
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_, lexsorted=True)
@@ -265,7 +373,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
         new_spo_val_grad,
         min(int(final_valid_count), slice_size),
         grad_i,
-        _step_info_from_removed(c_concat, trunc_val, slice_size),
+        _step_info_dict(num_str_truncated, truncated_l1_norm, truncated_l2_norm),
     )
 
 
@@ -364,3 +472,94 @@ def backward_search_update_merge_jitted(spo_val_grad, xzk, theta, trunc_val):
     sorted_grad_c = merged_grad_c[sort_indices]
 
     return sorted_xz, sorted_c, sorted_grad_c, new_size, final_valid_count, grad_i
+
+
+@partial(jax.jit, static_argnames=("max_num_str",))
+def backward_search_update_merge_top_k_jitted(spo_val_grad, xzk, theta, trunc_val, max_num_str):
+    """
+    Backward search/update with cap truncation by largest coefficient magnitude.
+
+    The selected top-k mask is applied consistently to xz, c, and grad_c before
+    lexsorting, and removed coefficient magnitudes are returned for step info.
+    """
+    print("Recompile: backward_search_update_merge_top_k_jitted", spo_val_grad.xz_array.shape,)
+    xz_array = spo_val_grad.xz_array
+    c_array = spo_val_grad.c_array
+    grad_c_array = spo_val_grad.grad_c_array
+
+    N = xz_array.shape[1] // 2
+    comm_val = jnp.sum(jax.lax.population_count(xz_array[:, N:] & xzk[:N]), axis=1) - \
+               jnp.sum(jax.lax.population_count(xz_array[:, :N] & xzk[N:]), axis=1)
+    mask_anti_commute = (comm_val % 2).astype(bool)
+
+    xz_array_conj, sign_array = kernels.pauli_product_phase_sign_second_uint(xzk, xz_array)
+    is_duplicate, indices_in_existing = kernels.find_row_duplications(xz_array_conj, xz_array)
+    safe_indices = jnp.minimum(indices_in_existing, xz_array.shape[0] - 1)
+
+    val_self = c_array
+    grad_self = grad_c_array
+    val_pair_raw = c_array[safe_indices]
+    grad_pair_raw = grad_c_array[safe_indices]
+    val_pair = jnp.where(is_duplicate, val_pair_raw, 0.0)
+    grad_pair = jnp.where(is_duplicate, grad_pair_raw, 0.0)
+
+    grad_sign = -sign_array
+    raw_grad_products = grad_sign * (-val_self * grad_pair + val_pair * grad_self)
+    valid_grad_products = jnp.where(mask_anti_commute & is_duplicate, raw_grad_products, 0.0)
+    grad_i = jnp.real(jnp.sum(valid_grad_products) / 2.0)
+
+    theta_eff = jnp.where(mask_anti_commute, -theta, 0.0)
+    cos_t = jnp.cos(theta_eff)
+    sin_t = jnp.sin(theta_eff)
+
+    c_array_updated = val_self * cos_t - val_pair * sin_t * sign_array
+    grad_c_array_updated = grad_self * cos_t - grad_pair * sin_t * sign_array
+
+    mask_insert = mask_anti_commute & (~is_duplicate)
+    new_xz = jnp.where(mask_insert[:, None], xz_array_conj, kernels.PAD_VAL)
+    new_c_val = val_self * sin_t * sign_array
+    new_grad_c_val = grad_self * sin_t * sign_array
+    new_c = jnp.where(mask_insert, new_c_val, 0.0)
+    new_grad_c = jnp.where(mask_insert, new_grad_c_val, 0.0)
+
+    merged_xz = jnp.concatenate([xz_array, new_xz], axis=0)
+    merged_c = jnp.concatenate([c_array_updated, new_c], axis=0)
+    merged_grad_c = jnp.concatenate([grad_c_array_updated, new_grad_c], axis=0)
+
+    magnitudes = jnp.abs(merged_c)
+    live_mask = magnitudes > trunc_val
+    scores = jnp.where(live_mask, magnitudes, -jnp.inf)
+    k = min(int(max_num_str), merged_c.shape[0])
+    _, top_indices = jax.lax.top_k(scores, k)
+    selected_mask = jnp.zeros(merged_c.shape[0], dtype=bool).at[top_indices].set(True)
+    final_keep_mask = live_mask & selected_mask
+
+    final_xz_masked = jnp.where(final_keep_mask[:, None], merged_xz, kernels.PAD_VAL)
+    final_c_masked = jnp.where(final_keep_mask, merged_c, 0.0)
+    final_grad_c_masked = jnp.where(final_keep_mask, merged_grad_c, 0.0)
+
+    removed_mask = (magnitudes > 0) & (~final_keep_mask)
+    removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
+    num_str_truncated = jnp.sum(removed_mask.astype(jnp.int32))
+    truncated_l1_norm = jnp.sum(removed_coeffs)
+    truncated_l2_norm = jnp.sqrt(jnp.sum(removed_coeffs ** 2))
+
+    final_valid_count = jnp.sum(final_keep_mask.astype(jnp.int32))
+    new_size = kernels.next_pow2(final_valid_count)
+
+    sort_indices = jnp.lexsort(final_xz_masked.T[::-1])
+    sorted_xz = final_xz_masked[sort_indices]
+    sorted_c = final_c_masked[sort_indices]
+    sorted_grad_c = final_grad_c_masked[sort_indices]
+
+    return (
+        sorted_xz,
+        sorted_c,
+        sorted_grad_c,
+        new_size,
+        final_valid_count,
+        grad_i,
+        num_str_truncated,
+        truncated_l1_norm,
+        truncated_l2_norm,
+    )

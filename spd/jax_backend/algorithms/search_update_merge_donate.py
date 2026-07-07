@@ -67,19 +67,25 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
 
 @partial(jax.jit, donate_argnums=(0,), static_argnums=(4,))
 def forward_fullstep_donate_jitted(spo, xzk, theta, trunc_val, max_num_str):
-    x_concat, c_concat, new_size, final_valid_count = (
-        search_update_merge.forward_search_update_merge_jitted(
+    (
+        x_concat,
+        c_concat,
+        new_size,
+        final_valid_count,
+        num_truncated,
+        tail_l1,
+        tail_l2,
+    ) = (
+        search_update_merge.forward_search_update_merge_top_k_jitted(
             spo,
             xzk,
             theta,
             trunc_val,
+            max_num_str,
         )
     )
-    slice_size = jnp.minimum(new_size, max_num_str)
-    num_truncated, tail_l1, tail_l2 = _removed_stats(c_concat, trunc_val, slice_size)
     x_out = kernels.slice_to_size_x_arr(x_concat, max_num_str)
     c_out = kernels.slice_to_size_c_arr(c_concat, max_num_str)
-    c_out, _ = _apply_hard_cutoff(c_out, trunc_val)
     return (
         SparsePauliOp(x_out, c_out, lexsorted=True),
         final_valid_count,
@@ -126,21 +132,28 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
 
 @partial(jax.jit, donate_argnums=(0,), static_argnums=(4,))
 def backward_fullstep_donate_jitted(spo_val_grad, xzk, theta, trunc_val, max_num_str):
-    x_concat, c_concat, grad_c_concat, new_size, final_valid_count, grad_i = (
-        search_update_merge.backward_search_update_merge_jitted(
+    (
+        x_concat,
+        c_concat,
+        grad_c_concat,
+        new_size,
+        final_valid_count,
+        grad_i,
+        num_truncated,
+        tail_l1,
+        tail_l2,
+    ) = (
+        search_update_merge.backward_search_update_merge_top_k_jitted(
             spo_val_grad,
             xzk,
             theta,
             trunc_val,
+            max_num_str,
         )
     )
-    slice_size = jnp.minimum(new_size, max_num_str)
-    num_truncated, tail_l1, tail_l2 = _removed_stats(c_concat, trunc_val, slice_size)
     x_out = kernels.slice_to_size_x_arr(x_concat, max_num_str)
     c_out = kernels.slice_to_size_c_arr(c_concat, max_num_str)
     grad_c_out = kernels.slice_to_size_c_arr(grad_c_concat, max_num_str)
-    c_out, keep_mask = _apply_hard_cutoff(c_out, trunc_val)
-    grad_c_out = jnp.where(keep_mask, grad_c_out, 0.0)
     return (
         SparsePauliGradientOp(x_out, c_out, grad_c_out, lexsorted=True),
         final_valid_count,

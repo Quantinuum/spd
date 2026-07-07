@@ -18,9 +18,11 @@ Deferred decision:
   API
 
 ### 2. Run the full suite before release/merge
-Focused regression and conformance suites have been run during development, but
-the repository still benefits from a final full-suite pass before a release or
-merge point.
+Resolved for the search/update top-k cap fix:
+
+- full suite passed with `474 passed`
+
+Keep this as a general release checklist item for future changes.
 
 ### 3. Revisit curated low-level public API
 The note in [`docs/low_level_api_scope_note.md`](low_level_api_scope_note.md)
@@ -31,13 +33,15 @@ runtime internals indirectly.
 ### 4. Decide long-term fate of `stack_sort_merge`
 Current state:
 - `stack_sort_merge` remains available as a reference and fallback algorithm
-- its truncation/count semantics now differ from `search_update_merge`
+- selected `stack_sort_merge` and `search_update_merge` paths now retain
+  capped live rows by coefficient magnitude
+- `search_update_merge` then restores lexicographic storage for later
+  search/update steps
 
 Deferred decision:
 - keep it permanently as a supported alternate path
 - or deprecate/remove it after the new JAX path has enough long-term confidence
-- or align its semantics back with `search_update_merge` if performance and API
-  consistency matter more than the newer soft-cutoff behavior
+- or continue using it as a reference path for capped top-k behavior
 
 ### 5. Separate IR from padded backend storage width
 Current state:

@@ -257,13 +257,16 @@ returned state and `step_info`.
 ### `search_update_merge`
 
 - rows below threshold are still converted to `PAD_VAL` before sorting
-- coefficients are kept long enough for step-info accounting
+- rows outside the `max_num_str` top coefficients are also converted to
+  `PAD_VAL`
+- coefficients are zeroed for rows removed by threshold or top-k cap
 - the wrapper reports hard-cutoff removals from both the returned slice and tail
 
 The internal storage order still differs:
 
 - `stack_sort_merge` sorts by coefficient magnitude after merging
-- `search_update_merge` returns lexicographically sorted storage
+- `search_update_merge` selects retained rows by coefficient magnitude, then
+  returns lexicographically sorted storage
 
 That storage-order difference should not change the represented operator or the
-meaning of truncation statistics.
+meaning of truncation statistics, including when `max_num_str` is active.

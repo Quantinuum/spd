@@ -114,6 +114,48 @@ def test_stack_sort_merge_soft_cutoff_backward_keeps_old_tail_behavior():
     assert step_info["truncated_l2_norm"] == pytest.approx(np.sqrt(0.5), abs=1e-6)
 
 
+def test_search_update_merge_backward_max_num_str_cap_keeps_largest_terms_like_stack_sort():
+    _configure_rotation_backends()
+    sigma = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
+    outputs = {}
+
+    for algorithm in JAX_BACKWARD_ALGORITHMS:
+        jax_backend.set_algorithm(algorithm)
+        spo = jax_backend.create_op({"XIII": 1.0, "IIII": 0.25})
+        spgo = jax_backend.init_gradient_spo(
+            spo,
+            loss_type="basis_expectation",
+            basis="Z",
+        )
+        spgo_out, num_string, grad_i, step_info = jax_backend.conjugate_pauli_rot_backward(
+            spgo,
+            sigma,
+            np.pi / 3,
+            trunc_val=1e-12,
+            max_num_str=2,
+        )
+        outputs[algorithm] = (
+            to_grad_term_dict("jax", jax_backend, spgo_out, n_qubits=4),
+            num_string,
+            grad_i,
+            step_info,
+        )
+
+    _assert_grad_term_dicts_close(
+        outputs["search_update_merge"][0],
+        outputs["stack_sort_merge"][0],
+    )
+    assert outputs["search_update_merge"][1] == outputs["stack_sort_merge"][1]
+    assert outputs["search_update_merge"][2] == pytest.approx(
+        outputs["stack_sort_merge"][2],
+        abs=1e-6,
+    )
+    assert outputs["search_update_merge"][3] == pytest.approx(
+        outputs["stack_sort_merge"][3],
+        abs=1e-6,
+    )
+
+
 @pytest.mark.parametrize("jax_algorithm", JAX_BACKWARD_ALGORITHMS, indirect=True)
 def test_jax_backward_algorithms_match_numpy_on_runner_basis_expectation(jax_algorithm):
     _configure_rotation_backends()

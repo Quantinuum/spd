@@ -324,8 +324,9 @@ Before choosing the long-term algorithm:
 
 ## Recommendation
 
-If the priority is performance, I would not try to make `search_update_merge`
-behave exactly like `stack_sort_merge`.
+If the priority is performance, keep `search_update_merge` semantically aligned
+with `stack_sort_merge` for threshold and `max_num_str` truncation, but do not
+require it to use the same internal ordering or full-array sort strategy.
 
 I would instead:
 
