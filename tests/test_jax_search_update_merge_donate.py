@@ -134,6 +134,35 @@ def test_search_update_merge_donate_backward_matches_search_update_merge_at_cap(
         jax_backend.set_algorithm(previous_algorithm)
 
 
+def test_search_update_merge_donate_forward_reports_nonzero_cap_stats():
+    _configure_jax()
+    previous_algorithm = jax_backend.get_algorithm()
+    sigma = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZIII"))
+
+    try:
+        jax_backend.set_algorithm("search_update_merge_donate")
+        spo = jax_backend.create_op({"XIII": 1.0, "ZIII": 0.5})
+        _, count, step_info = jax_backend.conjugate_pauli_rot_forward(
+            spo,
+            sigma,
+            np.pi / 3,
+            trunc_val=1e-12,
+            max_num_str=2,
+        )
+
+        assert count == 2
+        assert_step_info_close(
+            step_info,
+            {
+                "num_str_truncated": 1,
+                "truncated_l1_norm": 0.5,
+                "truncated_l2_norm": 0.5,
+            },
+        )
+    finally:
+        jax_backend.set_algorithm(previous_algorithm)
+
+
 def test_search_update_merge_donate_falls_back_while_growing():
     _configure_jax()
     previous_algorithm = jax_backend.get_algorithm()

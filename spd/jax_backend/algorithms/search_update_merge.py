@@ -70,6 +70,31 @@ def _step_info_dict(num_str_truncated, truncated_l1_norm, truncated_l2_norm):
     }
 
 
+def _top_k_step_info_values(magnitudes, final_keep_mask):
+    magnitudes, final_keep_mask = jax.lax.optimization_barrier(
+        (magnitudes, final_keep_mask)
+    )
+    removed_mask = (magnitudes > 0) & (~final_keep_mask)
+    count_values = removed_mask.astype(jnp.int32)
+    l1_values = jnp.where(removed_mask, magnitudes, 0.0)
+    l2_values = l1_values * l1_values
+
+    def add(x, y):
+        return tuple(a + b for a, b in zip(x, y))
+
+    count, l1_norm, l2_square = jax.lax.reduce(
+        (count_values, l1_values, l2_values),
+        (
+            jnp.asarray(0, dtype=jnp.int32),
+            jnp.asarray(0.0, dtype=magnitudes.dtype),
+            jnp.asarray(0.0, dtype=magnitudes.dtype),
+        ),
+        add,
+        dimensions=(0,),
+    )
+    return count, l1_norm, jnp.sqrt(l2_square)
+
+
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a sparse-Pauli operator using the lexicographic search/update path.
@@ -304,13 +329,11 @@ def forward_search_update_merge_top_k_jitted(spo, xzk, theta, trunc_val, max_num
     final_xz_masked = jnp.where(final_keep_mask[:, None], merged_xz, kernels.PAD_VAL)
     final_c_masked = jnp.where(final_keep_mask, merged_c, 0.0)
 
-    removed_mask = (magnitudes > 0) & (~final_keep_mask)
-    removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
-    num_str_truncated = jnp.sum(removed_mask.astype(jnp.int32))
-    truncated_l1_norm = jnp.sum(removed_coeffs)
-    truncated_l2_norm = jnp.sqrt(jnp.sum(removed_coeffs ** 2))
-
     final_valid_count = jnp.sum(final_keep_mask.astype(jnp.int32))
+    num_str_truncated, truncated_l1_norm, truncated_l2_norm = _top_k_step_info_values(
+        magnitudes,
+        final_keep_mask,
+    )
     new_size = kernels.next_pow2(final_valid_count)
 
     sort_indices = jnp.lexsort(final_xz_masked.T[::-1])
@@ -538,13 +561,11 @@ def backward_search_update_merge_top_k_jitted(spo_val_grad, xzk, theta, trunc_va
     final_c_masked = jnp.where(final_keep_mask, merged_c, 0.0)
     final_grad_c_masked = jnp.where(final_keep_mask, merged_grad_c, 0.0)
 
-    removed_mask = (magnitudes > 0) & (~final_keep_mask)
-    removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
-    num_str_truncated = jnp.sum(removed_mask.astype(jnp.int32))
-    truncated_l1_norm = jnp.sum(removed_coeffs)
-    truncated_l2_norm = jnp.sqrt(jnp.sum(removed_coeffs ** 2))
-
     final_valid_count = jnp.sum(final_keep_mask.astype(jnp.int32))
+    num_str_truncated, truncated_l1_norm, truncated_l2_norm = _top_k_step_info_values(
+        magnitudes,
+        final_keep_mask,
+    )
     new_size = kernels.next_pow2(final_valid_count)
 
     sort_indices = jnp.lexsort(final_xz_masked.T[::-1])
