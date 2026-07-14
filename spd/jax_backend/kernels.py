@@ -246,6 +246,24 @@ def init_gradient_spo(
 
     return gradient_spo
 
+
+def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
+    """Return the p=0 susceptibility for depolarizing noise on two qubits."""
+    if len(qubits) != 2:
+        raise ValueError("qubits must contain exactly two qubit indices.")
+
+    n_words = spgo.xz_array.shape[1] // 2
+    active = jnp.zeros(spgo.c_array.shape, dtype=bool)
+    for qubit in qubits:
+        word = qubit // 32
+        bit = 31 - (qubit % 32)
+        mask = jnp.uint32(1 << bit)
+        active = active | ((spgo.xz_array[:, word] & mask) != 0)
+        active = active | ((spgo.xz_array[:, n_words + word] & mask) != 0)
+
+    contributions = jnp.where(active, spgo.c_array * spgo.grad_c_array, 0.0)
+    return -jnp.sum(contributions)
+
 # ---------------------------------------------------------------------- #
 
 def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):

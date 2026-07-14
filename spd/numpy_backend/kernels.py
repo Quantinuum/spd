@@ -144,6 +144,27 @@ def init_gradient_spo(
 
     return gradient_spo
 
+
+def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
+    """Return the p=0 susceptibility for depolarizing noise on two qubits."""
+    if len(qubits) != 2:
+        raise ValueError("qubits must contain exactly two qubit indices.")
+
+    susceptibility = utils.as_real_scalar(0.0)
+    for packed, (coeff, grad) in spgo.items():
+        xz = np.asarray(packed)
+        n_words = xz.shape[0] // 2
+        active = False
+        for qubit in qubits:
+            word = qubit // 32
+            bit = 31 - (qubit % 32)
+            mask = np.uint32(1 << bit)
+            active = active or bool(xz[word] & mask) or bool(xz[n_words + word] & mask)
+        if active:
+            susceptibility -= coeff * grad
+
+    return susceptibility
+
 # ---------------------------------------------------------------------- #
 
 def pauli_product_uint(xz1, c1, xz2, c2):

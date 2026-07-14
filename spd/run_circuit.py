@@ -434,3 +434,70 @@ def backpropagate(
         _save_state_pickle(final_spgo, "grad_strings", trunc_val)
 
     return final_spgo, grads, info
+
+
+def backpropagate_noise_analysis(
+    spgo,
+    input_circuit,
+    trunc_val,
+    max_num_str,
+    *,
+    rebase=False,
+    save_strings=False,
+    backend=None,
+):
+    """Backpropagate an SPGO and measure depolarizing susceptibility per operation."""
+    total_start_time = time.time()
+    backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
+    if not backend.is_spgo_instance(spgo):
+        raise TypeError(
+            f"spgo must be a {backend.name} SparsePauliGradientOp when backend='{backend.name}'."
+        )
+
+    max_num_str = _normalize_max_num_str(backend.name, max_num_str)
+    operations = _normalize_input_circuit(input_circuit, backend, rebase)
+    parameter_grads = []
+    noise_grads = []
+
+    def _apply_backward(state, operation):
+        next_state, num_string, grad_i, step_info = backend.apply_backward(
+            state,
+            operation,
+            trunc_val=trunc_val,
+            max_num_str=max_num_str,
+        )
+        if grad_i is not None:
+            parameter_grads.append(grad_i)
+
+        if isinstance(operation, PauliRotation):
+            qubits = tuple(i for i, pauli in enumerate(operation.pauli) if pauli != "I")
+            if len(qubits) == 1:
+                noise_grads.append(0)
+            elif len(qubits) == 2:
+                noise_grads.append(
+                    backend.get_two_qubit_depolarizing_susceptibility(
+                        next_state,
+                        qubits,
+                    )
+                )
+            else:
+                raise ValueError(
+                    "Noise analysis requires Pauli rotations acting on one or two qubits. "
+                    "Compile the circuit to single- and two-qubit rotations first."
+                )
+        else:
+            noise_grads.append(0)
+
+        return next_state, num_string, grad_i, step_info
+
+    final_spgo, _, _, info = _run_operation_loop(
+        operations,
+        spgo,
+        _apply_backward,
+        total_start_time,
+    )
+
+    if save_strings:
+        _save_state_pickle(final_spgo, "grad_strings", trunc_val)
+
+    return final_spgo, parameter_grads, noise_grads, info

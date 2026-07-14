@@ -57,3 +57,23 @@ Example:
 - therefore the parser stores `theta = param * pi`
 
 This conversion currently happens in [`pytket_frontend.py`](pytket_frontend.py).
+
+## Depolarizing-Noise Susceptibility
+
+`backpropagate_noise_analysis(...)` extends SPGO backpropagation with the
+susceptibility to a two-qubit depolarizing channel after each two-qubit Pauli
+rotation. It uses the convention that Pauli terms active on either channel
+qubit are multiplied by `1 - p`.
+
+The function returns `(final_spgo, parameter_grads, noise_grads, info)`.
+`noise_grads` is aligned with the lowered circuit operation list: single-qubit
+rotations and skipped operations contribute zero, while two-qubit rotations
+contain their per-gate susceptibility. Their sum is the derivative when every
+two-qubit channel uses the same `p`.
+
+The susceptibility is evaluated after each SPGO backward gate update, which is
+the output side of the ideal gate where the channel acts. With truncation
+enabled, the result is the susceptibility of the truncated SPGO calculation.
+
+See [`../examples/tfi_noise_susceptibility.py`](../examples/tfi_noise_susceptibility.py)
+for an RX/RZZ TFI example.
