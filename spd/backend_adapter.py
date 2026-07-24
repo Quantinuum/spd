@@ -54,7 +54,15 @@ class BackendModule(Protocol):
     def conjugate_X_forward(self, spo, qubit): ...
     def conjugate_Y_forward(self, spo, qubit): ...
     def conjugate_Z_forward(self, spo, qubit): ...
+    def conjugate_H_backward(self, spgo, qubit): ...
+    def conjugate_S_backward(self, spgo, qubit): ...
+    def conjugate_Sdg_backward(self, spgo, qubit): ...
+    def conjugate_CX_backward(self, spgo, control_qubit, target_qubit): ...
+    def conjugate_CY_backward(self, spgo, control_qubit, target_qubit): ...
+    def conjugate_CZ_backward(self, spgo, control_qubit, target_qubit): ...
     def conjugate_X_backward(self, spgo, qubit): ...
+    def conjugate_Y_backward(self, spgo, qubit): ...
+    def conjugate_Z_backward(self, spgo, qubit): ...
 
 
 @dataclass
@@ -84,7 +92,15 @@ class BackendAdapter:
             "OpType.Z": self.module.conjugate_Z_forward,
         }
         self._clifford_backward_dispatch = {
+            "OpType.H": self.module.conjugate_H_backward,
+            "OpType.S": self.module.conjugate_S_backward,
+            "OpType.Sdg": self.module.conjugate_Sdg_backward,
+            "OpType.CX": self.module.conjugate_CX_backward,
+            "OpType.CY": self.module.conjugate_CY_backward,
+            "OpType.CZ": self.module.conjugate_CZ_backward,
             "OpType.X": self.module.conjugate_X_backward,
+            "OpType.Y": self.module.conjugate_Y_backward,
+            "OpType.Z": self.module.conjugate_Z_backward,
         }
 
     @classmethod
@@ -175,19 +191,25 @@ class BackendAdapter:
             )
 
         if isinstance(operation, SingleQubitClifford):
-            # add Warning this is a temporary hack until we implement proper SPGO support for cliffords
-            import warnings
-            warnings.warn(
-                "Applying a single-qubit Clifford in the backward pass is not fully supported. "
-                "The gradient will be incorrect if the Clifford changes the Pauli type of any rotation generator."
-            )
             if operation.gate_name not in self._clifford_backward_dispatch:
                 raise NotImplementedError(
                     f"Backward support for {operation.gate_name} is not implemented."
                 )
-            # Keep num_string as None so non-parameterized Clifford steps are not
-            # appended to the parameter-gradient list in run_circuit.py.
+            # Keep grad_i as None because Clifford gates have no parameter gradient.
             next_state = self._clifford_backward_dispatch[operation.gate_name](spgo, operation.qubit)
+            return next_state, next_state.get_size(), None, _zero_step_info()
+
+        if isinstance(operation, TwoQubitClifford):
+            if operation.gate_name not in self._clifford_backward_dispatch:
+                raise NotImplementedError(
+                    f"Backward support for {operation.gate_name} is not implemented."
+                )
+            # Keep grad_i as None because Clifford gates have no parameter gradient.
+            next_state = self._clifford_backward_dispatch[operation.gate_name](
+                spgo,
+                operation.control_qubit,
+                operation.target_qubit,
+            )
             return next_state, next_state.get_size(), None, _zero_step_info()
 
         if isinstance(operation, SkippedOperation):

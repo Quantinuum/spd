@@ -469,6 +469,15 @@ def backpropagate_noise_analysis(
         if grad_i is not None:
             parameter_grads.append(grad_i)
 
+        if isinstance(operation, TwoQubitClifford):
+            qubits = (operation.target_qubit, operation.control_qubit)
+            noise_grads.append(
+                backend.get_two_qubit_depolarizing_susceptibility(
+                    next_state,
+                    qubits,
+                )
+            )
+
         if isinstance(operation, PauliRotation):
             qubits = tuple(i for i, pauli in enumerate(operation.pauli) if pauli != "I")
             if len(qubits) == 1:

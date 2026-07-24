@@ -340,8 +340,12 @@ def test_backpropagate_info_tracks_supported_backward_clifford(backend_name):
     initial_spgo = spd.init_gradient_spo(initial_spo, basis="0")
     operations = [SingleQubitClifford(gate_name="OpType.X", qubit=0)]
 
-    with pytest.warns(UserWarning, match="not fully supported"):
-        _, grads, info = spd.backpropagate(initial_spgo, operations, trunc_val=1e-12, max_num_str=1000)
+    _, grads, info = spd.backpropagate(
+        initial_spgo,
+        operations,
+        trunc_val=1e-12,
+        max_num_str=1000,
+    )
 
     assert grads == []
     assert info["history"]["num_str_truncated"] == [0]

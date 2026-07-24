@@ -454,6 +454,30 @@ def conjugate_H_forward(spo, qubit):
 
     return new_spo
 
+def conjugate_H_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_H_forward."""
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = np.uint32(1 << (31 - bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        diff = (x_word & bit_mask) ^ (z_word & bit_mask)
+        x_word ^= diff
+        z_word ^= diff
+        xz[site] = x_word
+        xz[n_words + site] = z_word
+
+        phase = -1.0 if ((x_word & bit_mask) and (z_word & bit_mask)) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
+
 def conjugate_S_forward(spo, qubit):
     """
     Apply S gate on the specified qubit for a batch of packed (x,z) representations.
@@ -524,6 +548,49 @@ def conjugate_Sdg_forward(spo, qubit):
 
     return new_spo
 
+def conjugate_S_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_Sdg_forward."""
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = np.uint32(1 << (31 - bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        x_bit = x_word & bit_mask
+        phase = -1.0 if (x_bit and (z_word & bit_mask)) else 1.0
+        xz[n_words + site] = z_word ^ x_bit
+
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
+
+def conjugate_Sdg_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_S_forward."""
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = np.uint32(1 << (31 - bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        x_bit = x_word & bit_mask
+        z_word ^= x_bit
+        xz[n_words + site] = z_word
+
+        phase = -1.0 if (x_bit and (z_word & bit_mask)) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
+
 def conjugate_CX_forward(spo, control_qubit, target_qubit):
     """
     Apply CX gate on the specified qubits for a batch of packed (x,z) representations.
@@ -576,11 +643,54 @@ def conjugate_CX_forward(spo, control_qubit, target_qubit):
 
     return new_spo
 
+def conjugate_CX_backward(spgo, control_qubit, target_qubit):
+    """
+    Apply CX gate on the specified qubits to a SparsePauliGradientOp.
+    """
+    control_site = control_qubit // 32
+    control_bit = control_qubit % 32
+    target_site = target_qubit // 32
+    target_bit = target_qubit % 32
+
+    c_bit_mask = np.uint32(1 << (31 - control_bit))
+    t_bit_mask = np.uint32(1 << (31 - target_bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+
+        x_c_word = xz[control_site]
+        x_t_word = xz[target_site]
+        z_c_word = xz[n_words + control_site]
+        z_t_word = xz[n_words + target_site]
+
+        x_c_bit = int((x_c_word & c_bit_mask) != 0)
+        z_c_bit = int((z_c_word & c_bit_mask) != 0)
+        x_t_bit = int((x_t_word & t_bit_mask) != 0)
+        z_t_bit = int((z_t_word & t_bit_mask) != 0)
+
+        if x_c_bit:
+            xz[target_site] = x_t_word ^ t_bit_mask
+        if z_t_bit:
+            xz[n_words + control_site] = z_c_word ^ c_bit_mask
+
+        phase = -1.0 if (x_c_bit and z_t_bit and (z_c_bit == x_t_bit)) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
+
 def conjugate_CY_forward(spo, control_qubit, target_qubit):
     spo = conjugate_S_forward(spo, target_qubit)
     spo = conjugate_CX_forward(spo, control_qubit, target_qubit)
     spo = conjugate_Sdg_forward(spo, target_qubit)
     return spo
+
+def conjugate_CY_backward(spgo, control_qubit, target_qubit):
+    """SparsePauliGradientOp variant of conjugate_CY_forward."""
+    spgo = conjugate_Sdg_backward(spgo, target_qubit)
+    spgo = conjugate_CX_backward(spgo, control_qubit, target_qubit)
+    return conjugate_S_backward(spgo, target_qubit)
 
 def conjugate_CZ_forward(spo, control_qubit, target_qubit):
     """
@@ -633,6 +743,42 @@ def conjugate_CZ_forward(spo, control_qubit, target_qubit):
         new_spo[tuple(xz)] = phase * coeff
 
     return new_spo
+
+def conjugate_CZ_backward(spgo, control_qubit, target_qubit):
+    """SparsePauliGradientOp variant of conjugate_CZ_forward."""
+    control_site = control_qubit // 32
+    control_bit = control_qubit % 32
+    target_site = target_qubit // 32
+    target_bit = target_qubit % 32
+
+    c_bit_mask = np.uint32(1 << (31 - control_bit))
+    t_bit_mask = np.uint32(1 << (31 - target_bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+
+        x_c_word = xz[control_site]
+        x_t_word = xz[target_site]
+        z_c_word = xz[n_words + control_site]
+        z_t_word = xz[n_words + target_site]
+
+        x_c_bit = int((x_c_word & c_bit_mask) != 0)
+        z_c_bit = int((z_c_word & c_bit_mask) != 0)
+        x_t_bit = int((x_t_word & t_bit_mask) != 0)
+        z_t_bit = int((z_t_word & t_bit_mask) != 0)
+
+        if x_t_bit:
+            xz[n_words + control_site] = z_c_word ^ c_bit_mask
+        if x_c_bit:
+            z_t_word = xz[n_words + target_site]
+            xz[n_words + target_site] = z_t_word ^ t_bit_mask
+
+        phase = -1.0 if (x_c_bit and x_t_bit and (z_c_bit ^ z_t_bit)) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
 
 def conjugate_X_forward(spo, qubit):
     """
@@ -706,6 +852,23 @@ def conjugate_Y_forward(spo, qubit):
 
     return new_spo
 
+def conjugate_Y_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_Y_forward."""
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = np.uint32(1 << (31 - bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        n_words = xz.shape[0] // 2
+        x_word = xz[site]
+        z_word = xz[n_words + site]
+        phase = -1.0 if bool(x_word & bit_mask) ^ bool(z_word & bit_mask) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo
+
 def conjugate_Z_forward(spo, qubit):
     """
     Apply Z gate on the specified qubit for a batch of packed (x,z) representations.
@@ -729,3 +892,18 @@ def conjugate_Z_forward(spo, qubit):
         new_spo[tuple(xz)] = phase * coeff
 
     return new_spo
+
+def conjugate_Z_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_Z_forward."""
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = np.uint32(1 << (31 - bit))
+
+    new_spgo = SparsePauliGradientOp()
+    for xz_key, value in spgo.items():
+        xz = np.array(xz_key, dtype=np.uint32, copy=True)
+        x_word = xz[site]
+        phase = -1.0 if (x_word & bit_mask) else 1.0
+        new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
+
+    return new_spgo

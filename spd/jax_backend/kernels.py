@@ -495,6 +495,38 @@ def conjugate_H_forward(spo, qubit):
     return new_spo
 
 @jax.jit
+def conjugate_H_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_H_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+    z_array = xz_array[:, N:]
+
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = jnp.uint32(1 << (31 - bit))
+
+    x_word = x_array[:, site]
+    z_word = z_array[:, site]
+    diff = (x_word & bit_mask) ^ (z_word & bit_mask)
+    x_word_updated = x_word ^ diff
+    z_word_updated = z_word ^ diff
+
+    x_array = x_array.at[:, site].set(x_word_updated)
+    z_array = z_array.at[:, site].set(z_word_updated)
+
+    and_bit = (x_word_updated & bit_mask) & (z_word_updated & bit_mask)
+    phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
+    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    return SparsePauliGradientOp(
+        xz_updated,
+        phase * c_array,
+        phase * grad_c_array,
+    )
+
+@jax.jit
 def conjugate_S_forward(spo, qubit):
     """
     Apply S gate on the specified qubit for a batch of packed (x,z) representations.
@@ -585,6 +617,60 @@ def conjugate_Sdg_forward(spo, qubit):
     return new_spo
 
 @jax.jit
+def conjugate_S_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_Sdg_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+    z_array = xz_array[:, N:]
+
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = jnp.uint32(1 << (31 - bit))
+
+    x_bit = x_array[:, site] & bit_mask
+    z_word = z_array[:, site]
+    and_bit = x_bit & z_word
+    z_array = z_array.at[:, site].set(z_word ^ x_bit)
+
+    phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
+    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    return SparsePauliGradientOp(
+        xz_updated,
+        phase * c_array,
+        phase * grad_c_array,
+    )
+
+@jax.jit
+def conjugate_Sdg_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_S_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+    z_array = xz_array[:, N:]
+
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = jnp.uint32(1 << (31 - bit))
+
+    x_bit = x_array[:, site] & bit_mask
+    z_word_updated = z_array[:, site] ^ x_bit
+    z_array = z_array.at[:, site].set(z_word_updated)
+
+    and_bit = x_bit & z_word_updated
+    phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
+    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    return SparsePauliGradientOp(
+        xz_updated,
+        phase * c_array,
+        phase * grad_c_array,
+    )
+
+@jax.jit
 def conjugate_CX_forward(spo, control_qubit, target_qubit):
     """
     Apply CX gate on the specified qubits for a batch of packed (x,z) representations.
@@ -652,6 +738,50 @@ def conjugate_CX_forward(spo, control_qubit, target_qubit):
     return new_spo
 
 @jax.jit
+def conjugate_CX_backward(spgo, control_qubit, target_qubit):
+    """SparsePauliGradientOp variant of conjugate_CX_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+    z_array = xz_array[:, N:]
+
+    control_site = control_qubit // 32
+    control_bit = control_qubit % 32
+    target_site = target_qubit // 32
+    target_bit = target_qubit % 32
+
+    c_bit_mask = jnp.uint32(1 << (31 - control_bit))
+    t_bit_mask = jnp.uint32(1 << (31 - target_bit))
+
+    x_c_word = x_array[:, control_site]
+    z_c_word = z_array[:, control_site]
+    x_t_word = x_array[:, target_site]
+    z_t_word = z_array[:, target_site]
+
+    x_c_bit = (x_c_word & c_bit_mask) >> (31 - control_bit)
+    z_c_bit = (z_c_word & c_bit_mask) >> (31 - control_bit)
+    x_t_bit = (x_t_word & t_bit_mask) >> (31 - target_bit)
+    z_t_bit = (z_t_word & t_bit_mask) >> (31 - target_bit)
+
+    x_array = x_array.at[:, target_site].set(
+        x_t_word ^ (x_c_bit << (31 - target_bit))
+    )
+    z_array = z_array.at[:, control_site].set(
+        z_c_word ^ (z_t_bit << (31 - control_bit))
+    )
+
+    and_bit = (x_c_bit & z_t_bit) & (z_c_bit == x_t_bit)
+    phase = jnp.power(-1.0, and_bit)
+    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    return SparsePauliGradientOp(
+        xz_updated,
+        phase * c_array,
+        phase * grad_c_array,
+    )
+
+@jax.jit
 def conjugate_CY_forward(spo, control_qubit, target_qubit):
     xz_array = spo.xz_array
     c_array = spo.c_array
@@ -664,6 +794,13 @@ def conjugate_CY_forward(spo, control_qubit, target_qubit):
 
     # --- Step 3: S† on target ---
     return conjugate_Sdg_forward(spo, target_qubit)
+
+@jax.jit
+def conjugate_CY_backward(spgo, control_qubit, target_qubit):
+    """SparsePauliGradientOp variant of conjugate_CY_forward."""
+    spgo = conjugate_Sdg_backward(spgo, target_qubit)
+    spgo = conjugate_CX_backward(spgo, control_qubit, target_qubit)
+    return conjugate_S_backward(spgo, target_qubit)
 
 @jax.jit
 def conjugate_CZ_forward(spo, control_qubit, target_qubit):
@@ -733,6 +870,51 @@ def conjugate_CZ_forward(spo, control_qubit, target_qubit):
     new_spo = SparsePauliOp(xz_updated, phase * c_array)
     # return xz_updated, phase * c_array
     return new_spo
+
+@jax.jit
+def conjugate_CZ_backward(spgo, control_qubit, target_qubit):
+    """SparsePauliGradientOp variant of conjugate_CZ_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+    z_array = xz_array[:, N:]
+
+    control_site = control_qubit // 32
+    control_bit = control_qubit % 32
+    target_site = target_qubit // 32
+    target_bit = target_qubit % 32
+
+    c_bit_mask = jnp.uint32(1 << (31 - control_bit))
+    t_bit_mask = jnp.uint32(1 << (31 - target_bit))
+
+    x_c_word = x_array[:, control_site]
+    z_c_word = z_array[:, control_site]
+    x_t_word = x_array[:, target_site]
+    z_t_word = z_array[:, target_site]
+
+    x_c_bit = (x_c_word & c_bit_mask) >> (31 - control_bit)
+    z_c_bit = (z_c_word & c_bit_mask) >> (31 - control_bit)
+    x_t_bit = (x_t_word & t_bit_mask) >> (31 - target_bit)
+    z_t_bit = (z_t_word & t_bit_mask) >> (31 - target_bit)
+
+    z_array = z_array.at[:, control_site].set(
+        z_c_word ^ (x_t_bit << (31 - control_bit))
+    )
+    z_t_word = z_array[:, target_site]
+    z_array = z_array.at[:, target_site].set(
+        z_t_word ^ (x_c_bit << (31 - target_bit))
+    )
+
+    and_bit = (x_c_bit & x_t_bit) & (z_c_bit ^ z_t_bit)
+    phase = jnp.power(-1.0, and_bit)
+    xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    return SparsePauliGradientOp(
+        xz_updated,
+        phase * c_array,
+        phase * grad_c_array,
+    )
 
 @jax.jit
 def conjugate_X_forward(spo, qubit):
@@ -828,6 +1010,29 @@ def conjugate_Y_forward(spo, qubit):
     return new_spo
 
 @jax.jit
+def conjugate_Y_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_Y_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+    z_array = xz_array[:, N:]
+
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = jnp.uint32(1 << (31 - bit))
+
+    x_bit = (x_array[:, site] & bit_mask) >> (31 - bit)
+    z_bit = (z_array[:, site] & bit_mask) >> (31 - bit)
+    phase = jnp.power(-1.0, x_bit ^ z_bit)
+    return SparsePauliGradientOp(
+        xz_array,
+        phase * c_array,
+        phase * grad_c_array,
+    )
+
+@jax.jit
 def conjugate_Z_forward(spo, qubit):
     """
     Apply Z gate on the specified qubit for a batch of packed (x,z) representations.
@@ -858,6 +1063,27 @@ def conjugate_Z_forward(spo, qubit):
     # return xz_array, phase * c_array
     new_spo = SparsePauliOp(xz_array, phase * c_array)
     return new_spo
+
+@jax.jit
+def conjugate_Z_backward(spgo, qubit):
+    """SparsePauliGradientOp variant of conjugate_Z_forward."""
+    xz_array = spgo.xz_array
+    c_array = spgo.c_array
+    grad_c_array = spgo.grad_c_array
+    N = xz_array.shape[1] // 2
+    x_array = xz_array[:, :N]
+
+    site = qubit // 32
+    bit = qubit % 32
+    bit_mask = jnp.uint32(1 << (31 - bit))
+
+    x_bit = (x_array[:, site] & bit_mask) >> (31 - bit)
+    phase = jnp.power(-1.0, x_bit)
+    return SparsePauliGradientOp(
+        xz_array,
+        phase * c_array,
+        phase * grad_c_array,
+    )
 
 
 

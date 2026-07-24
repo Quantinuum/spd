@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from tests.helpers import to_grad_term_dict, to_term_dict
+
 # backend fixture is provided by tests/conftest.py
 
 # Expected results copied from legacy test/test_clifford.py
@@ -118,6 +120,52 @@ def _run_or_xfail(backend_name, fn):
     except NotImplementedError:
         pytest.xfail(f"{backend_name} backend clifford path not implemented yet")
 
+def _make_spgo(module, value_dict, grad_dict):
+    value_spo = module.create_op(value_dict)
+    grad_spo = module.create_op(grad_dict)
+    if isinstance(value_spo, dict):
+        return module.SparsePauliGradientOp(
+            {
+                key: (value, grad_spo[key])
+                for key, value in value_spo.items()
+            }
+        )
+    return module.SparsePauliGradientOp(
+        value_spo.xz_array,
+        value_spo.c_array,
+        grad_spo.c_array,
+    )
+
+def _assert_backward_matches_forward(
+    backend_name,
+    module,
+    backward_fn,
+    expected_forward_fn,
+):
+    value_dict = {"IXYZ": 1.25, "YZXI": -0.5, "XXYY": 0.75}
+    grad_dict = {"IXYZ": -0.75, "YZXI": 1.5, "XXYY": 0.25}
+    spgo = _make_spgo(module, value_dict, grad_dict)
+
+    actual = backward_fn(spgo)
+    expected_values = to_term_dict(
+        backend_name,
+        module,
+        expected_forward_fn(module.create_op(value_dict)),
+        n_qubits=4,
+    )
+    expected_grads = to_term_dict(
+        backend_name,
+        module,
+        expected_forward_fn(module.create_op(grad_dict)),
+        n_qubits=4,
+    )
+    actual_terms = to_grad_term_dict(backend_name, module, actual, n_qubits=4)
+
+    assert set(actual_terms) == set(expected_values) == set(expected_grads)
+    for pauli, (value, grad) in actual_terms.items():
+        assert np.isclose(value, expected_values[pauli])
+        assert np.isclose(grad, expected_grads[pauli])
+
 
 
 def test_apply_one_site(backend):
@@ -164,3 +212,40 @@ def test_apply_two_sites(backend):
         assert np.isclose(phase_out, expected_phase), (
             f"Phase mismatch for {input_str} with {clifford} on qubits {control_qubit}, {target_qubit}"
         )
+
+
+@pytest.mark.parametrize(
+    ("gate", "expected_forward_gate", "qubit"),
+    [
+        ("H", "H", 2),
+        ("S", "Sdg", 1),
+        ("Sdg", "S", 2),
+        ("X", "X", 3),
+        ("Y", "Y", 1),
+        ("Z", "Z", 2),
+    ],
+)
+def test_single_qubit_clifford_backward_matches_forward_rule(
+    backend,
+    gate,
+    expected_forward_gate,
+    qubit,
+):
+    backend_name, module = backend
+    _assert_backward_matches_forward(
+        backend_name,
+        module,
+        lambda spgo: getattr(module, f"conjugate_{gate}_backward")(spgo, qubit),
+        lambda spo: getattr(module, f"conjugate_{expected_forward_gate}_forward")(spo, qubit),
+    )
+
+
+@pytest.mark.parametrize("gate", ["CX", "CY", "CZ"])
+def test_two_qubit_hermitian_clifford_backward_matches_forward_rule(backend, gate):
+    backend_name, module = backend
+    _assert_backward_matches_forward(
+        backend_name,
+        module,
+        lambda spgo: getattr(module, f"conjugate_{gate}_backward")(spgo, 1, 3),
+        lambda spo: getattr(module, f"conjugate_{gate}_forward")(spo, 1, 3),
+    )
