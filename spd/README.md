@@ -26,6 +26,12 @@ This split supports multiple circuit frontends, including the built-in
 OpenQASM 2 frontend and the `pytket` frontend, without duplicating backend
 execution logic.
 
+`CircuitIR` stores the physical `system_size` together with an immutable tuple
+of operations. Both frontends return `CircuitIR` directly. Ordinary evolution
+and backpropagation also accept raw operation sequences, while noise analysis
+requires `CircuitIR` (or a `pytket` circuit) so padded storage cannot be
+mistaken for physical idle qubits.
+
 `SPO.get_pauli_weight_distribution()` returns squared coefficient mass grouped
 by Pauli weight. `SPO.get_pauli_weight_counts()` returns the number of stored
 Pauli strings at each weight.
@@ -58,22 +64,29 @@ Example:
 
 This conversion currently happens in [`pytket_frontend.py`](pytket_frontend.py).
 
-## Depolarizing-Noise Susceptibility
+## Noise Susceptibility
 
 `backpropagate_noise_analysis(...)` extends SPGO backpropagation with the
-susceptibility to a two-qubit depolarizing channel after each two-qubit Pauli
-rotation. It uses the convention that Pauli terms active on either channel
-qubit are multiplied by `1 - p`.
+susceptibility to complete depolarization after one- and two-qubit gates. The
+depolarizing convention multiplies Pauli terms active on any channel qubit by
+`1 - p`.
 
 The function returns `(final_spgo, parameter_grads, noise_grads, info)`.
-`noise_grads` is aligned with the lowered circuit operation list: single-qubit
-rotations and skipped operations contribute zero, while two-qubit rotations
-contain their per-gate susceptibility. Their sum is the derivative when every
-two-qubit channel uses the same `p`.
+`noise_grads` is a dictionary with operation-aligned
+`one_qubit_depolarizing` and `two_qubit_depolarizing` lists. Non-applicable
+channels and skipped operations contribute numeric zero.
 
 The susceptibility is evaluated after each SPGO backward gate update, which is
 the output side of the ideal gate where the channel acts. With truncation
 enabled, the result is the susceptibility of the truncated SPGO calculation.
+Quantinuum `p1` and `p2` values may be used as isotropic approximations, but
+their asymmetric and emission components are not modeled here. For a coherent
+idle-Z model, support-probe and forward-tangent approaches are deferred because
+the previous restricted-SPGO estimate could silently miss tangent support.
+See
+[`../docs/weighted_idle_coherent_z_forward_tangent_handoff.md`](../docs/weighted_idle_coherent_z_forward_tangent_handoff.md).
+Hardware scheduling, transport, and gate durations remain inputs for
+downstream analysis.
 
 See [`../examples/tfi_noise_susceptibility.py`](../examples/tfi_noise_susceptibility.py)
 for an RX/RZZ TFI example.

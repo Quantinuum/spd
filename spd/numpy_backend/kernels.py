@@ -145,10 +145,12 @@ def init_gradient_spo(
     return gradient_spo
 
 
-def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
-    """Return the p=0 susceptibility for depolarizing noise on two qubits."""
-    if len(qubits) != 2:
-        raise ValueError("qubits must contain exactly two qubit indices.")
+def get_depolarizing_susceptibility(spgo, qubits):
+    """Return the p=0 complete-depolarizing susceptibility on one or two qubits."""
+    if len(qubits) not in (1, 2):
+        raise ValueError("qubits must contain one or two qubit indices.")
+    if len(set(qubits)) != len(qubits):
+        raise ValueError("qubits must be distinct.")
 
     susceptibility = utils.as_real_scalar(0.0)
     for packed, (coeff, grad) in spgo.items():
@@ -164,6 +166,18 @@ def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
             susceptibility -= coeff * grad
 
     return susceptibility
+
+
+def get_one_qubit_depolarizing_susceptibility(spgo, qubit):
+    """Return the p=0 complete-depolarizing susceptibility on one qubit."""
+    return get_depolarizing_susceptibility(spgo, (qubit,))
+
+
+def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
+    """Return the p=0 complete-depolarizing susceptibility on two qubits."""
+    if len(qubits) != 2:
+        raise ValueError("qubits must contain exactly two qubit indices.")
+    return get_depolarizing_susceptibility(spgo, qubits)
 
 # ---------------------------------------------------------------------- #
 
@@ -327,31 +341,27 @@ def tuple_sum(a, b):
 def zeros_like_tuple(t):
     return tuple(0 for _ in t)
 
-def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str=None):
-    """
-    [Support uint8, uint16, uint32, uint64]
-    Conjugate a batch of Pauli strings in packed uint form by rotation R_k(theta):
-    exp(-i theta/2 * sigma_k) * sigma_j * exp(i theta/2 * sigma_k)
-    """
+
+def _split_pauli_rotation_terms(spo_val_grad, xzk):
+    # 1. Split the Op into C and AC parts
     new_spo_c = SparsePauliGradientOp()
     old_spo_a = SparsePauliGradientOp()
-    # 1. Split the Op into C and AC parts
     for xz_key, vals in spo_val_grad.items():
         xz = np.array(xz_key)
         acq_val = check_anticommute_uint(xz, xzk)
         if acq_val == 0:
-            new_spo_c[xz_key] = vals  # commute
+            # commute
+            new_spo_c[xz_key] = vals
         else:
-            old_spo_a[xz_key] = vals  # anticommute
+            # anticommute
+            old_spo_a[xz_key] = vals
 
-    # 2. construct the pairs of AC parts
+    # 2. Pair every anticommuting P with Q = sigma_k P.
     old_spo_a_pairs = {}
     for P, vals in old_spo_a.items():
         Q_array, c_phase = pauli_product_uint(xzk, 1., np.array(P), 1.)
         Q = tuple(Q_array)
 
-        # We want to order the pairs in [\sigma, P, Q] s.t.
-        # \sigma P = i Q, P Q = i \sigma
         if np.isclose(c_phase, 1j):
             P_vals, Q_vals = old_spo_a_pairs.get((P, Q), (zeros_like_tuple(vals), zeros_like_tuple(vals)))
             old_spo_a_pairs[(P, Q)] = (tuple_sum(P_vals, vals), Q_vals)
@@ -361,14 +371,26 @@ def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_st
         else:
             raise ValueError("Unexpected phase in Pauli product: {}".format(c_phase))
 
-    # 2.5 Get gradient with respect to theta
+    return new_spo_c, old_spo_a_pairs
+
+
+def _get_pauli_rotation_gradient_from_pairs(old_spo_a_pairs):
     theta_grad = 0
-    for (P, Q), (P_vals, Q_vals) in old_spo_a_pairs.items():
+    for P_vals, Q_vals in old_spo_a_pairs.values():
         P_val, P_grad = P_vals
         Q_val, Q_grad = Q_vals
         theta_grad += (-P_val * Q_grad + Q_val * P_grad)
+    return theta_grad
 
-    # 3. Apply the rotation channel-wise to each AC pair
+
+def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str=None):
+    """
+    [Support uint8, uint16, uint32, uint64]
+    Conjugate a batch of Pauli strings by exp(-i theta P / 2).
+    """
+    new_spo_c, old_spo_a_pairs = _split_pauli_rotation_terms(spo_val_grad, xzk)
+    theta_grad = _get_pauli_rotation_gradient_from_pairs(old_spo_a_pairs)
+
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
     pm = -1  # backward in time

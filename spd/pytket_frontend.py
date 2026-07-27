@@ -10,6 +10,7 @@ import math
 from pytket.circuit import OpType
 
 from .circuit_ir import (
+    CircuitIR,
     PauliRotation,
     SingleQubitClifford,
     SkippedOperation,
@@ -72,7 +73,7 @@ def parse_pytket_circuit(circ, padded_system_size):
         else:
             raise ValueError(f"Unsupported gate type: {command.op.type}")
 
-    return operations
+    return CircuitIR(system_size=circ.n_qubits, operations=tuple(operations))
 
 
 def parse_pauli_theta(command, padded_system_size):

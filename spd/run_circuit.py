@@ -14,10 +14,12 @@ import psutil
 
 from .backend_adapter import BackendAdapter
 from .circuit_ir import (
+    CircuitIR,
     PauliRotation,
     SingleQubitClifford,
     SkippedOperation,
     TwoQubitClifford,
+    get_operation_qubits,
 )
 
 _PACKBIT = 32
@@ -187,6 +189,9 @@ def _normalize_input_circuit(input_circuit, backend, rebase):
     if rebase:
         raise ValueError("rebase=True is only supported when input_circuit is a pytket Circuit.")
 
+    if isinstance(input_circuit, CircuitIR):
+        return input_circuit
+
     return _validate_ir_operations(input_circuit)
 
 
@@ -340,7 +345,12 @@ def evolve(
         )
 
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    operations = _normalize_input_circuit(input_circuit, backend, rebase)
+    normalized_circuit = _normalize_input_circuit(input_circuit, backend, rebase)
+    operations = (
+        normalized_circuit.operations
+        if isinstance(normalized_circuit, CircuitIR)
+        else normalized_circuit
+    )
 
     final_spo, _, _, info = _run_operation_loop(
         operations[::-1],
@@ -409,7 +419,12 @@ def backpropagate(
         )
 
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    operations = _normalize_input_circuit(input_circuit, backend, rebase)
+    normalized_circuit = _normalize_input_circuit(input_circuit, backend, rebase)
+    operations = (
+        normalized_circuit.operations
+        if isinstance(normalized_circuit, CircuitIR)
+        else normalized_circuit
+    )
     grads = []
 
     def _apply_backward(state, operation):
@@ -446,7 +461,7 @@ def backpropagate_noise_analysis(
     save_strings=False,
     backend=None,
 ):
-    """Backpropagate an SPGO and measure depolarizing susceptibility per operation."""
+    """Backpropagate an SPGO and measure operation-aligned noise susceptibilities."""
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
     if not backend.is_spgo_instance(spgo):
@@ -455,9 +470,18 @@ def backpropagate_noise_analysis(
         )
 
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
-    operations = _normalize_input_circuit(input_circuit, backend, rebase)
+    circuit_ir = _normalize_input_circuit(input_circuit, backend, rebase)
+    if not isinstance(circuit_ir, CircuitIR):
+        raise TypeError(
+            "backpropagate_noise_analysis requires a pytket Circuit or CircuitIR "
+            "with a physical system_size."
+        )
+    operations = circuit_ir.operations
     parameter_grads = []
-    noise_grads = []
+    noise_grads = {
+        "one_qubit_depolarizing": [],
+        "two_qubit_depolarizing": [],
+    }
 
     def _apply_backward(state, operation):
         next_state, num_string, grad_i, step_info = backend.apply_backward(
@@ -469,33 +493,34 @@ def backpropagate_noise_analysis(
         if grad_i is not None:
             parameter_grads.append(grad_i)
 
-        if isinstance(operation, TwoQubitClifford):
-            qubits = (operation.target_qubit, operation.control_qubit)
-            noise_grads.append(
-                backend.get_two_qubit_depolarizing_susceptibility(
-                    next_state,
-                    qubits,
-                )
+        active_qubits = get_operation_qubits(operation)
+        if isinstance(operation, SkippedOperation):
+            noise_grads["one_qubit_depolarizing"].append(0.0)
+            noise_grads["two_qubit_depolarizing"].append(0.0)
+            return next_state, num_string, grad_i, step_info
+
+        if len(active_qubits) not in (1, 2):
+            raise ValueError(
+                "Noise analysis requires gates acting on one or two qubits. "
+                "Compile the circuit to single- and two-qubit gates first."
             )
 
-        if isinstance(operation, PauliRotation):
-            qubits = tuple(i for i, pauli in enumerate(operation.pauli) if pauli != "I")
-            if len(qubits) == 1:
-                noise_grads.append(0)
-            elif len(qubits) == 2:
-                noise_grads.append(
-                    backend.get_two_qubit_depolarizing_susceptibility(
-                        next_state,
-                        qubits,
-                    )
+        if len(active_qubits) == 1:
+            noise_grads["one_qubit_depolarizing"].append(
+                backend.get_one_qubit_depolarizing_susceptibility(
+                    next_state,
+                    active_qubits[0],
                 )
-            else:
-                raise ValueError(
-                    "Noise analysis requires Pauli rotations acting on one or two qubits. "
-                    "Compile the circuit to single- and two-qubit rotations first."
-                )
+            )
+            noise_grads["two_qubit_depolarizing"].append(0.0)
         else:
-            noise_grads.append(0)
+            noise_grads["one_qubit_depolarizing"].append(0.0)
+            noise_grads["two_qubit_depolarizing"].append(
+                backend.get_two_qubit_depolarizing_susceptibility(
+                    next_state,
+                    active_qubits,
+                )
+            )
 
         return next_state, num_string, grad_i, step_info
 

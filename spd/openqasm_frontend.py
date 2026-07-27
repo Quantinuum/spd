@@ -12,6 +12,7 @@ import re
 from typing import Dict, List, Tuple
 
 from .circuit_ir import (
+    CircuitIR,
     PauliRotation,
     SingleQubitClifford,
     SkippedOperation,
@@ -45,7 +46,7 @@ _SUPPORTED_INCLUDES = {"qelib1.inc", "stdgates.inc"}
 def parse_openqasm_str(source: str, padded_system_size: int | None = None):
     """Parse an OpenQASM 2 program string into SPD IR operations.
 
-    Returns a tuple `(system_size, operations)`.
+    Returns a `CircuitIR`.
     """
     statements = _split_statements(source)
     if not statements:
@@ -106,13 +107,13 @@ def parse_openqasm_str(source: str, padded_system_size: int | None = None):
     if system_size == 0:
         raise ValueError("Missing qreg declaration.")
 
-    return system_size, operations
+    return CircuitIR(system_size=system_size, operations=tuple(operations))
 
 
 def parse_openqasm_file(path: str, padded_system_size: int | None = None):
     """Parse an OpenQASM file into SPD IR operations.
 
-    Returns a tuple `(system_size, operations)`.
+    Returns a `CircuitIR`.
     """
     with open(path, "r", encoding="utf-8") as f:
         return parse_openqasm_str(f.read(), padded_system_size)

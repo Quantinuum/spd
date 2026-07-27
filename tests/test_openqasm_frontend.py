@@ -18,9 +18,10 @@ def test_parse_openqasm_str_emits_backend_agnostic_ir():
     measure q[0] -> c[0];
     """
 
-    system_size, operations = parse_openqasm_str(source, padded_system_size=32)
+    circuit_ir = parse_openqasm_str(source, padded_system_size=32)
+    operations = circuit_ir.operations
 
-    assert system_size == 2
+    assert circuit_ir.system_size == 2
     assert isinstance(operations[0], PauliRotation)
     assert operations[0].gate_name == "OpenQASM.rx"
     assert operations[0].pauli[:2] == "XI"
@@ -47,9 +48,10 @@ def test_parse_openqasm_str_emits_backend_agnostic_ir():
 def test_parse_openqasm_file_handles_sample_circuit():
     path = "tests/fixtures/open_qasm/periodic_small_8q.qasm"
 
-    system_size, operations = parse_openqasm_file(path, padded_system_size=32)
+    circuit_ir = parse_openqasm_file(path, padded_system_size=32)
+    operations = circuit_ir.operations
 
-    assert system_size == 8
+    assert circuit_ir.system_size == 8
     assert len(operations) == 36
     assert isinstance(operations[0], PauliRotation)
     assert operations[0].pauli[0] == "X"
@@ -67,9 +69,10 @@ def test_parse_openqasm_str_defaults_to_packbit_padding():
     rz(pi/2) q[2];
     """
 
-    system_size, operations = parse_openqasm_str(source)
+    circuit_ir = parse_openqasm_str(source)
+    operations = circuit_ir.operations
 
-    assert system_size == 3
+    assert circuit_ir.system_size == 3
     assert isinstance(operations[0], PauliRotation)
     assert len(operations[0].pauli) == 32
     assert operations[0].pauli[:3] == "IIZ"

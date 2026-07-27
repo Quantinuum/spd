@@ -14,8 +14,10 @@ def test_parse_pytket_circuit_emits_backend_agnostic_ir():
     circ.add_barrier([0, 1, 2])
     circ.Measure(0, 0)
 
-    operations = parse_pytket_circuit(circ, padded_system_size=32)
+    circuit_ir = parse_pytket_circuit(circ, padded_system_size=32)
+    operations = circuit_ir.operations
 
+    assert circuit_ir.system_size == 3
     assert isinstance(operations[0], PauliRotation)
     assert operations[0].pauli[:3] == "ZII"
     assert np.isclose(operations[0].theta, 0.25 * np.pi)
@@ -38,8 +40,10 @@ def test_parse_pytket_circuit_handles_pauli_exp_box():
     box = PauliExpBox([Pauli.X, Pauli.Y, Pauli.Z], 0.125)
     circ.add_pauliexpbox(box, [0, 1, 2])
 
-    operations = parse_pytket_circuit(circ, padded_system_size=32)
+    circuit_ir = parse_pytket_circuit(circ, padded_system_size=32)
+    operations = circuit_ir.operations
 
+    assert circuit_ir.system_size == 3
     assert len(operations) == 1
     assert isinstance(operations[0], PauliRotation)
     assert operations[0].gate_name == "OpType.PauliExpBox"

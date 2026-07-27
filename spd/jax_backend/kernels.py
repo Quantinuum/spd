@@ -247,10 +247,12 @@ def init_gradient_spo(
     return gradient_spo
 
 
-def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
-    """Return the p=0 susceptibility for depolarizing noise on two qubits."""
-    if len(qubits) != 2:
-        raise ValueError("qubits must contain exactly two qubit indices.")
+def get_depolarizing_susceptibility(spgo, qubits):
+    """Return the p=0 complete-depolarizing susceptibility on one or two qubits."""
+    if len(qubits) not in (1, 2):
+        raise ValueError("qubits must contain one or two qubit indices.")
+    if len(set(qubits)) != len(qubits):
+        raise ValueError("qubits must be distinct.")
 
     n_words = spgo.xz_array.shape[1] // 2
     active = jnp.zeros(spgo.c_array.shape, dtype=bool)
@@ -263,6 +265,18 @@ def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
 
     contributions = jnp.where(active, spgo.c_array * spgo.grad_c_array, 0.0)
     return -jnp.sum(contributions)
+
+
+def get_one_qubit_depolarizing_susceptibility(spgo, qubit):
+    """Return the p=0 complete-depolarizing susceptibility on one qubit."""
+    return get_depolarizing_susceptibility(spgo, (qubit,))
+
+
+def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
+    """Return the p=0 complete-depolarizing susceptibility on two qubits."""
+    if len(qubits) != 2:
+        raise ValueError("qubits must contain exactly two qubit indices.")
+    return get_depolarizing_susceptibility(spgo, qubits)
 
 # ---------------------------------------------------------------------- #
 

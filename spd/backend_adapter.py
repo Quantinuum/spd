@@ -42,6 +42,7 @@ class BackendModule(Protocol):
         lambda_ose=0.0,
         alpha=1.0,
     ): ...
+    def get_one_qubit_depolarizing_susceptibility(self, spgo, qubit): ...
     def get_two_qubit_depolarizing_susceptibility(self, spgo, qubits): ...
     def conjugate_pauli_rot_forward(self, spo, xzk, theta, trunc_val, max_num_str): ...
     def conjugate_pauli_rot_backward(self, spgo, xzk, theta, trunc_val, max_num_str): ...
@@ -157,6 +158,9 @@ class BackendAdapter:
 
     def get_two_qubit_depolarizing_susceptibility(self, spgo, qubits):
         return self.module.get_two_qubit_depolarizing_susceptibility(spgo, qubits)
+
+    def get_one_qubit_depolarizing_susceptibility(self, spgo, qubit):
+        return self.module.get_one_qubit_depolarizing_susceptibility(spgo, qubit)
 
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):

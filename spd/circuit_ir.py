@@ -42,3 +42,52 @@ CircuitOperation = Union[
     TwoQubitClifford,
     SkippedOperation,
 ]
+
+
+def get_operation_qubits(operation: CircuitOperation) -> tuple[int, ...]:
+    """Return the physical qubits acted on by an IR operation."""
+    if isinstance(operation, PauliRotation):
+        return tuple(index for index, pauli in enumerate(operation.pauli) if pauli != "I")
+    if isinstance(operation, SingleQubitClifford):
+        return (operation.qubit,)
+    if isinstance(operation, TwoQubitClifford):
+        return (operation.control_qubit, operation.target_qubit)
+    if isinstance(operation, SkippedOperation):
+        return ()
+    raise TypeError(f"Unsupported circuit operation: {type(operation)!r}")
+
+
+@dataclass(frozen=True)
+class CircuitIR:
+    """A lowered circuit together with its physical system size."""
+
+    system_size: int
+    operations: tuple[CircuitOperation, ...]
+
+    def __post_init__(self):
+        if not isinstance(self.system_size, int) or isinstance(self.system_size, bool):
+            raise TypeError("system_size must be an integer.")
+        if self.system_size < 1:
+            raise ValueError("system_size must be at least 1.")
+
+        operations = tuple(self.operations)
+        object.__setattr__(self, "operations", operations)
+        for index, operation in enumerate(operations):
+            if not isinstance(
+                operation,
+                (PauliRotation, SingleQubitClifford, TwoQubitClifford, SkippedOperation),
+            ):
+                raise TypeError(
+                    "operations must contain CircuitOperation instances; "
+                    f"got {type(operation)!r} at index {index}."
+                )
+            invalid_qubits = [
+                qubit
+                for qubit in get_operation_qubits(operation)
+                if qubit < 0 or qubit >= self.system_size
+            ]
+            if invalid_qubits:
+                raise ValueError(
+                    f"Operation at index {index} acts outside system_size={self.system_size}: "
+                    f"{invalid_qubits}."
+                )
