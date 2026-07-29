@@ -227,12 +227,19 @@ def _format_coeff(coeff) -> str:
 
     return repr(float(coeff_scalar))
 
+def _get_padded_num_qubits(packed) -> int:
+    return (np.asarray(packed).shape[-1] // 2) * _PACKBIT
+
+
 def sparse_pauli_op_to_str(spo) -> str:
     lines = ["SparsePauliOp["]
     for packed, coeff in spo.items():
         if np.abs(coeff) <= 1e-6:
             continue
-        pauli_str = uint_to_pauli_str(np.asarray(packed), _PACKBIT)
+        pauli_str = uint_to_pauli_str(
+            np.asarray(packed),
+            _get_padded_num_qubits(packed),
+        )
         lines.append(f"  {pauli_str} => {_format_coeff(coeff)}")
     lines.append("]")
     return "\n".join(lines)
@@ -243,7 +250,10 @@ def sparse_pauli_grad_op_to_str(spo) -> str:
         coeff, grad = coeff_grad
         if np.abs(coeff) <= 1e-6 and np.abs(grad) <= 1e-6:
             continue
-        pauli_str = uint_to_pauli_str(np.asarray(packed), _PACKBIT)
+        pauli_str = uint_to_pauli_str(
+            np.asarray(packed),
+            _get_padded_num_qubits(packed),
+        )
         lines.append(
             f"  {pauli_str} => coeff={_format_coeff(coeff)}, grad={_format_coeff(grad)}"
         )

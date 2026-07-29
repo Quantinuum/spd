@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from spd import jax_backend, numpy_backend
@@ -24,6 +25,65 @@ def test_sparse_pauli_op_string_rendering_real_coefficients(backend_name, module
     assert "=> 1.5" in rendered
     assert "=> -0.25" in rendered
     assert "=> 2.0" in rendered
+
+
+@pytest.mark.parametrize("backend_name,module", [("numpy", numpy_backend), ("jax", jax_backend)])
+@pytest.mark.parametrize(
+    "packbit,pauli_str",
+    [
+        (8, "XIIIIIIIXIIIIIII"),
+        (32, "X" + "I" * 31 + "X" + "I" * 31),
+    ],
+)
+def test_sparse_pauli_op_string_rendering_multiple_words(
+    backend_name,
+    module,
+    packbit,
+    pauli_str,
+):
+    module.utils.set_packbit(packbit)
+    spo = module.create_op({pauli_str: 1.0})
+
+    assert str(spo) == f"SparsePauliOp[\n  {pauli_str} => 1.0\n]"
+
+
+@pytest.mark.parametrize("backend_name,module", [("numpy", numpy_backend), ("jax", jax_backend)])
+def test_sparse_pauli_gradient_op_string_rendering_multiple_words(backend_name, module):
+    module.utils.set_packbit(32)
+    pauli_str = "X" + "I" * 31 + "X" + "I" * 31
+    spo = module.create_op({pauli_str: 1.0})
+
+    if backend_name == "jax":
+        spgo = module.SparsePauliGradientOp(
+            spo.xz_array,
+            spo.c_array,
+            np.asarray([0.5]),
+        )
+    else:
+        spgo = module.SparsePauliGradientOp()
+        packed = next(iter(spo))
+        spgo[packed] = (1.0, 0.5)
+
+    assert str(spgo) == (
+        "SparsePauliGradientOp[\n"
+        f"  {pauli_str} => coeff=1.0, grad=0.5\n"
+        "]"
+    )
+
+
+@pytest.mark.parametrize("module", [numpy_backend, jax_backend])
+@pytest.mark.parametrize(
+    "packbit,pauli_str",
+    [
+        (8, "XIIIIIIIXIIIIIII"),
+        (32, "X" + "I" * 31 + "X" + "I" * 31),
+    ],
+)
+def test_pauli_string_pack_unpack_round_trip_multiple_words(module, packbit, pauli_str):
+    module.utils.set_packbit(packbit)
+    packed = module.utils.pauli_str_to_uint(pauli_str)
+
+    assert module.utils.uint_to_pauli_str(packed, len(pauli_str)) == pauli_str
 
 
 def test_jax_sparse_pauli_op_rejects_complex_coefficients():

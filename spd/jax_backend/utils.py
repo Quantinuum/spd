@@ -243,6 +243,10 @@ def _format_coeff(coeff) -> str:
 
     return repr(float(coeff_scalar))
 
+def _get_padded_num_qubits(packed) -> int:
+    return (packed.shape[-1] // 2) * _PACKBIT
+
+
 def sparse_pauli_op_to_str(spo) -> str:
     lines = ["SparsePauliOp["]
     xz_rows = np.asarray(spo.xz_array)
@@ -251,7 +255,10 @@ def sparse_pauli_op_to_str(spo) -> str:
     xz_rows = xz_rows[mask]
     c_vals = c_vals[mask]
     for packed, coeff in zip(xz_rows, c_vals):
-        pauli_str = uint_to_pauli_str(jnp.asarray(packed), _PACKBIT)
+        pauli_str = uint_to_pauli_str(
+            jnp.asarray(packed),
+            _get_padded_num_qubits(packed),
+        )
         lines.append(f"  {pauli_str} => {_format_coeff(coeff)}")
     lines.append("]")
     return "\n".join(lines)
@@ -266,7 +273,10 @@ def sparse_pauli_grad_op_to_str(spo) -> str:
     c_vals = c_vals[mask]
     grad_vals = grad_vals[mask]
     for packed, coeff, grad in zip(xz_rows, c_vals, grad_vals):
-        pauli_str = uint_to_pauli_str(jnp.asarray(packed), _PACKBIT)
+        pauli_str = uint_to_pauli_str(
+            jnp.asarray(packed),
+            _get_padded_num_qubits(packed),
+        )
         lines.append(
             f"  {pauli_str} => coeff={_format_coeff(coeff)}, grad={_format_coeff(grad)}"
         )
