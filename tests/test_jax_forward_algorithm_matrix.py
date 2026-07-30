@@ -11,6 +11,7 @@ from tests.helpers import assert_info_consistent, make_initial_spo, shift_case, 
 
 
 JAX_FORWARD_ALGORITHMS = ["stack_sort_merge", "search_update_merge"]
+JAX_SEARCH_ALGORITHMS = ["search_update_merge", "search_update_merge_donate"]
 
 
 def _configure_rotation_backends():
@@ -110,6 +111,42 @@ def test_jax_forward_algorithms_match_numpy_through_backend_adapter(jax_forward_
     assert actual_terms == pytest.approx(expected_terms, abs=1e-6)
     assert step_info_jax["num_str_truncated"] >= 0
     assert step_info_numpy["num_str_truncated"] >= 0
+
+
+@pytest.mark.parametrize("jax_forward_algorithm", JAX_SEARCH_ALGORITHMS, indirect=True)
+def test_jax_search_algorithms_sort_after_cx_before_rotation(jax_forward_algorithm):
+    _configure_rotation_backends()
+    terms = {
+        first + second: (index + 1) / 16
+        for index, (first, second) in enumerate(
+            (first, second) for first in "IXYZ" for second in "IXYZ"
+        )
+    }
+    spo_jax = jax_backend.conjugate_CX_forward(jax_backend.create_op(terms), 0, 1)
+    spo_numpy = numpy_backend.conjugate_CX_forward(numpy_backend.create_op(terms), 0, 1)
+    sigma_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZI"))
+    sigma_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32("ZI"))
+
+    spo_jax_out, _, _ = jax_backend.conjugate_pauli_rot_forward(
+        spo_jax,
+        sigma_jax,
+        0.37,
+        trunc_val=1e-12,
+        max_num_str=16,
+    )
+    spo_numpy_out, _, _ = numpy_backend.conjugate_pauli_rot_forward(
+        spo_numpy,
+        sigma_numpy,
+        0.37,
+        trunc_val=1e-12,
+        max_num_str=16,
+    )
+
+    assert spo_jax_out.lexsorted
+    assert to_term_dict("jax", jax_backend, spo_jax_out, n_qubits=2) == pytest.approx(
+        to_term_dict("numpy", numpy_backend, spo_numpy_out, n_qubits=2),
+        abs=1e-6,
+    )
 
 
 def test_stack_sort_merge_does_not_keep_below_threshold_terms_live():

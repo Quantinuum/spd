@@ -9,6 +9,7 @@ from tests.helpers import assert_info_consistent, make_initial_spo, to_grad_term
 
 
 JAX_BACKWARD_ALGORITHMS = ["stack_sort_merge", "search_update_merge"]
+JAX_SEARCH_ALGORITHMS = ["search_update_merge", "search_update_merge_donate"]
 RUNNER_TRUNC_VAL = 1e-6
 
 
@@ -59,6 +60,45 @@ def test_jax_backward_algorithms_match_numpy_on_direct_kernel_basis_expectation(
     assert grad_jax == pytest.approx(grad_numpy, abs=1e-6)
     assert step_info_jax["num_str_truncated"] >= 0
     assert step_info_numpy["num_str_truncated"] >= 0
+
+
+@pytest.mark.parametrize("jax_algorithm", JAX_SEARCH_ALGORITHMS, indirect=True)
+def test_jax_search_algorithms_sort_after_cx_before_backward_rotation(jax_algorithm):
+    _configure_rotation_backends()
+    terms = {
+        first + second: (index + 1) / 16
+        for index, (first, second) in enumerate(
+            (first, second) for first in "IXYZ" for second in "IXYZ"
+        )
+    }
+    spgo_jax = jax_backend.init_gradient_spo(jax_backend.create_op(terms), basis="Z")
+    spgo_numpy = numpy_backend.init_gradient_spo(numpy_backend.create_op(terms), basis="Z")
+    spgo_jax = jax_backend.conjugate_CX_backward(spgo_jax, 0, 1)
+    spgo_numpy = numpy_backend.conjugate_CX_backward(spgo_numpy, 0, 1)
+    sigma_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32("ZI"))
+    sigma_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32("ZI"))
+
+    spgo_jax_out, _, grad_jax, _ = jax_backend.conjugate_pauli_rot_backward(
+        spgo_jax,
+        sigma_jax,
+        0.37,
+        trunc_val=1e-12,
+        max_num_str=16,
+    )
+    spgo_numpy_out, _, grad_numpy, _ = numpy_backend.conjugate_pauli_rot_backward(
+        spgo_numpy,
+        sigma_numpy,
+        0.37,
+        trunc_val=1e-12,
+        max_num_str=16,
+    )
+
+    assert spgo_jax_out.lexsorted
+    _assert_grad_term_dicts_close(
+        to_grad_term_dict("jax", jax_backend, spgo_jax_out, n_qubits=2),
+        to_grad_term_dict("numpy", numpy_backend, spgo_numpy_out, n_qubits=2),
+    )
+    assert grad_jax == pytest.approx(grad_numpy, abs=1e-6)
 
 
 def test_stack_sort_merge_does_not_keep_below_threshold_gradient_terms_live():

@@ -99,6 +99,9 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     Conjugate a sparse-Pauli operator using the lexicographic search/update path.
     """
+    if not spo.lexsorted:
+        spo = spo.lexsort()
+
     (
         x_concat,
         c_concat,
@@ -367,6 +370,9 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
         grad_i: float - gradient value
 
     """
+    if not spo_val_grad.lexsorted:
+        spo_val_grad = spo_val_grad.lexsort()
+
     (
         x_concat,
         c_concat,

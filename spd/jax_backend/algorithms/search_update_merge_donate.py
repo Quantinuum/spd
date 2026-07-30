@@ -41,6 +41,9 @@ def _use_donated_step(state_size, max_num_str):
 
 def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """Conjugate with donation once storage has reached the max size."""
+    if not spo.lexsorted:
+        spo = spo.lexsort()
+
     if not _use_donated_step(spo.get_size(), max_num_str):
         return search_update_merge.forward_step(spo, xzk, theta, trunc_val, max_num_str)
 
@@ -98,6 +101,9 @@ def forward_fullstep_donate_jitted(spo, xzk, theta, trunc_val, max_num_str):
 
 def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     """Backward conjugation with donation once storage has reached the max size."""
+    if not spo_val_grad.lexsorted:
+        spo_val_grad = spo_val_grad.lexsort()
+
     if not _use_donated_step(spo_val_grad.get_size(), max_num_str):
         return search_update_merge.backward_step(
             spo_val_grad,

@@ -6,6 +6,16 @@ from ..core import BaseSparsePauliGradientOp, BaseSparsePauliOp
 from . import utils
 
 
+@jax.jit
+def _lexsort_spgo_arrays(xz_array, c_array, grad_c_array):
+    sort_indices = jnp.lexsort(xz_array.T[::-1])
+    return (
+        xz_array[sort_indices],
+        c_array[sort_indices],
+        grad_c_array[sort_indices],
+    )
+
+
 @jax.tree_util.register_pytree_node_class
 class SparsePauliOp(BaseSparsePauliOp):
     def __init__(self, xz_array: jnp.ndarray, c_array: jnp.ndarray, *, lexsorted=False):
@@ -215,6 +225,19 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
 
     def get_norm_square(self):
         return jnp.sum(jnp.abs(self.c_array) ** 2)
+
+    def lexsort(self):
+        xz_array, c_array, grad_c_array = _lexsort_spgo_arrays(
+            self.xz_array,
+            self.c_array,
+            self.grad_c_array,
+        )
+        return self.__class__(
+            xz_array,
+            c_array,
+            grad_c_array,
+            lexsorted=True,
+        )
 
     def get_operator_stabilizer_entropy(self, alpha: float = 1) -> float:
         probabilities = jnp.abs(self.c_array) ** 2
