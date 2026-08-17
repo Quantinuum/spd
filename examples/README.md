@@ -15,7 +15,6 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 - [`run_simple_circuit_2.py`](run_simple_circuit_2.py): runs a stored sample circuit from [`simple_test_circuit.pkl`](simple_test_circuit.pkl)
 - [`functionality/translate_spo.py`](functionality/translate_spo.py): demonstrates cyclic physical-site translation on a sparse Pauli operator
 - [`gen_simple_test_circuit.py`](gen_simple_test_circuit.py): regenerates the sample pickled `pytket` circuit used by `run_simple_circuit_2.py`
-- [`free_fermion_noise_sensitivity/`](free_fermion_noise_sensitivity/): fixed-size random free-fermion noise-sensitivity experiment with sweep and analysis scripts
 
 ## Advanced / Exploratory Scripts
 
