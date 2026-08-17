@@ -9,7 +9,12 @@ from tests.helpers import assert_info_consistent, make_initial_spo, to_grad_term
 
 
 JAX_BACKWARD_ALGORITHMS = ["stack_sort_merge", "search_update_merge"]
-JAX_SEARCH_ALGORITHMS = ["search_update_merge", "search_update_merge_donate"]
+JAX_ALL_BACKWARD_ALGORITHMS = [
+    "stack_sort_merge",
+    "search_update_merge",
+    "search_update_merge_donate",
+]
+JAX_SEARCH_ALGORITHMS = JAX_ALL_BACKWARD_ALGORITHMS[1:]
 RUNNER_TRUNC_VAL = 1e-6
 
 
@@ -99,6 +104,44 @@ def test_jax_search_algorithms_sort_after_cx_before_backward_rotation(jax_algori
         to_grad_term_dict("numpy", numpy_backend, spgo_numpy_out, n_qubits=2),
     )
     assert grad_jax == pytest.approx(grad_numpy, abs=1e-6)
+
+
+@pytest.mark.parametrize("jax_algorithm", JAX_ALL_BACKWARD_ALGORITHMS, indirect=True)
+def test_jax_backward_keeps_zero_coefficient_with_nonzero_gradient(jax_algorithm):
+    _configure_rotation_backends()
+    jax_backend.set_precision("double")
+    numpy_backend.set_precision("double")
+    packed_jax = np.asarray(jax_backend.utils.pauli_str_to_uint32("XI"))
+    spgo_jax = jax_backend.SparsePauliGradientOp(
+        packed_jax[None, :],
+        np.asarray([0.0]),
+        np.asarray([1.0]),
+        lexsorted=True,
+    )
+    spgo_numpy = numpy_backend.SparsePauliGradientOp()
+    packed_numpy = np.asarray(numpy_backend.utils.pauli_str_to_uint32("XI"))
+    spgo_numpy[tuple(packed_numpy)] = (0.0, 1.0)
+
+    spgo_jax_out, _, _, _ = jax_backend.conjugate_pauli_rot_backward(
+        spgo_jax,
+        packed_jax,
+        0.37,
+        trunc_val=0.0,
+        max_num_str=1,
+    )
+    spgo_numpy_out, _, _, _ = numpy_backend.conjugate_pauli_rot_backward(
+        spgo_numpy,
+        packed_numpy,
+        0.37,
+        trunc_val=0.0,
+        max_num_str=1,
+    )
+
+    actual = to_grad_term_dict("jax", jax_backend, spgo_jax_out, n_qubits=2)
+    expected = to_grad_term_dict("numpy", numpy_backend, spgo_numpy_out, n_qubits=2)
+    assert actual["XI"][0] == 0.0
+    assert actual["XI"][1] != 0.0
+    _assert_grad_term_dicts_close(actual, expected, atol=1e-12)
 
 
 def test_stack_sort_merge_does_not_keep_below_threshold_gradient_terms_live():

@@ -37,7 +37,7 @@ def _step_info_from_tail(c_concat, slice_size):
 def _step_info_values_from_removed(c_concat, trunc_val, slice_size):
     magnitudes = jnp.abs(c_concat)
     indices = jnp.arange(c_concat.shape[0])
-    removed_mask = ((magnitudes <= trunc_val) | (indices >= slice_size)) & (magnitudes > 0)
+    removed_mask = ((magnitudes < trunc_val) | (indices >= slice_size)) & (magnitudes > 0)
     removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
     return (
         jnp.sum(removed_mask),
@@ -482,7 +482,9 @@ def backward_search_update_merge_jitted(spo_val_grad, xzk, theta, trunc_val):
     merged_c = jnp.concatenate([c_array_updated, new_c], axis=0)
     merged_grad_c = jnp.concatenate([grad_c_array_updated, new_grad_c], axis=0)
 
-    keep_mask = jnp.abs(merged_c) > trunc_val
+    magnitudes = jnp.abs(merged_c)
+    meaningful = (magnitudes > 0) | (jnp.abs(merged_grad_c) > 0)
+    keep_mask = meaningful & (magnitudes >= trunc_val)
     final_xz_masked = jnp.where(keep_mask[:, None], merged_xz, kernels.PAD_VAL)
 
     ## We lexsort the XZ. The PAD_VAL in rows still sort to the bottom.
@@ -556,7 +558,8 @@ def backward_search_update_merge_top_k_jitted(spo_val_grad, xzk, theta, trunc_va
     merged_grad_c = jnp.concatenate([grad_c_array_updated, new_grad_c], axis=0)
 
     magnitudes = jnp.abs(merged_c)
-    live_mask = magnitudes > trunc_val
+    meaningful = (magnitudes > 0) | (jnp.abs(merged_grad_c) > 0)
+    live_mask = meaningful & (magnitudes >= trunc_val)
     scores = jnp.where(live_mask, magnitudes, -jnp.inf)
     k = min(int(max_num_str), merged_c.shape[0])
     _, top_indices = jax.lax.top_k(scores, k)

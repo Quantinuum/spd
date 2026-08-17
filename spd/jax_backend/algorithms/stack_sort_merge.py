@@ -36,7 +36,7 @@ def _step_info_from_tail(c_concat, slice_size):
 def _step_info_values_from_removed(c_concat, trunc_val, slice_size):
     magnitudes = jnp.abs(c_concat)
     indices = jnp.arange(c_concat.shape[0])
-    removed_mask = ((magnitudes <= trunc_val) | (indices >= slice_size)) & (magnitudes > 0)
+    removed_mask = ((magnitudes < trunc_val) | (indices >= slice_size)) & (magnitudes > 0)
     removed_coeffs = jnp.where(removed_mask, magnitudes, 0.0)
     return (
         jnp.sum(removed_mask),
@@ -65,6 +65,17 @@ def _apply_hard_cutoff(x_array, c_array, trunc_val):
     return (
         jnp.where(keep_mask[:, None], x_array, kernels.PAD_VAL),
         jnp.where(keep_mask, c_array, 0.0),
+        keep_mask,
+    )
+
+
+def _apply_gradient_hard_cutoff(x_array, c_array, grad_c_array, trunc_val):
+    meaningful = (jnp.abs(c_array) > 0) | (jnp.abs(grad_c_array) > 0)
+    keep_mask = meaningful & (jnp.abs(c_array) >= trunc_val)
+    return (
+        jnp.where(keep_mask[:, None], x_array, kernels.PAD_VAL),
+        jnp.where(keep_mask, c_array, 0.0),
+        jnp.where(keep_mask, grad_c_array, 0.0),
         keep_mask,
     )
 
@@ -160,10 +171,14 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
-    x_, c_, keep_mask = _apply_hard_cutoff(x_, c_, trunc_val)
-    grad_c_ = jnp.where(keep_mask, grad_c_, 0.0)
+    x_, c_, grad_c_, keep_mask = _apply_gradient_hard_cutoff(
+        x_,
+        c_,
+        grad_c_,
+        trunc_val,
+    )
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
-    num_stored_terms = _count_stored_terms(c_)
+    num_stored_terms = int(jnp.sum(keep_mask))
 
     return (
         new_spo_val_grad,

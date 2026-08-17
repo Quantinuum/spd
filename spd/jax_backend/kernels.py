@@ -1224,13 +1224,17 @@ def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
                                         num_segments=total_size,
                                         indices_are_sorted=True)
 
-    # Now sorted according to c_concat before truncation
-    c_sort_indices = jnp.argsort(-jnp.abs(c_concat))  # Descending order))
+    magnitudes = jnp.abs(c_concat)
+    meaningful = (magnitudes > 0) | (jnp.abs(grad_c_concat) > 0)
+    keep_mask = meaningful & (magnitudes >= trunc_val)
+    scores = jnp.where(keep_mask, magnitudes, -jnp.inf)
+
+    # Keep meaningful rows at the front, ordered by coefficient magnitude.
+    c_sort_indices = jnp.argsort(-scores)
     c_concat = c_concat[c_sort_indices]
     grad_c_concat = grad_c_concat[c_sort_indices]
 
-    mask = jnp.abs(c_concat) > trunc_val
-    num_above_trunc_val = jnp.sum(mask.astype(jnp.int32))
+    num_above_trunc_val = jnp.sum(keep_mask.astype(jnp.int32))
     ## Keep the discarded coefficient magnitudes in the tail so the algorithm
     ## wrapper can report truncation norms from c_concat[slice_size:].
     ## The sliced final state still only keeps the valid prefix.
