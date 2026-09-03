@@ -2,6 +2,10 @@
 
 This directory mixes a few polished demos with exploratory scripts that are still useful during development.
 
+`variational_tfi.py` demonstrates `spd.VariationalCircuit` with the stable 1D
+TFI generator from `spd.ansatz`. It runs forward and backward propagation, then
+sums the rotation-gate gradients into the shared layer parameters.
+
 ## Dependencies
 
 Most scripts in this directory use the `pytket` frontend and therefore require the optional `pytket` dependency to be installed.

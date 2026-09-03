@@ -9,3 +9,4 @@ from .run_circuit import create_spo
 from .run_circuit import evolve
 from .run_circuit import init_gradient_spo
 from .circuit_ir import CircuitIR
+from .variational_circuit import VariationalCircuit

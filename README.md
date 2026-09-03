@@ -142,6 +142,42 @@ For overlap diagnostics, `to_spo()` extracts the primal SPO from the backward
 object and `dot(...)` compares matching Pauli-string coefficients. If you want a
 quantity that should be close to `1`, normalize that overlap in user code.
 
+## Variational Circuits
+
+`VariationalCircuit` keeps a pytket circuit together with the mapping from its
+rotation gates to optimizer parameters. Repeated parameter indices represent
+shared parameters. `parameter_gradients(...)` sums their gate gradients and
+applies pytket's phase-to-angle conversion.
+
+```python
+from spd.ansatz import tfi_1d_hva
+
+ansatz = tfi_1d_hva(params, system_size=12, basis="+")
+
+final_spo, _ = spd.evolve(initial_spo, ansatz.circuit, trunc_val, max_num_str)
+initial_spgo = spd.init_gradient_spo(final_spo, basis="+")
+_, gate_grads, _ = spd.backpropagate(
+    initial_spgo,
+    ansatz.circuit,
+    trunc_val,
+    max_num_str,
+)
+parameter_grads = ansatz.parameter_gradients(gate_grads)
+```
+
+The metadata follows parameterized rotation commands in pytket command order.
+Do not rebase or structurally modify the circuit after constructing the
+`VariationalCircuit`. Fixed rotations use parameter index `-1`. The optional
+gate factors describe affine relations such as `Rx(params[k] / 2, qubit)`.
+
+Stable periodic TFI HVA generators are available as `tfi_1d_hva`,
+`tfi_2d_hva`, and `tfi_3d_hva` in `spd.ansatz`. Their interaction terms are
+scheduled as disjoint brickwork layers separated by barriers. Odd periodic
+dimensions are rejected because they cannot be split into two disjoint
+even/odd bond coverings. See `examples/variational_tfi.py` for a complete
+forward and backward calculation.
+
+
 ## L2 Gradient Support
 
 For `loss_type="l2_difference"`, `spd.init_gradient_spo(...)` builds the
