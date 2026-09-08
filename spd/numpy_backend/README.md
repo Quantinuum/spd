@@ -29,3 +29,16 @@ number of stored Pauli strings at each weight.
 
 Runner-level `max_num_str` is enforced here as an upper bound by tightening the
 effective truncation threshold and then trimming any remaining ties if needed.
+
+## Randomized Sparse Pauli Dynamics
+
+The separate API in [`../randomized.py`](../randomized.py) implements unbiased
+Randomized Sparse Pauli Dynamics (R-SPD) for this backend. One run evolves a
+sampled SPO at Pauli-string budget `K`; it is not a population of walkers or a
+single-Pauli trajectory. The implementation deliberately does not change the
+deterministic kernels. Every Pauli rotation calls the existing forward kernel
+with `trunc_val=0` and transient capacity `2K`, removes only exact zeros, then
+applies standalone pivotal randomized truncation from
+[`../randomized_truncation.py`](../randomized_truncation.py) if the merged
+support exceeds `K`. The historical `spd.compression` import path remains a
+compatibility alias for the first prototype.

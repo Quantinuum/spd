@@ -12,3 +12,7 @@ examples/**/*.pkl
 !examples/gradient/*.pkl
 
 AGENTS.md
+
+# Generated benchmark outputs
+results/**
+!results/*.py

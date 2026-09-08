@@ -20,6 +20,7 @@ Useful entry points:
 Recommended examples:
 
 - [`examples/run_simple_circuit_1.py`](./examples/run_simple_circuit_1.py): smallest forward workflow, including truncation info
+- [`examples/run_randomized.py`](./examples/run_randomized.py): unbiased Randomized SPD propagation and error bars
 - [`examples/gradient/run_tfi_gs_1d.py`](./examples/gradient/run_tfi_gs_1d.py): forward + backward workflow inside an optimization loop
 - [`examples/run_with_backend_adapter.py`](./examples/run_with_backend_adapter.py): reusable configured backend
 
@@ -243,3 +244,89 @@ pytest tests
 
 - The examples above use `pytket` when they build circuits in Python.
 - The backward example assumes `ham_dict`, `circ`, `basis`, `trunc_val`, and `max_num_str` already exist, just like in [`examples/gradient/run_tfi_gs_1d.py`](./examples/gradient/run_tfi_gs_1d.py).
+
+
+## [WIP] Randomized Sparse Pauli Dynamics
+
+The NumPy backend also provides Randomized Sparse Pauli Dynamics (R-SPD). It
+replaces deterministic truncation with unbiased pivotal randomized truncation
+after exact propagation and merging. One run evolves a sampled SPO whose
+persistent support is at most the Pauli-string budget `pauli_budget`.
+
+```python
+import spd
+
+result = spd.run_ensemble(
+    initial_spo,
+    circuit,
+    pauli_budget=100,
+    runs=200,
+    master_seed=7,
+    basis="0",
+)
+
+print(result.mean)
+print(result.sample_variance)
+print(result.standard_error)
+print(result.estimates)
+```
+
+The child seeds and every per-run randomized-truncation record are retained in
+the result. `spd.evolve_randomized(...)` evolves a sampled SPO without
+evaluating an expectation, and `spd.run_randomized_spd(...)` returns one
+estimator sample from one seeded run.
+
+In randomized mode, Pauli rotations use zero coefficient threshold and a
+transient capacity of `2 * pauli_budget`. Equal Pauli strings are merged before
+`spd.pivotal_truncate(...)` is called. No deterministic epsilon pruning or
+top-k pass is applied.
+
+Current R-SPD scope is NumPy, forward propagation, and expectation estimation.
+JAX, gradients, backpropagation, and noise analysis are not supported by this
+API.
+
+The first prototype names `population_size`, `num_populations`,
+`run_population`, and `pivotal_compress` remain compatibility aliases. New code
+should use the SPD-native terms above: Pauli-string budget, run/realization,
+sampled SPO, and randomized truncation. “Trajectory” is reserved for a method
+that follows one Pauli string at a time.
+
+## [WIP] Deterministic-backbone residual-corrected R-SPD
+
+The NumPy backend also provides a separate residual-corrected estimator. A
+deterministic top-`K_d` backbone is never randomized. Pivotal truncation acts
+only on a sampled correction for the backbone's signed discarded residuals.
+
+```python
+result = spd.run_residual_corrected_ensemble(
+    initial_spo,
+    circuit,
+    backbone_budget=1_000,
+    correction_budget=10_000,
+    runs=32,
+    master_seed=7,
+    basis="0",
+)
+
+print(result.backbone_estimate)
+print(result.correction_mean)
+print(result.mean)
+print(result.standard_error)
+```
+
+`spd.evolve_residual_corrected(...)` returns the final deterministic backbone,
+sampled correction, and per-gate diagnostics. `spd.run_residual_corrected_spd(...)`
+returns one estimator sample. The ensemble API recomputes the deterministic
+backbone in every independently seeded run; this is the correctness-first
+execution layout.
+
+The default `numerical_zero_tolerance=1e-12` applies a declared numerical-zero
+policy. If it removes a non-exact value, the API emits one aggregate warning
+and records the removed count and norms. The estimator is then unbiased only
+up to that policy. Set `numerical_zero_tolerance=0.0` to remove exact zeros only
+and retain the formal unbiasedness guarantee.
+
+The residual-corrected API is NumPy-only, forward-only, and expectation-only.
+It does not change direct R-SPD. The feasibility results and design rationale
+are documented in
+[`docs/deterministic_backbone_residual_correction_handoff.md`](./docs/deterministic_backbone_residual_correction_handoff.md).
