@@ -17,3 +17,7 @@ dependencies = [
 pytket = [
     "pytket>=2.7.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["spd", "spd.*"]
+namespaces = false
