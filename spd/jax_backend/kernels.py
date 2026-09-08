@@ -125,19 +125,33 @@ def init_gradient_from_basis_expectation(spo, basis='0'):
 def init_gradient_from_ose(spo, alpha=1.0):
     c_array = spo.c_array
     probabilities = jnp.abs(c_array) ** 2
+    normalization = jnp.sum(probabilities)
+    probabilities = probabilities / normalization
     eps = utils.as_real_array(1e-12)
 
     if alpha == 1:
-        grad_c_array = -2.0 * c_array * (jnp.log(probabilities + eps) + 1.0)
-    else:
-        denom = jnp.sum((probabilities + eps) ** alpha) + eps
-        grad_c_array = (
-            2.0
-            * alpha
-            * c_array
-            * (probabilities + eps) ** (alpha - 1.0)
-            / ((1.0 - alpha) * denom)
+        probability_grads = -(
+            jnp.log(probabilities + eps)
+            + probabilities / (probabilities + eps)
         )
+    else:
+        moment = jnp.sum(probabilities ** alpha) + eps
+        probability_grads = (
+            alpha
+            * jnp.where(
+                probabilities > 0.0,
+                probabilities ** (alpha - 1.0),
+                0.0,
+            )
+            / ((1.0 - alpha) * moment)
+        )
+    probability_grad_mean = jnp.sum(probabilities * probability_grads)
+    grad_c_array = (
+        2.0
+        * c_array
+        / normalization
+        * (probability_grads - probability_grad_mean)
+    )
 
     return SparsePauliGradientOp(
         spo.xz_array,
@@ -242,7 +256,14 @@ def init_gradient_spo(
         raise ValueError(f"Unsupported loss_type: {loss_type}")
 
     if lambda_ose != 0.0:
-        gradient_spo = gradient_spo + lambda_ose * init_gradient_from_ose(spo, alpha=alpha)
+        ose_gradient_spo = init_gradient_from_ose(spo, alpha=alpha)
+        gradient_spo = SparsePauliGradientOp(
+            gradient_spo.xz_array,
+            gradient_spo.c_array,
+            gradient_spo.grad_c_array
+            + lambda_ose * ose_gradient_spo.grad_c_array,
+            lexsorted=gradient_spo.lexsorted,
+        )
 
     return gradient_spo
 

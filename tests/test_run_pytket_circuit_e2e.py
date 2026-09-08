@@ -163,13 +163,19 @@ def test_backpropagate_l2_difference_matches_finite_difference(backend_name):
     assert_info_consistent(info, expected_steps=1)
 
 
-def test_backpropagate_basis_expectation_plus_ose_matches_direct_initializer(backend_name):
+@pytest.mark.parametrize("alpha", [0.5, 1.0, 2.0])
+def test_backpropagate_basis_expectation_plus_ose_matches_finite_difference(
+    backend_name, alpha
+):
     circ = Circuit(1)
     circ.Ry(0.25, 0)
     lambda_ose = 0.2
-    alpha = 1.0
 
-    initial_spo = make_initial_spo(backend_name, [0], circ.n_qubits)
+    initial_spo = make_initial_spo(
+        backend_name,
+        {"Z": 2.0, "X": 0.5},
+        circ.n_qubits,
+    )
     final_spo, _ = spd.evolve(initial_spo, circ, 1e-12, MAX_NUM_STR)
 
     initial_spgo = spd.init_gradient_spo(
@@ -178,11 +184,35 @@ def test_backpropagate_basis_expectation_plus_ose_matches_direct_initializer(bac
         lambda_ose=lambda_ose,
         alpha=alpha,
     )
-    direct_final_spgo, direct_grads, info = spd.backpropagate(initial_spgo, circ, 1e-12, MAX_NUM_STR)
+    direct_final_spgo, direct_grads, info = spd.backpropagate(
+        initial_spgo, circ, 1e-12, MAX_NUM_STR
+    )
+
+    def loss(param):
+        shifted = Circuit(1)
+        shifted.Ry(param, 0)
+        shifted_initial_spo = make_initial_spo(
+            backend_name,
+            {"Z": 2.0, "X": 0.5},
+            shifted.n_qubits,
+        )
+        shifted_spo, _ = spd.evolve(
+            shifted_initial_spo, shifted, 1e-12, MAX_NUM_STR
+        )
+        energy = shifted_spo.get_expectation_value(basis="0")
+        ose = shifted_spo.get_OSE(alpha=alpha)
+        return float(np.asarray(energy + lambda_ose * ose))
+
+    eps = 1e-3
+    finite_difference_grad = (loss(0.25 + eps) - loss(0.25 - eps)) / (2 * eps)
 
     assert len(direct_grads) == 1
-    assert np.isfinite(float(np.asarray(direct_grads[0])))
-    assert _count_significant_coeff_terms(direct_final_spgo) == 1
+    assert np.isclose(
+        float(np.asarray(direct_grads[0])) * np.pi,
+        finite_difference_grad,
+        atol=5e-4,
+    )
+    assert _count_significant_coeff_terms(direct_final_spgo) == 2
     assert_info_consistent(info, expected_steps=1)
 
 

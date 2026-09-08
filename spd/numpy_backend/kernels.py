@@ -81,23 +81,36 @@ def init_gradient_from_ose(spo, alpha=1.0):
     gradient_spo = SparsePauliGradientOp()
     vals = np.fromiter(spo.values(), dtype=utils.get_real_dtype())
     probabilities = np.abs(vals) ** 2
+    normalization = np.sum(probabilities)
+    probabilities /= normalization
     eps = utils.as_real_scalar(1e-12)
 
     if alpha == 1:
-        grad_vals = np.array(
-            [-2.0 * coeff * (np.log(coeff * coeff + eps) + 1.0) for coeff in vals],
-            dtype=utils.get_real_dtype(),
+        probability_grads = -(
+            np.log(probabilities + eps)
+            + probabilities / (probabilities + eps)
         )
     else:
-        denom = np.sum((probabilities + eps) ** alpha) + eps
-        grad_vals = np.array(
-            [
-                2.0 * alpha * coeff * (coeff * coeff + eps) ** (alpha - 1.0)
-                / ((1.0 - alpha) * denom)
-                for coeff in vals
-            ],
-            dtype=utils.get_real_dtype(),
+        moment = np.sum(probabilities ** alpha) + eps
+        probability_powers = np.zeros_like(probabilities)
+        np.power(
+            probabilities,
+            alpha - 1.0,
+            out=probability_powers,
+            where=probabilities > 0.0,
         )
+        probability_grads = (
+            alpha
+            * probability_powers
+            / ((1.0 - alpha) * moment)
+        )
+    probability_grad_mean = np.sum(probabilities * probability_grads)
+    grad_vals = (
+        2.0
+        * vals
+        / normalization
+        * (probability_grads - probability_grad_mean)
+    )
 
     for (packed, coeff), grad in zip(spo.items(), grad_vals):
         gradient_spo[packed] = (coeff, grad)
@@ -140,7 +153,10 @@ def init_gradient_spo(
         raise ValueError(f"Unsupported loss_type: {loss_type}")
 
     if lambda_ose != 0.0:
-        gradient_spo = gradient_spo + lambda_ose * init_gradient_from_ose(spo, alpha=alpha)
+        ose_gradient_spo = init_gradient_from_ose(spo, alpha=alpha)
+        for packed, (coeff, grad) in gradient_spo.items():
+            ose_grad = ose_gradient_spo[packed][1]
+            gradient_spo[packed] = (coeff, grad + lambda_ose * ose_grad)
 
     return gradient_spo
 

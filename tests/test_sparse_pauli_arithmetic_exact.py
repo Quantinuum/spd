@@ -292,5 +292,5 @@ def test_init_gradient_from_ose_exact_for_equal_weights(backend):
 
     assert np.isclose(grad_terms["Z"][0], 1.0, atol=1e-6)
     assert np.isclose(grad_terms["X"][0], 1.0, atol=1e-6)
-    assert np.isclose(grad_terms["Z"][1], -2.0, atol=1e-6)
-    assert np.isclose(grad_terms["X"][1], -2.0, atol=1e-6)
+    assert np.isclose(grad_terms["Z"][1], 0.0, atol=1e-6)
+    assert np.isclose(grad_terms["X"][1], 0.0, atol=1e-6)
