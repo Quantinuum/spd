@@ -1,8 +1,11 @@
 # Native GPU sparse Pauli dynamics
 
-Forward evolution of real sparse Pauli observables on NVIDIA GPUs. PyTorch owns
+The next implementation milestones and chosen reference semantics are recorded
+in [the compatibility contract](COMPATIBILITY.md).
+
+Forward and backward gate evolution of real sparse Pauli observables on NVIDIA GPUs. PyTorch owns
 GPU tensors and supplies allocation, reductions, and optional top-k; Triton
-compiles the two custom kernels in [kernels.py](kernels.py). Python dispatches
+compiles the custom kernels in [kernels.py](kernels.py). Python dispatches
 rotations but never loops over the observable's coefficients.
 
 ```sh
@@ -109,7 +112,7 @@ JAX. The same algorithm could be exposed through a JAX custom GPU kernel.
 ## Test coverage and current scope
 
 Triton does **not** have feature/coverage parity with the complete NumPy/JAX
-backends. It is an independent forward API, not a complete BackendAdapter.
+backends. It provides independent gate APIs, not yet a complete BackendAdapter.
 
 | Area | Triton validation |
 |---|---|
@@ -121,9 +124,11 @@ backends. It is an independent forward API, not a complete BackendAdapter.
 | Measurements | X/Z expectations and aliases, norm, host conversion |
 | Circuit evolution | Reverse order; multi-step coefficient comparison with both JAX algorithms |
 | Large workload | 23 native default steps; exact counts and expectation/norm agreement through 14 reference steps |
-| Not implemented | SPGO/backpropagation, Clifford dispatch, discarded-norm diagnostics, OSE, arithmetic/translation, full public runner integration |
+| Backward gates | Coefficients, adjoints, parameter gradients, gradient-only support, threshold/cap diagnostics; NumPy/JAX and dense finite differences |
+| Clifford gates | H/S/Sdg/X/Y/Z/CX/CY/CZ, both directions and precisions; dense matrices and cross-word placements |
+| Not implemented | Terminal loss initialization, OSE, arithmetic/translation, full public runner integration |
 
-Validation on the H100 after this expansion: **679 repository tests passed**,
+Forward-only baseline validation on the H100: **679 repository tests passed**,
 including **122 Triton/import-focused cases**. CUDA Compute Sanitizer memcheck
 reported **0 errors** on the 8 collision/compaction stress cases.
 [Suite log](../../benchmarks/results/validation_expanded.txt) ·
@@ -144,27 +149,54 @@ The strict forward cutoff matches JAX; NumPy retains equality. Equal-magnitude
 cap ties and output order are unspecified. Cross-framework bitwise equality is
 not promised. Unsupported circuit operations fail explicitly.
 
-## Extending this to SPGO
+## SPGO and diagnostic APIs (milestone 2)
 
-Yes: reuse the packed keys, hash index, partner lookup, and compaction, and carry
-both a coefficient c and its adjoint g per row. Existing SPD backward evolution
-rotates **both arrays by -theta**. For a canonical pair with `G P = i Q`, the
-parameter-gradient contribution before that reverse rotation is
-`c_Q g_P - c_P g_Q`. Compute it once per pair (or sum both orientations and
-halve), then reduce block partials to one scalar. The hash lookup can serve all
-these computations. No general key sort is required.
+`SparsePauliGradientOp` adds a contiguous adjoint array to the same packed keys
+and primal coefficients. `create_gradient_op({"ZI": (1., .2)})` constructs one;
+`to_spo()` exposes its primal state and `to_host()` returns `(keys, c, g)`.
+Direct array construction assumes unique keys, as does the fast SPO path.
 
-The hard part is backward semantics, not adding another coefficient array.
-Existing backward code retains meaningful `(c,g)` rows with `abs(c) >= cutoff`;
-in particular, a zero coefficient with a nonzero gradient can survive when the
-cutoff is zero. Copying the forward keep mask would incorrectly delete it.
-Caps, lost-support behavior, terminal gradient initialization, and discarded-norm
-reporting also need to match the chosen reference. This would reproduce SPD's
-existing truncated backward algorithm; it would not automatically make hard
-thresholding differentiable or reconstruct discarded forward terms.
+```python
+from spd import triton_backend as gpu
 
-Before enabling SPGO, port the existing backward conformance/finite-difference
-checks (finite differences away from cutoff/cap transitions), including zero-coefficient/nonzero-gradient rows, caps and cutoff
-boundaries, basis/OSE/L2 terminal losses, and multi-step gradients. The additional
-array traffic and gradient reduction change performance, so the forward 122×
-result should not be assumed for backward evolution. SPGO is not implemented yet.
+state = gpu.create_op({"ZI": 1.})
+state, count, info = gpu.conjugate_pauli_rot_forward(state, "XX", .2, 1e-8, 1000)
+adjoint = gpu.create_gradient_op({"ZI": (1., .2), "YX": (.1, -.3)})
+adjoint, count, dtheta, info = gpu.conjugate_pauli_rot_backward(
+    adjoint, "XX", .2, 1e-8, 1000)
+adjoint = gpu.conjugate_CX_backward(adjoint, 0, 1)
+```
+
+Backward rotation shares the hash lookup and rotates both `c` and `g` by
+`-theta`. Before rotating, each existing anticommuting pair contributes
+`s_P * (c_P*g_Q - c_Q*g_P)` to the angle gradient, counted only when the
+partner index is larger. Triton reduces block partials; PyTorch reduces them
+into the returned scalar. Missing partners have zero primal and adjoint.
+This implements SPD's truncated backward algorithm, including its lost support;
+it does not differentiate hard selection or recover discarded forward rows.
+
+Backward keeps meaningful `(c,g)` rows with `abs(c) >= cutoff`, including
+zero-primal/nonzero-adjoint rows at cutoff zero. Forward keeps `abs(c) > cutoff`.
+Both apply an optional exact top-k cap by primal magnitude. Compaction and top-k
+apply the same indices to keys, primal, and adjoint arrays.
+
+Diagnostic calls return `num_str_truncated`, `truncated_l1_norm`, and
+`truncated_l2_norm`. Block reductions count discarded nonzero primal terms once;
+cap losses are summed directly, avoiding subtraction of nearly equal norms.
+These reductions use float64 even for single-precision states. They require
+additional work and host readback. The existing `conjugate_pauli_rotation` and
+`evolve_step` state-only APIs retain their fast specialization: compile-time
+flags remove adjoint and diagnostic instructions. Benchmark these APIs separately.
+
+Clifford gates transform packed masks and signs in one pass, without hashing
+or sorting. Backward applies the inverse gate and the same sign to both arrays.
+CY is also a single fused pass. Gate calls preserve input arrays.
+
+`set_precision` controls subsequent construction (initial default: double).
+Existing states retain their dtype. Packing is 32-bit. Standard rotations accept
+Pauli strings or packed generators. Public runner integration, terminal basis/
+OSE gradients and the TFI example are the next milestone; importing these gate
+APIs does not yet enable `BackendAdapter.from_name("triton")`.
+
+See [milestone 2 validation and performance](MILESTONE2.md). The earlier forward
+122× result must not be assumed for backward evolution.

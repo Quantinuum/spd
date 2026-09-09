@@ -4,6 +4,11 @@ This directory contains regression, conformance, and end-to-end tests for the SP
 
 ## Native Triton forward path
 
+`test_backend_semantic_contract.py` records the parity milestone's boundary
+semantics across the available implementations. Its strict expected failure
+documents the existing JAX stack-sort equality-diagnostics bug; see the
+[Triton compatibility contract](../spd/triton_backend/COMPATIBILITY.md).
+
 The Triton backend has a smaller API than NumPy/JAX; passing the repository suite
 does not mean it implements their Clifford, SPGO, diagnostics, or arithmetic APIs.
 Its implemented forward scope is exercised by:
@@ -86,3 +91,18 @@ OpenQASM compatibility note:
 
 - [`conftest.py`](conftest.py): shared backend fixtures
 - [`helpers.py`](helpers.py): normalization and assertion helpers used across multiple files
+
+## Triton milestone 2
+
+`test_triton_backward.py` checks primal/adjoint sequences against NumPy and both
+JAX algorithms, independent dense finite differences, gradient-only support,
+truncation diagnostics, caps, and collision/compaction stress.
+`test_triton_clifford.py` checks all nine gates in both directions and precisions
+against dense matrices and NumPy, including packed-word boundaries.
+The semantic contract now exercises Triton backward and diagnostic calls.
+Terminal loss and public runner tests remain pending milestone 3.
+
+```sh
+python -m pytest -q
+compute-sanitizer --tool memcheck --error-exitcode 1 python -m pytest tests/test_triton_backward.py tests/test_triton_clifford.py -q
+```

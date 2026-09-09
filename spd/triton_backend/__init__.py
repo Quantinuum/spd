@@ -1,8 +1,8 @@
-"""Forward sparse Pauli dynamics on NVIDIA GPUs, using PyTorch + Triton.
+"""Sparse Pauli gate kernels on NVIDIA GPUs, using PyTorch + Triton.
 
-This independent execution path supports real observables and Pauli rotations.
-It does not implement SPD's gradient or Clifford APIs. Keys use SPD's packed
-uint32 layout, stored as int32 tensors with identical bits.
+Supports real SPO/SPGO rotations and Clifford gates; public runner and terminal
+loss integration are pending. Keys use SPD's packed uint32 layout, stored as
+int32 tensors with identical bits.
 """
 
 from functools import lru_cache
@@ -13,6 +13,8 @@ import torch
 
 from ..circuit_ir import PauliRotation, SkippedOperation
 from .kernels import build_index, rotate
+from . import utils
+from .utils import set_precision
 
 
 def _pack(pauli, num_qubits):
@@ -65,7 +67,8 @@ class SparsePauliOp:
         return torch.sum(torch.where(torch.all(part == 0, dim=1), self.c_array, 0)).item()
 
 
-def create_op(pauli_dict, num_qubits=None, precision="double", device="cuda"):
+def create_op(pauli_dict, num_qubits=None, precision=None, device="cuda"):
+    precision = utils.get_precision() if precision is None else precision
     if precision not in ("single", "double"):
         raise ValueError("precision must be single or double")
     if num_qubits is None:
@@ -146,3 +149,7 @@ def evolve_step(spo, operations, trunc_val=0., max_num_str=None):
         if isinstance(op, PauliRotation):
             spo = conjugate_pauli_rotation(spo, op.pauli, op.theta, trunc_val, max_num_str)
     return spo
+
+# Import after the state-only API so gradient/standard operations can reuse it.
+from .gradient import SparsePauliGradientOp, create_gradient_op
+from .operations import *

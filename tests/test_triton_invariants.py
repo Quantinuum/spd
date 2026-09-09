@@ -90,7 +90,7 @@ def test_compaction_boundaries_and_inverse(count):
     assert as_dict(original) == before
 
 
-def test_deliberate_hash_collision_chain():
+def collision_observable():
     # Construct 129 distinct keys mapping to bucket zero of the initial
     # 512-slot table. This deliberately stresses probing, not just random input.
     rng = np.random.default_rng(921)
@@ -106,6 +106,11 @@ def test_deliberate_hash_collision_chain():
     assert len(keys) == 129
     labels = labels_from_keys(keys, 16)
     observable = dict(zip(labels, rng.normal(size=129)))
+    return observable
+
+
+def test_deliberate_hash_collision_chain():
+    observable = collision_observable()
     reference.utils.set_packbit(32)
     reference.set_precision("double")
     cpu = reference.create_op(observable)

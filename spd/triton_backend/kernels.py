@@ -36,7 +36,9 @@ def build_index(keys, table, n, table_mask, W: tl.constexpr, B: tl.constexpr):
 
 @triton.jit(do_not_specialize=["n", "table_mask"])
 def rotate(keys, coeff, table, gate, scalars, out_keys, out_coeff, count,
-           n, table_mask, W: tl.constexpr, B: tl.constexpr):
+           n, table_mask, W: tl.constexpr, B: tl.constexpr,
+           grad=None, out_grad=None, stats=None, BACKWARD: tl.constexpr = False,
+           DIAGNOSTICS: tl.constexpr = False):
     i = tl.program_id(0) * B + tl.arange(0, B)
     live = i < n
     h = tl.full((B,), 0x9e3779b9, tl.uint32)
@@ -75,10 +77,34 @@ def rotate(keys, coeff, table, gate, scalars, out_keys, out_coeff, count,
     sin = tl.load(scalars + 1)
     cutoff = tl.load(scalars + 2)
     sign = tl.where((phase & 3) == 1, 1, -1)
+    if BACKWARD:
+        adj = tl.load(grad + i, live, 0)
+        adj_pair = tl.load(grad + partner, partner >= 0, 0)
+        # Each pair contributes once, independent of hash insertion order.
+        theta_grad = tl.where(anti & (partner > i),
+                              sign * (c * adj_pair - paired * adj), 0)
+        tl.store(stats + tl.program_id(0) * 4 + 3,
+                 tl.sum(theta_grad.to(tl.float64), 0))
+        sin = -sin
+        own_grad = tl.where(anti, adj * cos - adj_pair * sin * sign, adj)
+        new_grad = adj * sin * sign
     own = tl.where(anti, c * cos - paired * sin * sign, c)
     new = c * sin * sign
-    keep_own = live & (tl.abs(own) > cutoff)
-    keep_new = anti & (partner < 0) & (tl.abs(new) > cutoff)
+    missing = anti & (partner < 0)
+    if BACKWARD:
+        keep_own = live & ((own != 0) | (own_grad != 0)) & (tl.abs(own) >= cutoff)
+        keep_new = missing & ((new != 0) | (new_grad != 0)) & (tl.abs(new) >= cutoff)
+    else:
+        keep_own = live & (tl.abs(own) > cutoff)
+        keep_new = missing & (tl.abs(new) > cutoff)
+    if DIAGNOSTICS:
+        removed_own = live & ~keep_own & (own != 0)
+        removed_new = missing & ~keep_new & (new != 0)
+        a = tl.where(removed_own, tl.abs(own), 0).to(tl.float64)
+        b = tl.where(removed_new, tl.abs(new), 0).to(tl.float64)
+        tl.store(stats + tl.program_id(0) * 4, tl.sum(removed_own.to(tl.int32) + removed_new.to(tl.int32), 0))
+        tl.store(stats + tl.program_id(0) * 4 + 1, tl.sum(a + b, 0))
+        tl.store(stats + tl.program_id(0) * 4 + 2, tl.sum(a * a + b * b, 0))
     sizes = keep_own.to(tl.int32) + keep_new.to(tl.int32)
     offset = tl.cumsum(sizes) - sizes
     base = tl.atomic_add(count, tl.sum(sizes, 0), sem="relaxed")
@@ -90,3 +116,69 @@ def rotate(keys, coeff, table, gate, scalars, out_keys, out_coeff, count,
         tl.store(out_keys + (dest.to(tl.int64) + keep_own.to(tl.int32)) * W + w, v ^ g, keep_new)
     tl.store(out_coeff + dest, own, keep_own)
     tl.store(out_coeff + dest + keep_own.to(tl.int32), new, keep_new)
+
+    if BACKWARD:
+        tl.store(out_grad + dest, own_grad, keep_own)
+        tl.store(out_grad + dest + keep_own.to(tl.int32), new_grad, keep_new)
+
+
+@triton.jit(do_not_specialize=["n", "q", "r"])
+def clifford(keys, coeff, out_keys, out_coeff, n, q, r,
+             W: tl.constexpr, OP: tl.constexpr, B: tl.constexpr,
+             grad=None, out_grad=None, GRADIENT: tl.constexpr = False):
+    i = tl.program_id(0) * B + tl.arange(0, B)
+    live = i < n
+    qw, qb = q // 32, 31 - q % 32
+    rw, rb = r // 32, 31 - r % 32
+    qmask = tl.full((), 1, tl.uint32) << qb
+    rmask = tl.full((), 1, tl.uint32) << rb
+    x = (tl.load(keys + i.to(tl.int64) * W + qw, live, 0).to(tl.uint32) >> qb) & 1
+    z = (tl.load(keys + i.to(tl.int64) * W + W // 2 + qw, live, 0).to(tl.uint32) >> qb) & 1
+    xf = tl.full((B,), 0, tl.uint32)
+    zf = tl.full((B,), 0, tl.uint32)
+    xtf = tl.full((B,), 0, tl.uint32)
+    ztf = tl.full((B,), 0, tl.uint32)
+    if OP == 0:  # H
+        xf = x ^ z
+        zf = xf
+        phase = x & z
+    elif OP == 1:  # S: U^dagger P U
+        zf = x
+        phase = x & (z ^ 1)
+    elif OP == 2:  # Sdg
+        zf = x
+        phase = x & z
+    elif OP == 3:  # X
+        phase = z
+    elif OP == 4:  # Y
+        phase = x ^ z
+    elif OP == 5:  # Z
+        phase = x
+    else:
+        xt = (tl.load(keys + i.to(tl.int64) * W + rw, live, 0).to(tl.uint32) >> rb) & 1
+        zt = (tl.load(keys + i.to(tl.int64) * W + W // 2 + rw, live, 0).to(tl.uint32) >> rb) & 1
+        if OP == 6:  # CX
+            xtf = x
+            zf = zt
+            phase = x & zt & (1 ^ z ^ xt)
+        elif OP == 7:  # CZ
+            zf = xt
+            ztf = x
+            phase = x & xt & (z ^ zt)
+        else:  # CY = Sdg/CX/S conjugation, fused into one bit map.
+            xtf = x
+            ztf = x
+            zf = zt ^ xt
+            phase = (xt & (zt ^ 1)) ^ (x & (zt ^ xt) & (1 ^ z ^ xt)) ^ ((xt ^ x) & (zt ^ xt))
+    for w in tl.static_range(W):
+        v = tl.load(keys + i.to(tl.int64) * W + w, live, 0).to(tl.uint32)
+        v ^= tl.where(w == qw, xf * qmask, 0)
+        v ^= tl.where(w == W // 2 + qw, zf * qmask, 0)
+        v ^= tl.where(w == rw, xtf * rmask, 0)
+        v ^= tl.where(w == W // 2 + rw, ztf * rmask, 0)
+        tl.store(out_keys + i.to(tl.int64) * W + w, v, live)
+    c = tl.load(coeff + i, live, 0)
+    tl.store(out_coeff + i, tl.where(phase != 0, -c, c), live)
+    if GRADIENT:
+        g = tl.load(grad + i, live, 0)
+        tl.store(out_grad + i, tl.where(phase != 0, -g, g), live)
