@@ -2,6 +2,37 @@
 
 This directory contains regression, conformance, and end-to-end tests for the SPD package.
 
+## Native Triton forward path
+
+The Triton backend has a smaller API than NumPy/JAX; passing the repository suite
+does not mean it implements their Clifford, SPGO, diagnostics, or arithmetic APIs.
+Its implemented forward scope is exercised by:
+
+- `test_triton_backend.py`: randomized multiword rotations against NumPy, caps,
+  cancellation, empty states, operation order, and unsupported operations.
+- `test_triton_invariants.py`: the same known rotation cases used by NumPy/JAX,
+  independent dense matrix conjugation for all 64 three-qubit generators,
+  deliberately colliding hash keys, compaction boundaries, uniqueness, inverse
+  recovery, norm conservation, measurements, and cutoff-adjacent values.
+- `test_triton_jax_conformance.py`: every retained coefficient after multiple
+  lattice steps, against both JAX algorithms in single and double precision.
+- `test_backend_imports.py`: public import compatibility and native import
+  isolation from the JAX GPU allocator.
+
+The numerical Triton tests require an NVIDIA GPU plus PyTorch/Triton and skip
+when unavailable; the public import compatibility check can run without CUDA.
+Run from the repository root:
+
+```sh
+python -m pytest tests/test_triton_backend.py tests/test_triton_invariants.py tests/test_triton_jax_conformance.py tests/test_backend_imports.py -q
+compute-sanitizer --tool memcheck --error-exitcode 1 python -m pytest tests/test_triton_invariants.py -k 'collision or compaction' -q
+```
+
+Python line coverage does not measure compiled Triton kernel branches. The
+adversarial storage cases and CUDA memory checker complement the numerical
+oracles. See [the Triton README](../spd/triton_backend/README.md) for the algorithm,
+scope differences, and proposed SPGO extension.
+
 ## Test Categories
 
 - [`test_pauli_product.py`](test_pauli_product.py): low-level Pauli multiplication checks

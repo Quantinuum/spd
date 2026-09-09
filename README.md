@@ -244,3 +244,17 @@ pytest tests
 
 - The examples above use `pytket` when they build circuits in Python.
 - The backward example assumes `ham_dict`, `circ`, `basis`, `trunc_val`, and `max_num_str` already exist, just like in [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py).
+
+
+### Native NVIDIA GPU forward evolution
+
+An optional PyTorch/Triton implementation of sparse Pauli rotations is available
+in [`spd.triton_backend`](spd/triton_backend/README.md). It replaces per-gate sorting
+with a GPU hash index and fused rotation/compaction. Install with
+`pip install -e '.[triton,pytket]'`, then run
+`python examples/benchmark_2d_obc_xx_z_stepwise.py --backend triton`.
+This path supports forward Pauli rotations; the existing backends provide the
+full Clifford and gradient APIs.
+
+See [measured H100 benchmark results](benchmarks/README.md) for the full default
+23-step native run and the large-state comparison against JAX.

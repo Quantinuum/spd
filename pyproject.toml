@@ -14,6 +14,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Native Triton kernels require a supported Linux/NVIDIA GPU environment.
+triton = [
+    "torch>=2.8",
+    "triton>=3.4",
+]
 pytket = [
     "pytket>=2.7.0",
 ]
