@@ -13,7 +13,7 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 ## Recommended Starting Points
 
 - [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `spd.create_spo(...)`, `evolve(...)`, `get_expectation_value(...)`, and truncation info
-- [`gradient/run_tfi_gs_1d.py`](gradient/run_tfi_gs_1d.py): main forward + backward workflow with `create_spo(...)`, `evolve(...)`, `init_gradient_spo(...)`, and `backpropagate(...)`
+- [`gradient/run_tfi_gs.py`](gradient/run_tfi_gs.py): 1D/2D/3D TFI optimization with `VariationalCircuit`
 - [`run_with_backend_adapter.py`](run_with_backend_adapter.py): small example with a reusable configured backend
 - [`tfi_noise_susceptibility.py`](tfi_noise_susceptibility.py): operation-aligned one- and two-qubit depolarizing susceptibilities for a short TFI Trotter circuit
 - [`run_simple_circuit_2.py`](run_simple_circuit_2.py): runs a stored sample circuit from [`simple_test_circuit.pkl`](simple_test_circuit.pkl)
@@ -30,18 +30,21 @@ These are still intentionally kept because they are useful for inspection, compa
 
 ## Gradient / TFI Work
 
-[`gradient/`](gradient/) contains the larger TFI and AFH workflows. The scripts there are still research-oriented, but [`gradient/run_tfi_gs_1d.py`](gradient/run_tfi_gs_1d.py) is also one of the main end-to-end examples for the current SPD workflow.
+[`gradient/`](gradient/) contains the larger TFI and AFH workflows. The unified
+TFI runner uses the stable ansatz generators from `spd.ansatz` and reduces gate
+gradients with `VariationalCircuit.parameter_gradients(...)`.
 
-The gradient scripts use positional arguments for model size and iteration count, plus shared optional flags:
+The first positional argument selects the spatial dimension. Periodic lattice
+dimensions must be even. If `--linear-system-size` is omitted, the runner uses
+`number_of_parameters + 2`.
 
 ```bash
-python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --method lbfgs
-python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --init-params-path previous/final_params.txt
-python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --lambda-ose 0.1
-python examples/gradient/run_tfi_gs_1d.py 6 3.1 + 100 --system-size 15
-python examples/gradient/run_tfi_gs_2d.py 6 100 --linear-system-size 12
-python examples/gradient/run_tfi_gs_3d.py 6 100 --linear-system-size 6
-python examples/gradient/run_tfi_gs_2d.py 6 100 --algorithm search_update_merge
+python examples/gradient/run_tfi_gs.py 1 6 100 --method lbfgs --g 3.1
+python examples/gradient/run_tfi_gs.py 1 6 100 --basis 0
+python examples/gradient/run_tfi_gs.py 2 6 100 --linear-system-size 12
+python examples/gradient/run_tfi_gs.py 3 6 100 --linear-system-size 6
+python examples/gradient/run_tfi_gs.py 2 6 100 --algorithm search_update_merge
+python examples/gradient/run_tfi_gs.py 1 6 100 --init-params-path previous/final_params.txt
 ```
 
 If `--init-params-path` is omitted, parameters are initialized randomly. If it is provided, the script initializes from that file. `lambda_ose` is constant within one training run and is stored in `metadata.json`. To decrease it, start a new run from the previous `final_params.txt` with a smaller `--lambda-ose`.

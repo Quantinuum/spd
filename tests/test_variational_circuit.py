@@ -136,3 +136,153 @@ def test_tfi_hva_uses_disjoint_brickwork_groups(generator, kwargs, expected_grou
 def test_periodic_tfi_hva_rejects_odd_dimensions(generator, kwargs):
     with pytest.raises(ValueError, match="must be even"):
         generator(np.asarray([0.1, 0.2]), **kwargs)
+
+
+def _legacy_tfi_circuit(params, dimension, linear_system_size, basis):
+    system_size = linear_system_size**dimension
+    circuit = Circuit(system_size, system_size)
+
+    def add_x_layer(parameter):
+        for qubit in range(system_size):
+            circuit.Rx(parameter, qubit)
+        circuit.add_barrier(list(range(system_size)))
+
+    def add_zz_layer(parameter):
+        for qubit in range(system_size):
+            for axis in range(dimension):
+                stride = linear_system_size**axis
+                coordinate = (qubit // stride) % linear_system_size
+                neighbor = qubit + stride
+                if coordinate == linear_system_size - 1:
+                    neighbor -= linear_system_size * stride
+                circuit.ZZPhase(parameter, qubit, neighbor)
+        circuit.add_barrier(list(range(system_size)))
+
+    for layer in range(len(params) // 2):
+        first = 2 * layer
+        if dimension == 1 and basis == "0":
+            add_x_layer(params[first])
+            add_zz_layer(params[first + 1])
+        else:
+            add_zz_layer(params[first])
+            add_x_layer(params[first + 1])
+    circuit.measure_all()
+    return circuit
+
+
+def _local_tfi_hamiltonian(dimension, linear_system_size, g=3.1):
+    system_size = linear_system_size**dimension
+    hamiltonian = {}
+    for axis in range(dimension):
+        paulis = ["I"] * system_size
+        paulis[0] = "Z"
+        paulis[linear_system_size**axis] = "Z"
+        hamiltonian["".join(paulis)] = -1.0
+    paulis = ["I"] * system_size
+    paulis[0] = "X"
+    hamiltonian["".join(paulis)] = -g
+    return hamiltonian
+
+
+def _energy_and_gate_gradients(circuit, hamiltonian, basis):
+    backend = spd.BackendAdapter.from_name("numpy", packbit=32, precision="double")
+    initial_spo = spd.create_spo(hamiltonian, backend=backend)
+    final_spo, _ = spd.evolve(
+        initial_spo,
+        circuit,
+        trunc_val=1e-14,
+        max_num_str=100_000,
+        backend=backend,
+    )
+    energy = final_spo.get_expectation_value(basis=basis)
+    initial_spgo = spd.init_gradient_spo(final_spo, basis=basis, backend=backend)
+    _, gate_gradients, _ = spd.backpropagate(
+        initial_spgo,
+        circuit,
+        trunc_val=1e-14,
+        max_num_str=100_000,
+        backend=backend,
+    )
+    return energy, np.asarray(gate_gradients)
+
+
+def _legacy_parameter_gradients(gate_gradients, params, dimension, system_size):
+    per_layer = (dimension + 1) * system_size
+    result = []
+    for layer in range(len(params) // 2):
+        start = layer * per_layer
+        split = start + dimension * system_size
+        end = start + per_layer
+        result.extend(
+            [
+                np.sum(gate_gradients[start:split]) * math.pi,
+                np.sum(gate_gradients[split:end]) * math.pi,
+            ]
+        )
+    return np.asarray(result)
+
+
+@pytest.mark.parametrize(
+    ("dimension", "linear_system_size", "basis"),
+    [(1, 4, "+"), (1, 4, "0"), (2, 2, "+"), (3, 2, "+")],
+)
+def test_tfi_hva_matches_archived_energy_gradients_and_three_steps(
+    dimension, linear_system_size, basis
+):
+    legacy_params = np.asarray([0.13, -0.21])
+    new_params = legacy_params.copy()
+    hamiltonian = _local_tfi_hamiltonian(dimension, linear_system_size)
+    system_size = linear_system_size**dimension
+
+    for _ in range(3):
+        legacy_circuit = _legacy_tfi_circuit(
+            legacy_params,
+            dimension,
+            linear_system_size,
+            basis,
+        )
+        legacy_energy, legacy_gate_gradients = _energy_and_gate_gradients(
+            legacy_circuit,
+            hamiltonian,
+            basis,
+        )
+        legacy_gradients = _legacy_parameter_gradients(
+            legacy_gate_gradients,
+            legacy_params,
+            dimension,
+            system_size,
+        )
+
+        if dimension == 1:
+            ansatz = tfi_1d_hva(
+                new_params,
+                system_size=linear_system_size,
+                basis=basis,
+            )
+        elif dimension == 2:
+            ansatz = tfi_2d_hva(
+                new_params,
+                system_size_x=linear_system_size,
+                system_size_y=linear_system_size,
+            )
+        else:
+            ansatz = tfi_3d_hva(
+                new_params,
+                system_size_x=linear_system_size,
+                system_size_y=linear_system_size,
+                system_size_z=linear_system_size,
+            )
+        new_energy, new_gate_gradients = _energy_and_gate_gradients(
+            ansatz.circuit,
+            hamiltonian,
+            basis,
+        )
+        new_gradients = ansatz.parameter_gradients(new_gate_gradients)
+
+        assert new_energy == pytest.approx(legacy_energy, abs=1e-10)
+        np.testing.assert_allclose(new_gradients, legacy_gradients, atol=1e-10)
+
+        legacy_params -= 0.01 * legacy_gradients
+        new_params -= 0.01 * new_gradients
+
+    np.testing.assert_allclose(new_params, legacy_params, atol=1e-10)

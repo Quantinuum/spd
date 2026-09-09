@@ -9,9 +9,8 @@ import pytest
 GRADIENT_DIR = Path(__file__).resolve().parents[1] / "examples" / "gradient"
 sys.path.insert(0, str(GRADIENT_DIR))
 
-import run_tfi_gs_3d
+import run_tfi_gs
 import run_utils
-import tfi_setup
 
 
 def test_memory_estimate_matches_large_64_qubit_note():
@@ -72,30 +71,21 @@ def test_record_outputs_include_elapsed_seconds(tmp_path):
     assert history_row["cost"] == "1.0"
 
 
-def test_3d_tfi_circuit_and_gradient_compression():
-    system_size_x = 2
-    system_size_y = 2
-    system_size_z = 2
-    system_size = system_size_x * system_size_y * system_size_z
-    thetas = np.array([0.1, 0.2])
-
-    circ = tfi_setup.gen_3d_TFI_ansatz_circuit(
-        thetas,
-        system_size_x,
-        system_size_y,
-        system_size_z,
+def test_unified_tfi_setup_builds_3d_ansatz_and_local_hamiltonian():
+    ansatz = run_tfi_gs.make_tfi_ansatz(
+        np.array([0.1, 0.2]),
+        dimension=3,
+        linear_system_size=2,
     )
-    ham = tfi_setup.gen_3d_Hamiltonian_dict(
-        system_size_x,
-        system_size_y,
-        system_size_z,
+    hamiltonian = run_tfi_gs.make_local_tfi_hamiltonian(
+        dimension=3,
+        linear_system_size=2,
         g=3.1,
     )
 
-    assert circ.n_qubits == system_size
-    assert len(ham) == 4
-
-    raw_grads = np.arange(4 * system_size, dtype=float)
-    combined = run_tfi_gs_3d.combine_grads(raw_grads, 2, system_size)
-    assert combined[0] == pytest.approx(np.sum(raw_grads[:3 * system_size]) * np.pi)
-    assert combined[1] == pytest.approx(np.sum(raw_grads[3 * system_size:]) * np.pi)
+    assert ansatz.circuit.n_qubits == 8
+    assert len(hamiltonian) == 4
+    np.testing.assert_allclose(
+        ansatz.parameter_gradients(np.ones(32)),
+        np.array([24.0, 8.0]) * np.pi,
+    )

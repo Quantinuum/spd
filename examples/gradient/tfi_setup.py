@@ -1,44 +1,37 @@
-import pytket
 from pytket import Circuit
 
-def gen_1d_TFI_ansatz_circuit(thetas,
-                              system_size: int = 12,
-                              basis: str = '+',
-                              ) -> Circuit:
-    circ = Circuit(system_size, system_size)
 
-    assert len(thetas) % 2 == 0, "The length of thetas should be a multiple of 2."
-    depth = len(thetas) // 2
+def gen_1d_TFI_ansatz_circuit(thetas, system_size=12, basis="+"):
+    """Legacy helper retained for odd-size TFI time-evolution experiments."""
+    circuit = Circuit(system_size, system_size)
+    if len(thetas) % 2:
+        raise ValueError("The number of parameters must be even.")
+    if basis not in ("+", "0"):
+        raise ValueError("basis must be '+' or '0'.")
 
-    if basis == '+':
-        for d in range(depth):
-            for i in range(system_size):
-                circ.ZZPhase(thetas[2*d], i, (i + 1) % system_size)
+    for layer in range(len(thetas) // 2):
+        first = 2 * layer
+        if basis == "0":
+            for qubit in range(system_size):
+                circuit.Rx(thetas[first], qubit)
+            circuit.add_barrier(list(range(system_size)))
 
-            circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
+        for qubit in range(system_size):
+            circuit.ZZPhase(
+                thetas[first if basis == "+" else first + 1],
+                qubit,
+                (qubit + 1) % system_size,
+            )
+        circuit.add_barrier(list(range(system_size)))
 
-            for i in range(system_size):
-                circ.Rx(thetas[2*d + 1], i)
+        if basis == "+":
+            for qubit in range(system_size):
+                circuit.Rx(thetas[first + 1], qubit)
+            circuit.add_barrier(list(range(system_size)))
 
-            circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
-    elif basis == '0':
-        for d in range(depth):
-            for i in range(system_size):
-                circ.Rx(thetas[2*d], i)
+    circuit.measure_all()
+    return circuit
 
-            circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
-
-            for i in range(system_size):
-                circ.ZZPhase(thetas[2*d + 1], i, (i + 1) % system_size)
-
-            circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
-    else:
-        raise NotImplementedError
-
-    for i in range(system_size):
-        circ.Measure(i, i)
-
-    return circ
 
 def gen_1d_TFI_symm_breaking_ansatz_circuit(thetas,
                                             system_size: int = 12,
@@ -64,77 +57,6 @@ def gen_1d_TFI_symm_breaking_ansatz_circuit(thetas,
             circ.Rz(thetas[3*d + 2], i)
 
         circ.add_barrier(list(range(system_size)), ) # add a barrier on all qubits and bits
-
-    for i in range(system_size):
-        circ.Measure(i, i)
-
-    return circ
-
-def gen_2d_TFI_ansatz_circuit(thetas,
-                              system_size_x: int = 4,
-                              system_size_y: int = 4,
-                              ) -> Circuit:
-    system_size = system_size_x * system_size_y
-    circ = Circuit(system_size, system_size)
-
-    assert len(thetas) % 2 == 0, "The length of thetas should be a multiple of 2."
-    depth = len(thetas) // 2
-
-    for d in range(depth):
-        for x in range(system_size_x):
-            for y in range(system_size_y):
-                i = x * system_size_y + y
-                j = ((x + 1) % system_size_x) * system_size_y + y
-                circ.ZZPhase(thetas[2*d], i, j)
-
-        for x in range(system_size_x):
-            for y in range(system_size_y):
-                i = x * system_size_y + y
-                j = x * system_size_y + (y + 1) % system_size_y
-                circ.ZZPhase(thetas[2*d], i, j)
-
-        circ.add_barrier(list(range(system_size)), )
-
-        for i in range(system_size):
-            circ.Rx(thetas[2*d+1], i)
-
-        circ.add_barrier(list(range(system_size)), )
-
-    for i in range(system_size):
-        circ.Measure(i, i)
-
-    return circ
-
-def gen_3d_TFI_ansatz_circuit(thetas,
-                              system_size_x: int = 3,
-                              system_size_y: int = 3,
-                              system_size_z: int = 3,
-                              ) -> Circuit:
-    system_size = system_size_x * system_size_y * system_size_z
-    plane_size = system_size_y * system_size_z
-    circ = Circuit(system_size, system_size)
-
-    assert len(thetas) % 2 == 0, "The length of thetas should be a multiple of 2."
-    depth = len(thetas) // 2
-
-    for d in range(depth):
-        for x in range(system_size_x):
-            for y in range(system_size_y):
-                for z in range(system_size_z):
-                    i = x * plane_size + y * system_size_z + z
-                    jx = ((x + 1) % system_size_x) * plane_size + y * system_size_z + z
-                    jy = x * plane_size + ((y + 1) % system_size_y) * system_size_z + z
-                    jz = x * plane_size + y * system_size_z + (z + 1) % system_size_z
-                    circ.ZZPhase(thetas[2*d], i, jx)
-                    circ.ZZPhase(thetas[2*d], i, jy)
-                    circ.ZZPhase(thetas[2*d], i, jz)
-
-        circ.add_barrier(list(range(system_size)), )
-
-        for i in range(system_size):
-            circ.Rx(thetas[2*d+1], i)
-
-        circ.add_barrier(list(range(system_size)), )
 
     for i in range(system_size):
         circ.Measure(i, i)

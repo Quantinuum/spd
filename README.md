@@ -20,7 +20,7 @@ Useful entry points:
 Recommended examples:
 
 - [`examples/run_simple_circuit_1.py`](./examples/run_simple_circuit_1.py): smallest forward workflow, including truncation info
-- [`examples/gradient/run_tfi_gs_1d.py`](./examples/gradient/run_tfi_gs_1d.py): forward + backward workflow inside an optimization loop
+- [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py): 1D/2D/3D variational TFI optimization
 - [`examples/run_with_backend_adapter.py`](./examples/run_with_backend_adapter.py): reusable configured backend
 
 ## Installation
@@ -101,7 +101,7 @@ print("tracked truncation steps:", info["num_steps_tracked"])
 
 ## Forward + Backward Example
 
-This is the core workflow used in [`examples/gradient/run_tfi_gs_1d.py`](./examples/gradient/run_tfi_gs_1d.py).
+This is the core workflow used in [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py).
 
 ```python
 import spd
@@ -137,7 +137,8 @@ backward_spo = final_spgo.to_spo()
 overlap = initial_spo.dot(backward_spo)
 ```
 
-In the TFI example, `raw_grads` are then combined into parameter gradients for the optimizer.
+In the TFI example, `VariationalCircuit.parameter_gradients(...)` combines
+`raw_grads` into parameter gradients for the optimizer.
 For overlap diagnostics, `to_spo()` extracts the primal SPO from the backward
 object and `dot(...)` compares matching Pauli-string coefficients. If you want a
 quantity that should be close to `1`, normalize that overlap in user code.
@@ -242,4 +243,4 @@ pytest tests
 ## Assumptions
 
 - The examples above use `pytket` when they build circuits in Python.
-- The backward example assumes `ham_dict`, `circ`, `basis`, `trunc_val`, and `max_num_str` already exist, just like in [`examples/gradient/run_tfi_gs_1d.py`](./examples/gradient/run_tfi_gs_1d.py).
+- The backward example assumes `ham_dict`, `circ`, `basis`, `trunc_val`, and `max_num_str` already exist, just like in [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py).
