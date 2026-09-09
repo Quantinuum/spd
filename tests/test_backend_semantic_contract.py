@@ -68,13 +68,13 @@ def test_direct_size_cap_is_exact_even_when_not_power_of_two(engine):
     np.testing.assert_allclose(sorted(coefficients(engine, state)), [.4, .6, .8])
 
 
-@pytest.mark.parametrize("engine", REFERENCES, indirect=True)
+@pytest.mark.parametrize("engine", REFERENCES + ["triton"], indirect=True)
 def test_public_runner_cap_policy_differs_from_direct_kernel(engine):
     import spd
     from spd.circuit_ir import CircuitIR, PauliRotation
 
     name, module = engine
-    adapter = spd.BackendAdapter.from_name("numpy" if name == "numpy" else "jax", precision="double")
+    adapter = spd.BackendAdapter.from_name(name if name in ("numpy", "triton") else "jax", precision="double")
     initial = module.create_op({"I": .8, "X": .6, "Y": .4, "Z": .2})
     circuit = CircuitIR(32, (PauliRotation("identity", "I" * 32, 0.),))
     final, _ = spd.evolve(initial, circuit, 0., max_num_str=3, backend=adapter)

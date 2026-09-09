@@ -1,7 +1,7 @@
 """Sparse Pauli gate kernels on NVIDIA GPUs, using PyTorch + Triton.
 
-Supports real SPO/SPGO rotations and Clifford gates; public runner and terminal
-loss integration are pending. Keys use SPD's packed uint32 layout, stored as
+Supports real SPO/SPGO rotations, Clifford gates, and basis/OSE terminal losses
+through the public SPD runner. Keys use SPD's packed uint32 layout, stored as
 int32 tensors with identical bits.
 """
 
@@ -55,6 +55,12 @@ class SparsePauliOp:
 
     def get_norm_square(self):
         return torch.sum(self.c_array.square()).item()
+
+    def get_operator_stabilizer_entropy(self, alpha=1.0):
+        from .losses import operator_stabilizer_entropy
+        return operator_stabilizer_entropy(self, alpha)
+
+    get_OSE = get_operator_stabilizer_entropy
 
     def get_expectation_value(self, basis="Z"):
         half = self.xz_array.shape[1] // 2
@@ -153,3 +159,5 @@ def evolve_step(spo, operations, trunc_val=0., max_num_str=None):
 # Import after the state-only API so gradient/standard operations can reuse it.
 from .gradient import SparsePauliGradientOp, create_gradient_op
 from .operations import *
+
+from .losses import init_gradient_from_basis_expectation, init_gradient_from_ose, init_gradient_spo

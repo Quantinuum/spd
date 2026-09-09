@@ -112,7 +112,8 @@ JAX. The same algorithm could be exposed through a JAX custom GPU kernel.
 ## Test coverage and current scope
 
 Triton does **not** have feature/coverage parity with the complete NumPy/JAX
-backends. It provides independent gate APIs, not yet a complete BackendAdapter.
+backends. Public adapter/runner execution and the TFI gradient workflow are
+supported; the remaining functionality is listed below.
 
 | Area | Triton validation |
 |---|---|
@@ -126,7 +127,8 @@ backends. It provides independent gate APIs, not yet a complete BackendAdapter.
 | Large workload | 23 native default steps; exact counts and expectation/norm agreement through 14 reference steps |
 | Backward gates | Coefficients, adjoints, parameter gradients, gradient-only support, threshold/cap diagnostics; NumPy/JAX and dense finite differences |
 | Clifford gates | H/S/Sdg/X/Y/Z/CX/CY/CZ, both directions and precisions; dense matrices and cross-word placements |
-| Not implemented | Terminal loss initialization, OSE, arithmetic/translation, full public runner integration |
+| Terminal losses / public runner | Basis/OSE adjoints, regularization, energy/OSE/parameter gradients, progress control, IR/pytket and serialization |
+| Not implemented | L2 losses, arithmetic/translation, weight/product utilities and noise susceptibility |
 
 Forward-only baseline validation on the H100: **679 repository tests passed**,
 including **122 Triton/import-focused cases**. CUDA Compute Sanitizer memcheck
@@ -150,6 +152,26 @@ cap ties and output order are unspecified. Cross-framework bitwise equality is
 not promised. Unsupported circuit operations fail explicitly.
 
 ## SPGO and diagnostic APIs (milestone 2)
+
+All four entry points below are exported from `spd.triton_backend`:
+
+| Path | Function and implementation | Returns |
+|---|---|---|
+| Fast forward rotation | `conjugate_pauli_rotation` in [__init__.py](__init__.py) | State only |
+| Fast sequence | `evolve_step` in [__init__.py](__init__.py); calls `conjugate_pauli_rotation` | State only |
+| Forward with diagnostics | `conjugate_pauli_rot_forward` in [operations.py](operations.py) | `(state, live_count, diagnostics)` |
+| Backward with diagnostics | `conjugate_pauli_rot_backward` in [operations.py](operations.py) | `(state, live_count, angle_gradient, diagnostics)` |
+
+The rotation paths share the same [Triton kernel](kernels.py), specialized using
+compile-time flags. There is currently no diagnostic-free backward API.
+The fast sequence helper supports Pauli rotations and skipped operations;
+Clifford gates currently use their separate gate APIs.
+
+"No performance degradation" refers to the updated state-only path compared
+with the original state-only path. Diagnostics still add measurable overhead:
+about 12.5% at one million input rows and 2% at ten million in the measured
+workload. Keep the two paths separate and compare equivalent diagnostic settings;
+see [measurement details and limitations](MILESTONE2.md).
 
 `SparsePauliGradientOp` adds a contiguous adjoint array to the same packed keys
 and primal coefficients. `create_gradient_op({"ZI": (1., .2)})` constructs one;
@@ -194,9 +216,66 @@ CY is also a single fused pass. Gate calls preserve input arrays.
 
 `set_precision` controls subsequent construction (initial default: double).
 Existing states retain their dtype. Packing is 32-bit. Standard rotations accept
-Pauli strings or packed generators. Public runner integration, terminal basis/
-OSE gradients and the TFI example are the next milestone; importing these gate
-APIs does not yet enable `BackendAdapter.from_name("triton")`.
+Pauli strings or packed generators.
 
 See [milestone 2 validation and performance](MILESTONE2.md). The earlier forward
 122× result must not be assumed for backward evolution.
+
+
+## Public execution and the TFI example (milestone 3)
+
+```python
+import spd
+from spd.ansatz import tfi_2d_hva
+
+backend = spd.BackendAdapter.from_name("triton", precision="double")
+ansatz = tfi_2d_hva([.13, -.21], system_size_x=2, system_size_y=2)
+initial = spd.create_spo({"ZZII": -1., "XIII": -3.1}, backend=backend)
+final, forward_info = spd.evolve(
+    initial, ansatz.circuit, 1e-8, 1000, backend=backend, progress=False)
+terminal = spd.init_gradient_spo(
+    final, basis="+", lambda_ose=.1, alpha=2., backend=backend)
+_, gate_gradients, backward_info = spd.backpropagate(
+    terminal, ansatz.circuit, 1e-8, 1000, backend=backend, progress=False)
+parameter_gradients = ansatz.parameter_gradients(gate_gradients)
+cost = final.get_expectation_value("+") + .1 * final.get_OSE(alpha=2.)
+```
+
+The public runner uses the diagnostic gate APIs and returns per-gate history
+and total discarded norms. `progress=False` skips per-gate norm/OSE reductions
+and printing; it does not disable truncation diagnostics. The runner retains
+`progress=True` as its default for existing callers. The TFI example defaults
+to quiet gate execution and offers `--progress` to enable those reductions.
+
+Public caps round upward to a power of two, matching JAX (1000 becomes 1024).
+Direct gate APIs still enforce exact caps. Public construction pads qubit width
+to 32-bit words; it does not pad the row count. Passing `system_size` permits
+empty observables. Adapter precision defaults to single; the TFI example uses
+double. Backend inference for Triton states does not import JAX or copy GPU
+coefficient arrays to the host.
+
+Basis adjoints are one for strings contributing to the selected X/Z expectation
+and zero otherwise, including explicitly stored zero-primal rows. OSE uses
+`p = c**2 / sum(c**2)` and the reference `1e-12` epsilon convention. Its adjoint
+is `2*c/sum(c**2) * (dOSE/dp - sum(p*dOSE/dp))`; regularization adds this to the
+basis adjoint without changing primal coefficients. All array work stays on GPU
+in [losses.py](losses.py). Positive finite alpha is supported; zero-norm entropy
+reports zero, while requesting its undefined OSE gradient raises `ValueError`.
+
+From the repository root, run the unified example in dimension 2:
+
+```sh
+python examples/gradient/run_tfi_gs.py 2 2 0 --linear-system-size 2 --method eval_only --backend triton --trunc-val 0 --max-num-str 4096 --lambda-ose .1 --alpha 2
+python examples/gradient/run_tfi_gs.py 2 2 2 --linear-system-size 2 --method adam --backend triton --trunc-val 0 --max-num-str 4096 --lambda-ose .1 --alpha 2
+```
+
+Evaluation, Adam, L-BFGS and basinhopping retain the example's output files.
+Run directories include the backend name; metadata records requested/effective
+caps and `native_hash` for Triton's algorithm. `--algorithm` applies only to JAX.
+The storage estimate describes live arrays at the cap, not peak memory.
+The Triton Adam path restricts JAX/Optax to CPU with double precision before
+optimizer initialization, leaving GPU allocation to PyTorch/Triton.
+
+[Milestone 3 validation and performance](MILESTONE3.md) records reference checks,
+independent derivatives and measured costs. L2 losses and the remaining parity
+inventory are milestone 4; broader performance comparisons are milestone 5.

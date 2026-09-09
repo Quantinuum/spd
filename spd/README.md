@@ -7,6 +7,7 @@ This package is organized around sparse-Pauli state objects and backend-specific
 - [`core/`](core/): abstract `SPO` / `SPGO` interfaces
 - [`numpy_backend/`](numpy_backend/): NumPy realization and kernels
 - [`jax_backend/`](jax_backend/): JAX realization and kernels
+- [`triton_backend/`](triton_backend/): native GPU gates and basis/OSE gradient workflows; see its README for remaining parity work
 - [`circuit_ir.py`](circuit_ir.py): backend-agnostic execution IR for supported circuit operations
 - [`openqasm_frontend.py`](openqasm_frontend.py): built-in OpenQASM 2 parser into the internal IR
 - [`pytket_frontend.py`](pytket_frontend.py): parser from `pytket` circuits into the internal IR

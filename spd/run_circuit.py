@@ -7,6 +7,7 @@ points accept an existing backend-specific SPO or SPGO together with either a
 
 from collections.abc import Sequence
 import math
+import sys
 import time
 
 import numpy as np
@@ -69,7 +70,7 @@ def _normalize_max_num_str(backend_name, max_num_str):
     max_num_str = int(max_num_str)
     if max_num_str < 1:
         raise ValueError("max_num_str must be a positive integer.")
-    if backend_name == "jax":
+    if backend_name in ("jax", "triton"):
         return 1 if max_num_str == 1 else 1 << math.ceil(math.log2(max_num_str))
     return max_num_str
 
@@ -97,6 +98,11 @@ def _precision_from_dtype(dtype):
 
 
 def _infer_backend_name_and_precision(state):
+    # Recognize an already-loaded Triton state before importing JAX utilities.
+    triton_module = sys.modules.get("spd.triton_backend")
+    if triton_module is not None and isinstance(state, triton_module.SparsePauliOp):
+        return "triton", "double" if state.c_array.element_size() == 8 else "single"
+
     from . import jax_backend, numpy_backend
 
     if isinstance(state, numpy_backend.SparsePauliOp):
@@ -123,9 +129,8 @@ def _infer_backend_name_and_precision(state):
 
 
 def _resolve_backend_from_state(state, backend, *, state_name="state"):
-    inferred_backend_name, inferred_precision = _infer_backend_name_and_precision(state)
-
     if backend is None:
+        inferred_backend_name, inferred_precision = _infer_backend_name_and_precision(state)
         return _make_backend(
             inferred_backend_name,
             packbit=_PACKBIT,
@@ -231,10 +236,10 @@ def _print_progress(
     )
 
 
-def _run_operation_loop(operations, state, apply_fn, total_start_time):
+def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progress=True):
     """Run operations with shared timing, size, weight, and progress reporting."""
     total_num_gate = len(operations)
-    initial_weight = state.get_norm_square()
+    initial_weight = state.get_norm_square() if progress else None
     max_num_string = 0
     last_stats = None
     history = _init_history()
@@ -250,8 +255,11 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time):
         max_num_string = max(max_num_string, num_string)
         t1 = time.time()
 
+        if not progress:
+            continue
+
         current_weight = state.get_norm_square()
-        weight_left = current_weight / initial_weight
+        weight_left = current_weight / initial_weight if initial_weight else 0.0
         current_row_size = state.get_size()
         ose = state.get_OSE()
         step_time = t1 - t0
@@ -321,7 +329,8 @@ def create_spo(
         return backend.create_initial_spo(data, padded_system_size)
 
     if isinstance(data, dict):
-        return backend.create_initial_spo(data)
+        padded_size = _compute_padded_system_size(system_size, backend.packbit) if system_size is not None else None
+        return backend.create_initial_spo(data, padded_size)
 
     raise ValueError("data must be a list of qubits or a string-key dict of Pauli coefficients.")
 
@@ -335,8 +344,12 @@ def evolve(
     rebase=False,
     save_strings=False,
     backend=None,
+    progress=True,
 ):
-    """Propagate a backend-specific SPO forward through a circuit."""
+    """Propagate an SPO forward; progress=False skips reporting reductions.
+
+    Truncation diagnostics/history are returned regardless of progress.
+    """
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spo, backend, state_name="spo")
     if not backend.is_spo_instance(spo):
@@ -362,6 +375,7 @@ def evolve(
             max_num_str=max_num_str,
         ),
         total_start_time,
+        progress=progress,
     )
 
     if save_strings:
@@ -409,8 +423,12 @@ def backpropagate(
     rebase=False,
     save_strings=False,
     backend=None,
+    progress=True,
 ):
-    """Propagate a backend-specific SPGO backward through a circuit."""
+    """Propagate an SPGO backward; progress=False skips reporting reductions.
+
+    Angle gradients and truncation diagnostics are always returned.
+    """
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
     if not backend.is_spgo_instance(spgo):
@@ -443,6 +461,7 @@ def backpropagate(
         spgo,
         _apply_backward,
         total_start_time,
+        progress=progress,
     )
 
     if save_strings:

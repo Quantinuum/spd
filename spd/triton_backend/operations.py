@@ -123,7 +123,7 @@ def conjugate_pauli_rot_backward(spgo, xzk, theta, trunc_val, max_num_str=None):
     return _rotation(spgo, xzk, theta, trunc_val, max_num_str, True)
 
 
-def create_measurement_op(measurement_dict, padded_system_size):
+def create_measurement_op(measurement_dict, padded_system_size, *, precision=None):
     terms = {}
     for qubits, value in measurement_dict.items():
         pauli = ["I"] * padded_system_size
@@ -134,7 +134,7 @@ def create_measurement_op(measurement_dict, padded_system_size):
             pauli[q] = "Z"
         key = "".join(pauli)
         terms[key] = terms.get(key, 0.) + value
-    return create_op(terms, num_qubits=padded_system_size)
+    return create_op(terms, num_qubits=padded_system_size, precision=precision)
 
 
 def _clifford(state, q, r, op, backward):

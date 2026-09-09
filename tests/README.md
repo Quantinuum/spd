@@ -100,9 +100,25 @@ truncation diagnostics, caps, and collision/compaction stress.
 `test_triton_clifford.py` checks all nine gates in both directions and precisions
 against dense matrices and NumPy, including packed-word boundaries.
 The semantic contract now exercises Triton backward and diagnostic calls.
-Terminal loss and public runner tests remain pending milestone 3.
+Terminal loss and public runner tests were added in milestone 3 below.
 
 ```sh
 python -m pytest -q
 compute-sanitizer --tool memcheck --error-exitcode 1 python -m pytest tests/test_triton_backward.py tests/test_triton_clifford.py -q
 ```
+
+## Triton milestone 3
+
+`test_triton_runner.py` covers terminal basis/OSE adjoints against JAX and
+coefficient finite differences; 2x2/4x4 TFI energies, entropies and parameter
+gradients against both JAX algorithms; independent dense two-layer TFI finite
+differences; capped mixed Clifford/rotation circuits; IR, pickle round trips,
+empty states, precision and backend inference. Subprocess tests run all four
+TFI optimizer modes and assert JAX does not initialize a GPU backend in the
+Triton Adam path. Progress-disabled execution is checked to skip reporting
+reductions while retaining diagnostics.
+
+The mixed capped inverse test permits a one-row discarded-count difference at
+one specific cancellation: JAX may leave a roundoff-sized nonzero primal where
+Triton obtains zero. Norms and state/gradient values must still agree. This is
+separate from the documented JAX stack cutoff-equality bug.

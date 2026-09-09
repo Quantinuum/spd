@@ -399,3 +399,15 @@ def save_run_outputs(
     if result is not None:
         with open(run_dir / "result.pkl", "wb") as f:
             pickle.dump(result, f)
+
+
+def print_backend_memory_estimate(backend, system_size, max_num_str, *, packbit=32, precision="double"):
+    if backend == "jax":
+        return print_jax_memory_estimate(system_size, max_num_str, packbit=packbit, precision=precision)
+    estimate = estimate_jax_memory_usage(system_size, max_num_str, packbit=packbit, precision=precision)
+    estimate["scope"] = "live array storage at effective cap; excludes workspace and allocator retention"
+    print(f"Triton live arrays at effective cap {estimate['rounded_rows']}: "
+          f"SPO ~{estimate['spo_gib']:.2f} GiB, SPGO ~{estimate['spgo_gib']:.2f} GiB. "
+          "Hash tables, up to 2N output candidates, top-k and retained allocations add to this; "
+          "this is not a peak-memory estimate.")
+    return estimate

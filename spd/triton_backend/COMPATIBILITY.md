@@ -12,7 +12,7 @@ ordinary conformance, and NumPy/dense matrices as independent checks. Private
 sorting kernels, donation, PyTrees, padding, and JAX algorithm switches are not
 Triton requirements.
 
-**User-approved cap policy:** the future public runner rounds `max_num_str`
+**User-approved cap policy:** the public runner rounds `max_num_str`
 upward to the next power of two, like JAX. Thus 1,000,000 has an effective cap
 of 1,048,576. This affects term selection; it does not require padded storage.
 Direct backend rotation calls retain an exact positive integer cap. The existing
@@ -39,15 +39,15 @@ identical optimizer iterates are not required. Row order remains unspecified.
 | Construction/configuration | SPO, SPGO, `create_op`, `create_measurement_op`, `set_precision`, 32-bit packing utilities | Implemented | M2 |
 | Rotation kernels | Standard `conjugate_pauli_rot_forward/backward` signatures and tuples | Implemented; fast helper preserved | M2 |
 | Clifford gates | H, S, Sdg, X, Y, Z, CX, CY, CZ in both directions | Implemented | M2 |
-| Measurements | Size/norm/expectation, OSE and aliases, SPGO `to_spo` | Size/norm/expectation and SPGO to_spo; OSE pending | M2–M3 |
-| Terminal gradients | Basis expectation, OSE initialization/regularization, `init_gradient_spo` | Missing | M3 |
-| Public execution | `BackendAdapter.from_name('triton')`, `create_spo`, `evolve`, `init_gradient_spo`, `backpropagate` | Missing | M3 |
-| Diagnostics/history | Discarded count/L1/L2 and existing history/total fields | Gate diagnostics implemented; history pending | M2–M3 |
+| Measurements | Size/norm/expectation, OSE and aliases, SPGO `to_spo` | Implemented | M2–M3 |
+| Terminal gradients | Basis expectation, OSE initialization/regularization, `init_gradient_spo` | Implemented | M3 |
+| Public execution | `BackendAdapter.from_name('triton')`, `create_spo`, `evolve`, `init_gradient_spo`, `backpropagate` | Implemented | M3 |
+| Diagnostics/history | Discarded count/L1/L2 and existing history/total fields | Implemented | M2–M3 |
 | L2 losses | Restricted-support and union initializers; public `loss_type='l2_difference'` | Missing | M4 |
 | Arithmetic | SPO dot/inner product, add/subtract/scalar multiply; SPGO add/scalar multiply/reverse add | Missing | M4 |
 | Analysis/utilities | Weight distributions/counts and aliases, translation, readable strings, single/batched Pauli products | Missing | M4 |
 | Noise analysis | General/one-/two-qubit susceptibility and `backpropagate_noise_analysis` | Missing | M4 |
-| Frontends/serialization | IR/pytket/OpenQASM, rebase, `save_strings`, parameter-gradient mapping | Shared frontend exists; execution pending | M3–M4 |
+| Frontends/serialization | IR/pytket/OpenQASM, rebase, `save_strings`, parameter-gradient mapping | IR/pytket, serialization and parameter mapping tested; remaining frontend coverage in M4 | M3–M4 |
 
 Cover common NumPy/JAX module exports and abstract object methods, including
 `get_pauli_weight_count`, `get_Pauli_weight_distribution`, `get_OSE`, and
@@ -100,7 +100,7 @@ not the earlier `run_tfi_gs_2d.py`. It uses `tfi_2d_hva` and
 `VariationalCircuit.parameter_gradients`. Preserve shared parameter mapping and
 pytket's pi conversion; do not restore the old hand-grouped gradients.
 
-M3 must add `--backend triton` and make this intended command work:
+M3 supports `--backend triton` and this command:
 
 ```sh
 python examples/gradient/run_tfi_gs.py 2 2 0 --linear-system-size 2 --method eval_only --backend triton --trunc-val 0 --max-num-str 4096
@@ -147,3 +147,5 @@ python -m pytest tests/test_backend_semantic_contract.py tests/test_triton_backe
 ```
 
 M2 implementation and measured costs: [validation report](MILESTONE2.md).
+
+M3 implementation and measured costs: [validation report](MILESTONE3.md).

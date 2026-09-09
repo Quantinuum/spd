@@ -1,6 +1,7 @@
 """Optimize a periodic 1D, 2D, or 3D TFI variational circuit."""
 
 import argparse
+from contextlib import nullcontext
 
 import numpy as np
 import scipy.optimize
@@ -50,6 +51,8 @@ def make_local_tfi_hamiltonian(dimension, linear_system_size, g):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("jax", "triton"), default="jax")
+    parser.add_argument("--progress", action="store_true", help="Print per-gate norm/OSE (adds GPU reductions and readback).")
     parser.add_argument("dimension", type=int, choices=(1, 2, 3))
     parser.add_argument("number_of_parameters", type=int)
     parser.add_argument("niter", type=int)
@@ -80,8 +83,11 @@ def main():
         raise ValueError("basis='0' is only supported for dimension 1.")
 
     precision = "double"
-    backend = spd.BackendAdapter.from_name("jax", packbit=32, precision=precision)
-    backend.module.set_algorithm(args.algorithm)
+    backend = spd.BackendAdapter.from_name(args.backend, packbit=32, precision=precision)
+    if args.backend == "jax":
+        backend.module.set_algorithm(args.algorithm)
+    else:
+        print("Triton uses native hash kernels; --algorithm applies only to JAX.")
 
     trunc_val = args.trunc_val
     if trunc_val is None:
@@ -107,7 +113,9 @@ def main():
         args.g,
     )
     print(f"\nTruncation value: {trunc_val} | max num str: {max_num_str}")
-    memory_estimate = run_utils.print_jax_memory_estimate(
+    effective_max_num_str = 1 << (int(max_num_str) - 1).bit_length()
+    memory_estimate = run_utils.print_backend_memory_estimate(
+        args.backend,
         system_size,
         max_num_str,
         packbit=backend.packbit,
@@ -128,6 +136,7 @@ def main():
         lambda_ose=args.lambda_ose,
         alpha=args.alpha,
     )
+    run_name += f"_{args.backend}"
     run_dir = run_utils.make_run_dir(run_name)
 
     if args.method == "basinhopping":
@@ -154,12 +163,14 @@ def main():
         "hamiltonian": "local_energy",
         "trunc_val": trunc_val,
         "max_num_str": max_num_str,
+        "effective_max_num_str": effective_max_num_str,
         "lambda_ose": args.lambda_ose,
         "alpha": args.alpha,
         "backend": backend.name,
         "precision": precision,
         "packbit": backend.packbit,
-        "algorithm": args.algorithm,
+        "algorithm": args.algorithm if args.backend == "jax" else "native_hash",
+        "progress": args.progress,
         "memory_estimate": memory_estimate,
         "method": args.method,
         "optimizer_options": optimizer_options,
@@ -194,6 +205,7 @@ def main():
             trunc_val,
             max_num_str=max_num_str,
             backend=backend,
+            progress=args.progress,
         )
         energy_error = forward_info["total_truncated_l2_norm"]
         ose = final_spo.get_OSE(alpha=args.alpha)
@@ -211,6 +223,7 @@ def main():
             trunc_val,
             max_num_str=max_num_str,
             backend=backend,
+            progress=args.progress,
         )
         gradients = ansatz.parameter_gradients(gate_gradients)
         cost = energy + args.lambda_ose * ose
@@ -254,17 +267,27 @@ def main():
     result = None
     final_thetas = initial_thetas
     if args.method == "adam":
+        # Restrict JAX before Optax initialization: default_device alone can
+        # still initialize the GPU backend while discovering CPU devices.
+        if args.backend == "triton":
+            import jax
+            jax.config.update("jax_platforms", "cpu")
+            jax.config.update("jax_enable_x64", precision == "double")
+            optimizer_context = jax.default_device(jax.devices("cpu")[0])
+        else:
+            optimizer_context = nullcontext()
         import optax
 
-        optimizer = optax.adam(learning_rate=optimizer_options["learning_rate"])
-        opt_state = optimizer.init(initial_thetas)
-        final_thetas = initial_thetas.copy()
-        for step in range(args.niter):
-            print(f"\nStep {step}: {final_thetas}")
-            _, gradients = get_f_g(final_thetas)
-            updates, opt_state = optimizer.update(gradients, opt_state)
-            final_thetas = optax.apply_updates(final_thetas, updates)
-            log_step(final_thetas)
+        with optimizer_context:
+            optimizer = optax.adam(learning_rate=optimizer_options["learning_rate"])
+            opt_state = optimizer.init(initial_thetas)
+            final_thetas = initial_thetas.copy()
+            for step in range(args.niter):
+                print(f"\nStep {step}: {final_thetas}")
+                _, gradients = get_f_g(final_thetas)
+                updates, opt_state = optimizer.update(gradients, opt_state)
+                final_thetas = np.asarray(optax.apply_updates(final_thetas, updates))
+                log_step(final_thetas)
     elif args.method == "basinhopping":
         result = scipy.optimize.basinhopping(
             get_f_g,

@@ -110,6 +110,8 @@ class BackendAdapter:
             from . import numpy_backend as backend_module
         elif backend_name == "jax":
             from . import jax_backend as backend_module
+        elif backend_name == "triton":
+            from . import triton_backend as backend_module
         else:
             raise ValueError(f"Unsupported backend: {backend_name}")
 
@@ -117,8 +119,17 @@ class BackendAdapter:
 
     def create_initial_spo(self, measure_qubits_data, padded_system_size=None):
         if isinstance(measure_qubits_data, dict):
+            if self.name == "triton" and not measure_qubits_data:
+                if padded_system_size is None:
+                    raise ValueError("system_size is required for an empty observable.")
+                return self.module.create_op({}, num_qubits=padded_system_size, precision=self.precision)
             key = next(iter(measure_qubits_data))
             if isinstance(key, str):
+                if self.name == "triton":
+                    width = padded_system_size or self.packbit * (
+                        (max(map(len, measure_qubits_data)) + self.packbit - 1) // self.packbit
+                    )
+                    return self.module.create_op(measure_qubits_data, num_qubits=width, precision=self.precision)
                 return self.module.create_op(measure_qubits_data)
             if isinstance(key, tuple):
                 raise ValueError(
@@ -133,6 +144,8 @@ class BackendAdapter:
                     "padded_system_size is required when measure_qubits_data is a list of qubits."
                 )
             measurement_dict = {tuple(measure_qubits_data): 1.0}
+            if self.name == "triton":
+                return self.module.create_measurement_op(measurement_dict, padded_system_size, precision=self.precision)
             return self.module.create_measurement_op(measurement_dict, padded_system_size)
 
         raise ValueError("measure_qubits_data must be a dict or list")
@@ -164,7 +177,9 @@ class BackendAdapter:
 
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
-            xzk = self.utils.pauli_str_to_uint(operation.pauli)
+            # Reuse Triton's cached string packing, ignoring frontend identity padding.
+            xzk = (operation.pauli.rstrip("I") if self.name == "triton"
+                   else self.utils.pauli_str_to_uint(operation.pauli))
             next_state, num_string, step_info = self.module.conjugate_pauli_rot_forward(
                 spo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
             )
@@ -189,7 +204,9 @@ class BackendAdapter:
 
     def apply_backward(self, spgo, operation, trunc_val, max_num_str):
         if isinstance(operation, PauliRotation):
-            xzk = self.utils.pauli_str_to_uint(operation.pauli)
+            # Reuse Triton's cached string packing, ignoring frontend identity padding.
+            xzk = (operation.pauli.rstrip("I") if self.name == "triton"
+                   else self.utils.pauli_str_to_uint(operation.pauli))
             return self.module.conjugate_pauli_rot_backward(
                 spgo, xzk, operation.theta, trunc_val, max_num_str=max_num_str
             )
@@ -222,7 +239,7 @@ class BackendAdapter:
         raise ValueError(f"Unsupported operation in backward pass: {operation}")
 
     def is_spo_instance(self, obj) -> bool:
-        return isinstance(obj, self.module.SparsePauliOp)
+        return isinstance(obj, self.module.SparsePauliOp) and not self.is_spgo_instance(obj)
 
     def is_spgo_instance(self, obj) -> bool:
         return isinstance(obj, self.module.SparsePauliGradientOp)
