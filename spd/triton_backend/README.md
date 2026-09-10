@@ -89,9 +89,13 @@ algorithm: distinct input rows cannot create the same missing partner.
 ## What happens for each rotation
 
 1. **Build the index.** Allocate a power-of-two table with at least 2N slots
-   (load factor at most 1/2), filled with -1. `build_index` inserts input row
-   indices using integer atomic compare-and-swap and linear probing. The table
-   stores indices, not coefficients. The build completes before lookups begin.
+   (load factor at most 1/2), filled with -1. The state-only forward path uses
+   `build_anticommuting_index` to insert only anticommuting input row indices:
+   a Pauli and its XOR partner have the same commutation parity with the gate.
+   Predicated integer compare-and-swap avoids atomic traffic for commuting lanes;
+   collisions use linear probing. Other paths retain the full `build_index`.
+   The table stores indices, not coefficients. It is rebuilt at each gate and
+   completes before lookups begin; this is not persistent operator storage.
 2. **Find and update partners.** `rotate` handles 128 input rows per program.
    Each anticommuting row probes for its XOR partner, checking *every packed
    word* before accepting a match. Hash collisions cannot merge different

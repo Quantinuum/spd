@@ -35,6 +35,44 @@ def build_index(keys, table, n, table_mask, W: tl.constexpr, B: tl.constexpr):
 
 
 @triton.jit(do_not_specialize=["n", "table_mask"])
+def build_anticommuting_index(keys, table, gate, n, table_mask,
+                              W: tl.constexpr, B: tl.constexpr):
+    """Index original row IDs only when they can be queried by forward rotate.
+
+    P and P XOR G have identical commutation parity with G, so every needed
+    partner is included. The full index remains available to other callers.
+    """
+    i = tl.program_id(0) * B + tl.arange(0, B)
+    live = i < n
+    parity = tl.full((B,), 0, tl.int32)
+    for w in tl.static_range(W // 2):
+        gx = tl.load(gate + w).to(tl.uint32)
+        gz = tl.load(gate + W // 2 + w).to(tl.uint32)
+        x = tl.load(keys + i.to(tl.int64) * W + w, live, 0).to(tl.uint32)
+        z = tl.load(keys + i.to(tl.int64) * W + W // 2 + w, live, 0).to(tl.uint32)
+        parity += _popc(x & gz) + _popc(z & gx)
+    pending = live & ((parity & 1) != 0)
+    h = tl.full((B,), 0x9e3779b9, tl.uint32)
+    for w in tl.static_range(W):
+        h = _mix(h, tl.load(keys + i.to(tl.int64) * W + w, pending, 0).to(tl.uint32))
+    slot = h & table_mask
+    while tl.sum(pending.to(tl.int32), 0) > 0:
+        # tl.atomic_cas has no mask. Predicate the instruction itself so inactive
+        # lanes do not generate atomic traffic (or contend on a dummy address).
+        old = tl.inline_asm_elementwise(
+            """{ .reg .pred p;
+                 setp.ne.u32 p, $3, 0;
+                 mov.u32 $0, -1;
+                 @p atom.global.cas.b32 $0, [$1], -1, $2;
+            }""",
+            constraints="=r,l,r,r", args=[table + slot, i, pending.to(tl.int32)],
+            dtype=tl.int32, is_pure=False, pack=1,
+        )
+        pending = pending & (old != -1)
+        slot = (slot + pending.to(tl.uint32)) & table_mask
+
+
+@triton.jit(do_not_specialize=["n", "table_mask"])
 def rotate(keys, coeff, table, gate, scalars, out_keys, out_coeff, count,
            n, table_mask, W: tl.constexpr, B: tl.constexpr,
            grad=None, out_grad=None, stats=None, BACKWARD: tl.constexpr = False,

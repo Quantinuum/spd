@@ -21,7 +21,7 @@ if not any(name in os.environ for name in (
     torch.cuda.memory._set_allocator_settings("expandable_segments:True")
 
 from ..circuit_ir import PauliRotation, SkippedOperation
-from .kernels import build_index, rotate
+from .kernels import build_index, build_anticommuting_index, rotate
 from . import utils
 from .utils import set_precision
 from .state_methods import StateMethods
@@ -145,7 +145,7 @@ def conjugate_pauli_rotation(spo, pauli, theta, trunc_val=0., max_num_str=None):
         out_keys = torch.empty((2 * n, width), dtype=torch.int32, device=device)
         out_coeff = torch.empty((2 * n,), dtype=coeff.dtype, device=device)
         grid = ((n + 127) // 128,)
-        build_index[grid](keys, table, n, table_size - 1, width, 128)
+        build_anticommuting_index[grid](keys, table, gate, n, table_size - 1, width, 128)
         rotate[grid](keys, coeff, table, gate, params, out_keys, out_coeff, count,
                      n, table_size - 1, width, 128, enable_fp_fusion=False)
         size = count.item()
