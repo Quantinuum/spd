@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from tests.helpers import assert_phase_close, shift_product_case, u32
+from tests.helpers import assert_phase_close, shift_product_case, u32, as_host
 
 
 @pytest.mark.parametrize(
@@ -21,14 +21,14 @@ from tests.helpers import assert_phase_close, shift_product_case, u32
         *shift_product_case(("XIYIIIII", "ZZIIIIII", "YZYIIIII", -1j)),
     ],
 )
-def test_pauli_product_uint_known_cases(backend, p1, p2, expected_p3, expected_phase):
-    backend_name, module = backend
+def test_pauli_product_uint_known_cases(all_backend, p1, p2, expected_p3, expected_phase):
+    backend_name, module = all_backend
 
     xz1 = u32(module, p1)
     xz2 = u32(module, p2)
 
     xz3, c3 = module.pauli_product_uint(xz1, 1.0, xz2, 1.0)
-    xz3 = np.asarray(xz3)
+    xz3 = as_host(xz3)
 
     got_p3 = module.utils.uint32_to_pauli_str(xz3, 32)[:8]
     assert got_p3 == expected_p3, (
@@ -38,8 +38,8 @@ def test_pauli_product_uint_known_cases(backend, p1, p2, expected_p3, expected_p
 
 
 @pytest.mark.parametrize("c1", [1.0, -0.3, 0.5 + 0.2j])
-def test_pauli_product_batched_second_matches_scalar(backend, c1):
-    backend_name, module = backend
+def test_pauli_product_batched_second_matches_scalar(all_backend, c1):
+    backend_name, module = all_backend
 
     sigma = u32(module, "ZZIIIIII")
     paulis = [
@@ -59,16 +59,16 @@ def test_pauli_product_batched_second_matches_scalar(backend, c1):
         c2_array,
     )
 
-    xz_batch = np.asarray(xz_batch)
-    c_batch = np.asarray(c_batch)
+    xz_batch = as_host(xz_batch)
+    c_batch = as_host(c_batch)
 
     assert xz_batch.shape == xz2_array.shape
     assert c_batch.shape == c2_array.shape
 
     for i in range(len(paulis)):
         xz_ref, c_ref = module.pauli_product_uint(sigma, c1, xz2_array[i], c2_array[i])
-        xz_ref = np.asarray(xz_ref)
+        xz_ref = as_host(xz_ref)
         assert np.array_equal(xz_batch[i], xz_ref), (
             f"{backend_name}: xz mismatch at row {i}"
         )
-        assert_phase_close(c_batch[i], c_ref)
+        assert_phase_close(c_batch[i], complex(c_ref))

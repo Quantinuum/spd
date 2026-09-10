@@ -68,17 +68,22 @@ def init_gradient_from_ose(spo, alpha=1.0):
 
 def init_gradient_spo(spo, *, loss_type="basis_expectation", basis="0",
                       target_spo=None, lambda_ose=0.0, alpha=1.0):
-    """Initialize basis expectation plus optional lambda * OSE on the GPU."""
+    """Initialize basis or restricted L2 loss plus optional lambda * OSE."""
     if loss_type == "l2_difference":
-        raise NotImplementedError("Triton L2 terminal losses are pending milestone 4")
-    if loss_type != "basis_expectation":
+        if target_spo is None:
+            raise ValueError("target_spo must be provided for l2_difference")
+        from .algebra import init_gradient_from_l2_difference
+        result = init_gradient_from_l2_difference(spo, target_spo)
+    elif loss_type == "basis_expectation":
+        result = init_gradient_from_basis_expectation(spo, basis)
+    else:
         raise ValueError(f"Unsupported loss_type: {loss_type}")
     if not math.isfinite(lambda_ose):
         raise ValueError("lambda_ose must be finite")
-    result = init_gradient_from_basis_expectation(spo, basis)
     if lambda_ose != 0:
-        ose = init_gradient_from_ose(spo, alpha)
-        result = SparsePauliGradientOp(spo.xz_array, spo.c_array,
+        # L2 restricted support excludes explicit zero-primal rows.
+        ose = init_gradient_from_ose(result.to_spo(), alpha)
+        result = SparsePauliGradientOp(result.xz_array, result.c_array,
                                       result.grad_c_array + lambda_ose * ose.grad_c_array,
-                                      spo.num_qubits)
+                                      result.num_qubits)
     return result

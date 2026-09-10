@@ -479,6 +479,7 @@ def backpropagate_noise_analysis(
     rebase=False,
     save_strings=False,
     backend=None,
+    progress=True,
 ):
     """Backpropagate an SPGO and measure operation-aligned noise susceptibilities."""
     total_start_time = time.time()
@@ -548,6 +549,7 @@ def backpropagate_noise_analysis(
         spgo,
         _apply_backward,
         total_start_time,
+        progress=progress,
     )
 
     if save_strings:

@@ -4,9 +4,10 @@ import numpy as np
 import torch
 
 from . import SparsePauliOp, create_op, utils
+from ..core import BaseSparsePauliGradientOp
 
 
-class SparsePauliGradientOp(SparsePauliOp):
+class SparsePauliGradientOp(SparsePauliOp, BaseSparsePauliGradientOp):
     """Unique packed keys with primal and adjoint arrays on one GPU.
 
     Arrays supplied directly must contain unique rows. Host arrays are uploaded;

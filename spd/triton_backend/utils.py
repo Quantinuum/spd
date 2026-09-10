@@ -57,3 +57,21 @@ def uint32_to_pauli_str(packed, num_qubits):
 
 
 uint_to_pauli_str = uint32_to_pauli_str
+
+
+def sparse_pauli_op_to_str(spo):
+    keys, c = spo.to_host()
+    lines = ['SparsePauliOp[']
+    for key, coefficient in zip(keys, c):
+        if abs(coefficient) > 1e-6:
+            lines.append(f'  {uint32_to_pauli_str(key, len(key)//2*32)} => {float(coefficient)!r}')
+    return '\n'.join(lines + [']'])
+
+
+def sparse_pauli_grad_op_to_str(spgo):
+    keys, c, g = spgo.to_host()
+    lines = ['SparsePauliGradientOp[']
+    for key, coefficient, gradient in zip(keys, c, g):
+        if abs(coefficient) > 1e-6 or abs(gradient) > 1e-6:
+            lines.append(f'  {uint32_to_pauli_str(key, len(key)//2*32)} => coeff={float(coefficient)!r}, grad={float(gradient)!r}')
+    return '\n'.join(lines + [']'])

@@ -1,8 +1,8 @@
 # Triton compatibility contract and parity milestones
 
-Milestone 1, based on commit `1a8cedc`. This document defines the implementation
-target; it does not claim pending features already work. Preserve the native
-forward implementation as the performance baseline.
+Contract established in milestone 1, based on commit `1a8cedc`. The inventory
+below is implemented through milestone 4; milestone 5 covers broader performance
+validation. Preserve the native forward implementation as the performance baseline.
 
 ## Reference and approved decisions
 
@@ -43,11 +43,11 @@ identical optimizer iterates are not required. Row order remains unspecified.
 | Terminal gradients | Basis expectation, OSE initialization/regularization, `init_gradient_spo` | Implemented | M3 |
 | Public execution | `BackendAdapter.from_name('triton')`, `create_spo`, `evolve`, `init_gradient_spo`, `backpropagate` | Implemented | M3 |
 | Diagnostics/history | Discarded count/L1/L2 and existing history/total fields | Implemented | M2–M3 |
-| L2 losses | Restricted-support and union initializers; public `loss_type='l2_difference'` | Missing | M4 |
-| Arithmetic | SPO dot/inner product, add/subtract/scalar multiply; SPGO add/scalar multiply/reverse add | Missing | M4 |
-| Analysis/utilities | Weight distributions/counts and aliases, translation, readable strings, single/batched Pauli products | Missing | M4 |
-| Noise analysis | General/one-/two-qubit susceptibility and `backpropagate_noise_analysis` | Missing | M4 |
-| Frontends/serialization | IR/pytket/OpenQASM, rebase, `save_strings`, parameter-gradient mapping | IR/pytket, serialization and parameter mapping tested; remaining frontend coverage in M4 | M3–M4 |
+| L2 losses | Restricted-support and union initializers; public `loss_type='l2_difference'` | Implemented | M4 |
+| Arithmetic | SPO dot/inner product, add/subtract/scalar multiply; SPGO add/scalar multiply/reverse add | Implemented | M4 |
+| Analysis/utilities | Weight distributions/counts and aliases, translation, readable strings, single/batched Pauli products | Implemented | M4 |
+| Noise analysis | General/one-/two-qubit susceptibility and `backpropagate_noise_analysis` | Implemented | M4 |
+| Frontends/serialization | IR/pytket/OpenQASM, rebase, `save_strings`, parameter-gradient mapping | IR/pytket/OpenQASM, rebase, serialization and parameter mapping tested | M3–M4 |
 
 Cover common NumPy/JAX module exports and abstract object methods, including
 `get_pauli_weight_count`, `get_Pauli_weight_distribution`, `get_OSE`, and
@@ -55,6 +55,11 @@ arithmetic aliases. Backend-specific array layouts/constructors may differ.
 Support Linux/NVIDIA, 32-bit packed words, and float32/float64 real states.
 Pauli product utilities must still support their documented complex phases.
 Do not register success-returning stubs to satisfy an interface check.
+
+**User-approved arithmetic policy (M4):** addition removes exact zero sums,
+matching JAX. SPGO keeps nonzero adjoint-only rows. Scalar multiplication retains
+the reference near-zero scalar rule (absolute tolerance 1e-8). NumPy addition
+has a different near-zero rule, so tiny residual supports need not match it.
 
 ## Numerical and execution rules
 
@@ -149,3 +154,5 @@ python -m pytest tests/test_backend_semantic_contract.py tests/test_triton_backe
 M2 implementation and measured costs: [validation report](MILESTONE2.md).
 
 M3 implementation and measured costs: [validation report](MILESTONE3.md).
+
+M4 implementation and measured costs: [validation report](MILESTONE4.md).

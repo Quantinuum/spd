@@ -15,6 +15,8 @@ from ..circuit_ir import PauliRotation, SkippedOperation
 from .kernels import build_index, rotate
 from . import utils
 from .utils import set_precision
+from .state_methods import StateMethods
+from ..core import BaseSparsePauliOp
 
 
 def _pack(pauli, num_qubits):
@@ -31,7 +33,7 @@ def _pack(pauli, num_qubits):
     return key.view(np.int32)
 
 
-class SparsePauliOp:
+class SparsePauliOp(StateMethods, BaseSparsePauliOp):
     """Unique packed Pauli rows and real coefficients resident on one GPU.
 
     Construct with create_op; rotations return new states and preserve inputs.
@@ -161,3 +163,22 @@ from .gradient import SparsePauliGradientOp, create_gradient_op
 from .operations import *
 
 from .losses import init_gradient_from_basis_expectation, init_gradient_from_ose, init_gradient_spo
+
+from .algebra import init_gradient_from_l2_difference, init_gradient_from_l2_difference_union
+from .analysis import (
+    get_depolarizing_susceptibility, get_one_qubit_depolarizing_susceptibility,
+    get_two_qubit_depolarizing_susceptibility, pauli_product_uint,
+    pauli_product_batched_second_uint,
+)
+
+from .operations import __all__ as _gate_exports
+
+__all__ = _gate_exports + [
+    'SparsePauliOp', 'SparsePauliGradientOp', 'create_op', 'create_gradient_op',
+    'conjugate_pauli_rotation', 'evolve_step', 'set_precision', 'utils',
+    'init_gradient_from_basis_expectation', 'init_gradient_from_ose', 'init_gradient_spo',
+    'init_gradient_from_l2_difference', 'init_gradient_from_l2_difference_union',
+    'get_depolarizing_susceptibility', 'get_one_qubit_depolarizing_susceptibility',
+    'get_two_qubit_depolarizing_susceptibility', 'pauli_product_uint',
+    'pauli_product_batched_second_uint',
+]

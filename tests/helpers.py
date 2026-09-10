@@ -3,6 +3,10 @@ import numpy as np
 from spd.backend_adapter import BackendAdapter
 
 
+def as_host(value):
+    return value.detach().cpu().numpy() if hasattr(value, "detach") else np.asarray(value)
+
+
 def u32(module, pstr):
     return np.asarray(module.utils.pauli_str_to_uint32(pstr))
 
@@ -47,9 +51,9 @@ def assert_info_consistent(info, expected_steps=None, atol=1e-6):
 def to_term_dict(backend_name, module, spo, n_qubits=8):
     terms = {}
 
-    if backend_name == "jax":
-        xz_rows = np.asarray(spo.xz_array)
-        c_vals = np.asarray(spo.c_array)
+    if backend_name in ("jax", "triton"):
+        xz_rows = as_host(spo.xz_array)
+        c_vals = as_host(spo.c_array)
         for xz, c in zip(xz_rows, c_vals):
             if np.isclose(np.real(c), 0.0):
                 continue
@@ -66,10 +70,10 @@ def to_term_dict(backend_name, module, spo, n_qubits=8):
 def to_grad_term_dict(backend_name, module, spgo, n_qubits=8):
     terms = {}
 
-    if backend_name == "jax":
-        xz_rows = np.asarray(spgo.xz_array)
-        c_vals = np.asarray(spgo.c_array)
-        grad_vals = np.asarray(spgo.grad_c_array)
+    if backend_name in ("jax", "triton"):
+        xz_rows = as_host(spgo.xz_array)
+        c_vals = as_host(spgo.c_array)
+        grad_vals = as_host(spgo.grad_c_array)
         for xz, c, grad in zip(xz_rows, c_vals, grad_vals):
             if np.isclose(np.real(c), 0.0) and np.isclose(np.real(grad), 0.0):
                 continue

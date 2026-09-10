@@ -5,7 +5,8 @@ in [the compatibility contract](COMPATIBILITY.md).
 
 Forward and backward gate evolution of real sparse Pauli observables on NVIDIA GPUs. PyTorch owns
 GPU tensors and supplies allocation, reductions, and optional top-k; Triton
-compiles the custom kernels in [kernels.py](kernels.py). Python dispatches
+compiles the gate kernels in [kernels.py](kernels.py) and on-demand algebra/analysis
+kernels in [auxiliary_kernels.py](auxiliary_kernels.py). Python dispatches
 rotations but never loops over the observable's coefficients.
 
 ```sh
@@ -111,9 +112,10 @@ JAX. The same algorithm could be exposed through a JAX custom GPU kernel.
 
 ## Test coverage and current scope
 
-Triton does **not** have feature/coverage parity with the complete NumPy/JAX
-backends. Public adapter/runner execution and the TFI gradient workflow are
-supported; the remaining functionality is listed below.
+Triton implements the common public NumPy/JAX functionality in the
+[compatibility inventory](COMPATIBILITY.md), with its documented numerical and
+storage differences. Functional coverage includes shared reference tests and
+independent GPU stress tests; this is not a claim of identical branch coverage.
 
 | Area | Triton validation |
 |---|---|
@@ -128,7 +130,7 @@ supported; the remaining functionality is listed below.
 | Backward gates | Coefficients, adjoints, parameter gradients, gradient-only support, threshold/cap diagnostics; NumPy/JAX and dense finite differences |
 | Clifford gates | H/S/Sdg/X/Y/Z/CX/CY/CZ, both directions and precisions; dense matrices and cross-word placements |
 | Terminal losses / public runner | Basis/OSE adjoints, regularization, energy/OSE/parameter gradients, progress control, IR/pytket and serialization |
-| Not implemented | L2 losses, arithmetic/translation, weight/product utilities and noise susceptibility |
+| Algebra / analysis | L2 losses, arithmetic and dot, translation, weights, complex Pauli products, and noise susceptibility |
 
 Forward-only baseline validation on the H100: **679 repository tests passed**,
 including **122 Triton/import-focused cases**. CUDA Compute Sanitizer memcheck
@@ -277,5 +279,70 @@ The Triton Adam path restricts JAX/Optax to CPU with double precision before
 optimizer initialization, leaving GPU allocation to PyTorch/Triton.
 
 [Milestone 3 validation and performance](MILESTONE3.md) records reference checks,
-independent derivatives and measured costs. L2 losses and the remaining parity
-inventory are milestone 4; broader performance comparisons are milestone 5.
+independent derivatives and measured costs. Milestone 4 adds the common algebra/
+analysis APIs below; broader performance comparisons are milestone 5.
+
+
+## Algebra and analysis (milestone 4)
+
+These operations run on demand and add no work to the fast rotation path.
+
+| Operation | API |
+|---|---|
+| Coefficient inner product | `a.dot(b)`, `a.inner_product(b)` |
+| SPO/SPGO arithmetic | `a + b`, `a - b`, `scalar * a`, `a * scalar`, `sum(states)` |
+| L2 adjoint on current support | `init_gradient_from_l2_difference(a, target)` or public `init_gradient_spo(..., loss_type="l2_difference", target_spo=target)` |
+| L2 adjoint on union support | `init_gradient_from_l2_difference_union(a, target)` |
+| Pauli weight | `get_pauli_weight_distribution()`, `get_pauli_weight_counts()` and existing aliases |
+| Physical-site translation | `state.translate(shift, system_size)` |
+| Complex Pauli multiplication | `pauli_product_uint(xz1, c1, xz2, c2)`, `pauli_product_batched_second_uint(xz1, c1, keys, coefficients)` |
+| Depolarizing susceptibility | `get_depolarizing_susceptibility(spgo, qubits)` and one-/two-qubit wrappers |
+| Circuit-aligned noise gradients | Public `spd.backpropagate_noise_analysis(..., progress=False)` |
+| Readable state | `str(state)`, `repr(state)` |
+
+Sparse alignment uses the existing hash-table builder and a new exact-key lookup
+kernel in [auxiliary_kernels.py](auxiliary_kernels.py). A match gives the other
+operand's row index; absent rows get zero coefficients. Addition emits each left
+row with its combined value, then unmatched right rows. Matching writes are
+unique, so no floating-point atomic accumulation or global key sort is needed.
+PyTorch compacts the resulting arrays. Dot multiplies matched coefficients and
+reduces them. Inputs must have matching packed widths, device and precision;
+explicit constructors/factories continue to require unique packed keys.
+
+**Approved arithmetic rule:** addition removes only exact zero sums, matching
+JAX. SPGO retains rows with either nonzero primal or nonzero adjoint. This differs
+from NumPy's near-zero addition rule. Scalar multiplication follows the existing
+reference near-zero scalar rule (`abs(scalar) <= 1e-8` after precision conversion),
+returning an empty state with the same width. Other operations preserve inputs.
+
+L2 uses `g = 2*(c - target_c)`. The restricted initializer includes only nonzero
+current primal support; the union initializer also includes nonzero target-only
+rows with `c=0`. Explicit zero rows are excluded from both support definitions.
+Public L2 initialization supports OSE regularization on the restricted support.
+No gradient is implied through hard support selection.
+
+Translation rotates the first `system_size` sites to the right, accepts negative
+and wrapped shifts, and preserves suffix bits. It moves packed words directly,
+without unpacking a row into a full bit array; primal and adjoint arrays can be
+shared because their values do not change. Weight counts include explicitly
+stored zero-primal rows, with zero mass in the distribution, and exclude any
+nonexistent padding rows. Only the small weight histograms are copied to CPU.
+Readable strings intentionally copy state arrays to CPU and omit rows whose
+primal and adjoint magnitudes are both at most 1e-6, like the reference format.
+
+Pauli products accept NumPy packed arrays or CUDA int32/uint32 tensors and return
+CUDA int32 packed keys plus complex coefficients. A population-count kernel
+computes the exact phase in `{1, -i, -1, i}`; float64/complex128 inputs retain double
+precision. Complex products do not change the real-coefficient SPO/SPGO contract.
+
+Noise susceptibility is `-sum(c*g)` over rows nonidentity on any requested site,
+with each row counted once even for two sites. A fused kernel forms block partials
+and reduces them to the returned scalar. Circuit noise analysis retains the
+existing operation-aligned output, skipped-operation zeros and gate ordering.
+`progress=False` skips reporting-only norm/OSE reductions but retains noise and
+truncation diagnostics. OpenQASM IR, pytket rebase and serialization work through
+the shared runner.
+
+[Milestone 4 validation and costs](MILESTONE4.md) records tests and measurements.
+JAX-specific sorting APIs, PyTrees, donation and internal kernel helpers are not
+part of the common backend contract.

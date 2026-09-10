@@ -152,7 +152,7 @@ def test_empty_zero_and_invalid_terminal_losses():
     for alpha in [0., -1., np.nan, np.inf]:
         with pytest.raises(ValueError, match="alpha"):
             gpu.create_op({"Z": 1.}).get_OSE(alpha)
-    with pytest.raises(NotImplementedError, match="milestone 4"):
+    with pytest.raises(ValueError, match="target_spo"):
         spd.init_gradient_spo(gpu.create_op({"Z": 1.}), loss_type="l2_difference")
 
 

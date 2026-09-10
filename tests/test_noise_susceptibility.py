@@ -92,6 +92,11 @@ def _dense_expectation(
 
 
 def _backend(backend_name):
+    if backend_name == "triton":
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("triton")
+        if not torch.cuda.is_available():
+            pytest.skip("requires NVIDIA GPU")
     backend = spd.BackendAdapter.from_name(backend_name, packbit=32, precision="double")
     if backend_name == "jax":
         backend.module.set_algorithm("stack_sort_merge")
@@ -112,7 +117,7 @@ def _make_spgo(backend_name, terms):
     return module.SparsePauliGradientOp(rows, coeffs, grads)
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_depolarizing_susceptibility_kernel_uses_x_y_and_z_support(backend_name):
     backend = _backend(backend_name)
     spgo = _make_spgo(
@@ -133,7 +138,7 @@ def test_depolarizing_susceptibility_kernel_uses_x_y_and_z_support(backend_name)
     assert np.isclose(float(np.asarray(one_qubit)), -32.0)
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_noise_analysis_aligns_with_rx_rzz_operations_and_matches_backpropagate(backend_name):
     backend = _backend(backend_name)
     operations = (
@@ -181,7 +186,7 @@ def test_noise_analysis_aligns_with_rx_rzz_operations_and_matches_backpropagate(
     assert_info_consistent(info, expected_steps=len(operations))
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_per_gate_and_total_susceptibility_match_dense_finite_difference(backend_name):
     backend = _backend(backend_name)
     operations = (
@@ -239,7 +244,7 @@ def test_per_gate_and_total_susceptibility_match_dense_finite_difference(backend
     assert np.isclose(sum(actual_per_gate), common_p_grad, atol=1e-7)
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_one_qubit_susceptibilities_match_dense_finite_difference(backend_name):
     backend = _backend(backend_name)
     operations = (
@@ -308,7 +313,7 @@ def test_one_qubit_susceptibilities_match_dense_finite_difference(backend_name):
     assert np.isclose(sum(actual), expected_total, atol=1e-7)
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_noise_analysis_aligns_cliffords_and_skipped_operations(backend_name):
     backend = _backend(backend_name)
     circuit_ir = CircuitIR(
@@ -338,7 +343,7 @@ def test_noise_analysis_aligns_cliffords_and_skipped_operations(backend_name):
     assert all(values[2] == 0 for values in noise_grads.values())
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_noise_analysis_rejects_rotation_with_more_than_two_qubits(backend_name):
     backend = _backend(backend_name)
     operations = (PauliRotation("three_qubit_rotation", "XXX", 0.2),)
@@ -357,7 +362,7 @@ def test_noise_analysis_rejects_rotation_with_more_than_two_qubits(backend_name)
         )
 
 
-@pytest.mark.parametrize("backend_name", ["numpy", "jax"])
+@pytest.mark.parametrize("backend_name", ["numpy", "jax", "triton"])
 def test_noise_analysis_rejects_raw_operation_sequences(backend_name):
     backend = _backend(backend_name)
     operations = [PauliRotation("RX", "X", 0.2)]

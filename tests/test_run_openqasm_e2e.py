@@ -5,7 +5,8 @@ from spd.openqasm_frontend import parse_openqasm_str
 from tests.helpers import assert_info_consistent, make_initial_spo
 
 
-def test_openqasm_ir_single_qubit_rx_z_expectation(backend_name):
+def test_openqasm_ir_single_qubit_rx_z_expectation(all_backend):
+    backend_name, _ = all_backend
     source = """
     OPENQASM 2.0;
     include "qelib1.inc";
@@ -22,7 +23,8 @@ def test_openqasm_ir_single_qubit_rx_z_expectation(backend_name):
     assert_info_consistent(info, expected_steps=1)
 
 
-def test_openqasm_ir_backward_single_parameter_gradient(backend_name):
+def test_openqasm_ir_backward_single_parameter_gradient(all_backend):
+    backend_name, _ = all_backend
     source = """
     OPENQASM 2.0;
     include "qelib1.inc";

@@ -136,7 +136,7 @@ def test_backward_gradient_only_support_follows_coefficient_cutoff(engine, cutof
         assert len(gradients) == 0
 
 
-@pytest.mark.parametrize("engine", REFERENCES, indirect=True)
+@pytest.mark.parametrize("engine", REFERENCES + ["triton"], indirect=True)
 def test_l2_initializer_support_and_union_are_distinct(engine):
     name, module = engine
     initial = module.create_op({"X": 1.})
@@ -147,6 +147,9 @@ def test_l2_initializer_support_and_union_are_distinct(engine):
     def pairs(state):
         if name == "numpy":
             return sorted(state.values())
+        if name == "triton":
+            _, c, g = state.to_host()
+            return sorted(zip(c, g))
         return sorted((c, g) for c, g in zip(np.asarray(state.c_array), np.asarray(state.grad_c_array))
                       if c != 0 or g != 0)
 

@@ -122,3 +122,15 @@ The mixed capped inverse test permits a one-row discarded-count difference at
 one specific cancellation: JAX may leave a roundoff-sized nonzero primal where
 Triton obtains zero. Norms and state/gradient values must still agree. This is
 separate from the documented JAX stack cutoff-equality bug.
+
+## Triton milestone 4
+
+The `all_backend` fixture runs shared arithmetic, complex Pauli-product and
+OpenQASM runner cases against NumPy, JAX and Triton. Noise cases also include
+Triton, including dense finite differences. `test_triton_algebra_analysis.py`
+adds sparse-join collision/compaction stress, empty and zero support, L2/OSE
+finite differences, packed-prefix translation with nonzero suffixes, weight
+histograms, complex multiword phases, rebase, and abstract/export checks.
+
+Validation: **1,077 passed, 1 expected failure**; new GPU memory checks:
+**77 passed, 0 errors**. See the [milestone report](../spd/triton_backend/MILESTONE4.md).

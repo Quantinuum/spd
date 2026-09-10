@@ -17,6 +17,8 @@ def _assert_grad_term_dict_matches(actual, expected, atol=1e-6):
 
 
 def _make_spgo(backend_name, module, terms):
+    if backend_name == "triton":
+        return module.create_gradient_op(terms, precision="single")
     if backend_name == "jax":
         xz_rows = np.asarray([module.utils.pauli_str_to_uint32(pstr) for pstr in terms])
         coeffs = np.asarray([terms[pstr][0] for pstr in terms], dtype=np.float32)
@@ -36,8 +38,8 @@ def _make_jax_spo(module, terms, *, lexsorted=False):
     return module.SparsePauliOp(xz_rows, coeffs, lexsorted=lexsorted)
 
 
-def test_spo_arithmetic_exact(backend):
-    backend_name, module = backend
+def test_spo_arithmetic_exact(all_backend):
+    backend_name, module = all_backend
     spo_a = module.create_op({"Z": 1.0, "X": -0.5})
     spo_b = module.create_op({"Z": -0.25, "Y": 2.0})
 
@@ -52,8 +54,8 @@ def test_spo_arithmetic_exact(backend):
     assert cancelled_terms == {}
 
 
-def test_spgo_arithmetic_exact(backend):
-    backend_name, module = backend
+def test_spgo_arithmetic_exact(all_backend):
+    backend_name, module = all_backend
     spgo_a = _make_spgo(backend_name, module, {"Z": (1.0, 0.2), "X": (-0.5, 0.1)})
     spgo_b = _make_spgo(backend_name, module, {"Z": (-0.25, 0.3), "Y": (2.0, -1.0)})
 
@@ -158,8 +160,8 @@ def test_jax_spgo_add_handles_non_power_of_two_merged_size():
     )
 
 
-def test_spgo_to_spo_keeps_primal_coefficients(backend):
-    backend_name, module = backend
+def test_spgo_to_spo_keeps_primal_coefficients(all_backend):
+    backend_name, module = all_backend
     spgo = _make_spgo(
         backend_name,
         module,
@@ -261,8 +263,8 @@ def test_jax_spgo_to_spo_preserves_lexsorted_metadata():
     _assert_term_dict_matches(to_term_dict("jax", jax_backend, spo, n_qubits=1), {"Z": 1.0, "X": -0.5, "Y": 2.0})
 
 
-def test_init_gradient_from_l2_difference_exact(backend):
-    backend_name, module = backend
+def test_init_gradient_from_l2_difference_exact(all_backend):
+    backend_name, module = all_backend
     spo = module.create_op({"Z": 1.0, "X": 0.5})
     target_spo = module.create_op({"Z": 0.25, "Y": -1.0})
 
@@ -272,8 +274,8 @@ def test_init_gradient_from_l2_difference_exact(backend):
     _assert_grad_term_dict_matches(grad_terms, {"Z": (1.0, 1.5), "X": (0.5, 1.0), "Y": (0.0, 2.0)})
 
 
-def test_init_gradient_from_l2_difference_current_support_exact(backend):
-    backend_name, module = backend
+def test_init_gradient_from_l2_difference_current_support_exact(all_backend):
+    backend_name, module = all_backend
     spo = module.create_op({"Z": 1.0, "X": 0.5})
     target_spo = module.create_op({"Z": 0.25, "Y": -1.0})
 
@@ -283,8 +285,8 @@ def test_init_gradient_from_l2_difference_current_support_exact(backend):
     _assert_grad_term_dict_matches(grad_terms, {"Z": (1.0, 1.5), "X": (0.5, 1.0)})
 
 
-def test_init_gradient_from_ose_exact_for_equal_weights(backend):
-    backend_name, module = backend
+def test_init_gradient_from_ose_exact_for_equal_weights(all_backend):
+    backend_name, module = all_backend
     spo = module.create_op({"Z": 1.0, "X": 1.0})
 
     spgo = module.init_gradient_from_ose(spo, alpha=1.0)
