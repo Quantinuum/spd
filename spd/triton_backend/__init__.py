@@ -7,9 +7,18 @@ int32 tensors with identical bits.
 
 from functools import lru_cache
 import math
+import os
 
 import numpy as np
 import torch
+
+# Growing supports otherwise retain many differently sized cached allocations.
+# Apply once, including when torch was imported earlier; this does not initialize
+# CUDA. Explicit process-wide allocator configuration always takes precedence.
+if not any(name in os.environ for name in (
+    "PYTORCH_CUDA_ALLOC_CONF", "PYTORCH_ALLOC_CONF",
+)):
+    torch.cuda.memory._set_allocator_settings("expandable_segments:True")
 
 from ..circuit_ir import PauliRotation, SkippedOperation
 from .kernels import build_index, rotate

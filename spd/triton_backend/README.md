@@ -1,5 +1,9 @@
 # Native GPU sparse Pauli dynamics
 
+[Milestone 5 closing report](MILESTONE5.md): end-to-end TFI gradients,
+cuPauliProp/MonoProp forward comparisons, and measured peak memory. Production
+semantics and the fast API are unchanged.
+
 The next implementation milestones and chosen reference semantics are recorded
 in [the compatibility contract](COMPATIBILITY.md).
 
@@ -24,6 +28,33 @@ state = evolve_step(state, operations, trunc_val=2**-18)
 print(state.get_expectation_value("Z"))
 keys, coefficients = state.to_host()
 ```
+
+## CUDA allocator default
+
+Importing the Triton backend enables PyTorch's `expandable_segments:True` when
+neither `PYTORCH_CUDA_ALLOC_CONF` nor `PYTORCH_ALLOC_CONF` is set. This process-wide
+setting also applies when PyTorch was initialized earlier; it does not itself
+initialize CUDA. Plain `import spd` does not change the allocator. Any explicit
+allocator environment configuration takes precedence, without modification.
+
+To turn it off, start a fresh process with:
+
+```sh
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False \
+  python examples/benchmark_2d_obc_xx_z_stepwise.py --backend triton
+```
+
+Use the same prefix for other scripts, or set the environment variable before
+importing the backend in a fresh notebook kernel. Applications configuring the
+allocator programmatically should also set this environment variable to opt out
+of SPD's default. Initialization uses PyTorch's private allocator-settings helper,
+validated with PyTorch 2.8; this is a compatibility point to check on upgrades.
+
+On the measured H100 runs this reduced peak reservation from 78.3 to 2.82 GiB
+at 14 steps and from 78.5 to 65.85 GiB at 23 steps, without a detectable slowdown.
+See the [allocator investigation](../../benchmarks/ALLOCATOR_RETENTION.md) for
+measurements and the remaining live-memory requirements. Kernels, numerical
+semantics and the fast API are unchanged.
 
 ## Representation and pair update
 

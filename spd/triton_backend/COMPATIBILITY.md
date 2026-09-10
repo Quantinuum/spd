@@ -156,3 +156,6 @@ M2 implementation and measured costs: [validation report](MILESTONE2.md).
 M3 implementation and measured costs: [validation report](MILESTONE3.md).
 
 M4 implementation and measured costs: [validation report](MILESTONE4.md).
+
+M5 closing performance and peak-memory validation: [report](MILESTONE5.md).
+The approved semantics and production implementation are unchanged.

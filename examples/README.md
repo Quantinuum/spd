@@ -63,3 +63,53 @@ Several example scripts depend on checked-in data files:
 - `.pkl` files under [`gradient/`](gradient/)
 
 For stable regression coverage, prefer the test suite in [`tests/`](../tests/) rather than relying on scripts in this directory.
+
+## Stepwise cuPauliProp benchmark
+
+[`benchmark_2d_obc_xx_z_cupauliprop_stepwise.py`](benchmark_2d_obc_xx_z_cupauliprop_stepwise.py)
+is the cuPauliProp counterpart of
+[`benchmark_2d_obc_xx_z_stepwise.py`](benchmark_2d_obc_xx_z_stepwise.py).
+It uses the same numerical defaults: 11×11 OBC, dt=.04, total_t=.92,
+h=3.044382, cutoff=2^-18, double precision and 23 steps. It shares the original
+circuit builder to preserve gate ordering and angle conventions. No top-k cap
+is applied; the original default cap of 1e9 does not bind on this problem.
+
+Install `cuquantum-python-cu12==26.6.0` and `cupy-cuda12x==14.2.0` in the
+benchmark environment, alongside SPD and pytket. From the repository root:
+
+```sh
+python examples/benchmark_2d_obc_xx_z_cupauliprop_stepwise.py --output-dir /tmp/cupauliprop
+# In this Studio, the external packages live in a separate target directory:
+PYTHONPATH=/tmp/spd-m5-packages:$PWD \
+  python examples/benchmark_2d_obc_xx_z_cupauliprop_stepwise.py --allocator async --output-dir /tmp/cupauliprop-async
+```
+
+The script defaults to `--allocator async`, which completed all 23 steps on
+the H100. `--allocator default` selects the usual CuPy caching pool, which ran
+out of memory during step 23. Async was about 20% slower over the shared 22
+steps; the full-run file consistently uses async for every step. Plot the two
+policies as separate series. `--memory-limit` controls cuPauliProp's scratch
+budget (default `80%`); it is not a hard bound on total device memory.
+All numerical parameters remain unchanged. Both settings are saved in metadata.
+
+The output filename is
+`cupauliprop_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl`.
+Its six fields exactly match the original plotting format:
+
+- `num_paulis`, `times`, `norms`: one entry per completed step; norms are square roots, not squared norms.
+- `all_results`: initial expectation followed by each completed step.
+- `avg_num_paulis`, `avg_speeds`: begin at step 2, as in the original script.
+  Throughput is boundary-average support × 341 / seconds, not an instrumented count of intermediate rows.
+
+Each step warms once from the same input, then times a synchronized second pass.
+Observations and checkpoint writes are outside that timer. The pickle is updated
+after every completed step, so an interrupted run remains usable. Versions,
+configuration and timing policy live in a separate `.metadata.json` file without
+changing the plotting dictionary. `--num-steps` supports bounded runs.
+
+[Generated default-parameter runs](../benchmarks/results/cupauliprop_default/)
+and [`compare_stepwise_results.py`](compare_stepwise_results.py) provide numeric
+checks against the original Triton results.
+
+For the separate Triton retention issue, see the
+[allocator investigation and measured launch setting](../benchmarks/ALLOCATOR_RETENTION.md).
