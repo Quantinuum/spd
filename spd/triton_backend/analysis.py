@@ -49,12 +49,13 @@ def get_depolarizing_susceptibility(spgo, qubits):
         raise ValueError("qubits must contain one or two distinct sites")
     if any(q < 0 or q >= spgo.num_qubits for q in qubits):
         raise ValueError("qubit is outside the state")
-    n, width = spgo.xz_array.shape
+    keys, c, g = spgo._raw_arrays()
+    n, width = keys.shape
     if not n:
         return 0.
-    with torch.cuda.device(spgo.c_array.device):
-        partials = torch.empty((n+255)//256, dtype=torch.float64, device=spgo.c_array.device)
-        kernels.susceptibility[(len(partials),)](spgo.xz_array, spgo.c_array, spgo.grad_c_array,
+    with torch.cuda.device(spgo._storage.device):
+        partials = torch.empty((n+255)//256, dtype=torch.float64, device=spgo._storage.device)
+        kernels.susceptibility[(len(partials),)](keys, c, g,
                                                 partials, n, qubits[0], qubits[-1], width, 256)
         return partials.sum().item()
 

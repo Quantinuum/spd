@@ -27,7 +27,7 @@ def _packed_gate(words, device):
 
 
 def _prepare_gate(state, generator, theta, cutoff):
-    dtype, device = state.c_array.dtype, state.c_array.device
+    dtype, device = state._storage.dtype, state._storage.device
     if isinstance(generator, str):
         return _gate_data(generator, theta, cutoff, state.num_qubits, dtype, device)
     if isinstance(generator, torch.Tensor):
@@ -39,12 +39,12 @@ def _prepare_gate(state, generator, theta, cutoff):
         if array.ndim != 1 or array.dtype not in (np.dtype('int32'), np.dtype('uint32')):
             raise ValueError("Packed generator must be a 1D int32/uint32 array")
         gate = _packed_gate(tuple(array.view(np.uint32).tolist()), device)
-    if gate.ndim != 1 or gate.numel() != state.xz_array.shape[1]:
+    if gate.ndim != 1 or gate.numel() != state._storage.width:
         raise ValueError("Packed generator width does not match state")
     return gate, _scalars(theta, cutoff, dtype, device)
 
 
-def _rotation(state, generator, theta, cutoff, cap, backward):
+def _validate_rotation(state, theta, cutoff, cap, backward):
     if backward:
         if not isinstance(state, SparsePauliGradientOp):
             raise TypeError("Backward rotation requires a SparsePauliGradientOp")
@@ -59,10 +59,15 @@ def _rotation(state, generator, theta, cutoff, cap, backward):
             raise ValueError("max_num_str must be a positive integer or None") from exc
         if cap < 1:
             raise ValueError("max_num_str must be a positive integer or None")
+    if state._storage.n >= 2**30:
+        raise ValueError("Triton backend requires fewer than 2**30 input rows")
+    return cap
+
+
+def _rotation(state, generator, theta, cutoff, cap, backward):
+    cap = _validate_rotation(state, theta, cutoff, cap, backward)
     keys, coeff = state.xz_array, state.c_array
     n, width = keys.shape
-    if n >= 2**30:
-        raise ValueError("Triton backend requires fewer than 2**30 input rows")
     device = coeff.device
     with torch.cuda.device(device):
         gate, scalars = _prepare_gate(state, generator, float(theta), float(cutoff))
@@ -114,8 +119,13 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
     Use conjugate_pauli_rotation for the existing state-only fast path.
     This direct API enforces an exact cap; runner cap rounding is separate.
     """
-    state, size, _, info = _rotation(spo, xzk, theta, trunc_val, max_num_str, False)
-    return state, size, info
+    _validate_rotation(spo, theta, trunc_val, max_num_str, False)
+    _prepare_gate(spo, xzk, float(theta), float(trunc_val))
+    if not spo.get_size():
+        return spo, 0, _zero_info()
+    result = spo.copy()
+    _, size, _, info = result._rotate_in_place(xzk, theta, trunc_val, max_num_str)
+    return result.compact(), size, info
 
 
 def conjugate_pauli_rot_backward(spgo, xzk, theta, trunc_val, max_num_str=None):

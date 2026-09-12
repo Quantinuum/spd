@@ -16,8 +16,8 @@ Pause after each stage for user review and commit instruction. No merge or push.
    through basic persistent storage, support mixed exact Cliffords, preserve the
    per-gate forward implementation as an independent reference. Check ownership,
    gate order, cutoff/top-k, wide keys, empty/zero rows and input immutability.
-2. **Public forward diagnostics/history.** Extend pair updates with optional
-   discarded-count/L1/L2 reductions. Retain one private storage session across
+2. **Public forward diagnostics/history (approved).** Extend pair updates with optional
+   discarded-count/L1/L2 reductions. Retain SPO-owned storage across
    the public runner's operation loop. Preserve progress, history aggregation,
    save-strings behavior, requested/effective caps, and public return types.
    Observation access must not reconstruct storage or expose mutable snapshots.
@@ -146,3 +146,184 @@ references are `persistent_storage_20260910/candidate{1,2}`,
 `benchmarks/results/`. TFI postprocessing initially mishandled the saved initial
 expectation and norm convention; corrected comparisons recovered the completed
 23 timed steps from the log without repeating the workload.
+
+
+## Stage 2: SPO-owned storage and public forward diagnostics/history
+
+Stage 1 was approved and committed as `3abb844`. This revised stage 2 is
+approved for commit, including the requested `spd.evolve(..., in_place=True)`
+option. It replaces the earlier `_ForwardSession` design with
+the agreed SPO/SPGO ownership model; no separate execution context is needed.
+
+### Ownership and implementation
+
+- SPO owns `_Storage`; SPGO uses the same storage abstraction with an adjoint
+  channel. `copy()` creates independent storage. `apply_in_place()` mutates an
+  SPO through a forward IR gate and returns the existing runner's four-value
+  tuple. SPGO in-place backward evolution is reserved for stage 3.
+- Public forward execution explicitly branches on the backend, copies the
+  Triton input once, and retains that object's storage/index across gates.
+  It compacts once on return. Empty/skipped-only evolution preserves input
+  identity and physical storage. Direct diagnostic rotations copy once too.
+- Compact array properties remain compatible. Export marks buffers shared and
+  invalidates the index because external callers can retain or edit them.
+  Subsequent in-place mutation detaches. Internal scalar observations, backend
+  inference, terminal initialization and noise susceptibility use storage
+  directly. Other existing algebra/analysis operations can materialize through
+  the compact properties. Pickles contain logical arrays, not cached indices,
+  and the reader accepts the previous pickle fields.
+- Basis/OSE initialization shares primal buffers without consuming the SPO or
+  duplicating its keys/coefficients. Only adjoints and loss-computation workspace
+  are allocated. `to_spo()` keeps its compact shared-view API. Compaction retains
+  rows with either nonzero coefficients or nonzero adjoints. A subsequent
+  mutation protects shared inputs; backward lifetime/ownership optimization
+  remains stage 3 work.
+- The pair-update kernel has a compile-time diagnostic specialization counting
+  each discarded combined output once, with float64 L1/squared-L2 reductions.
+  Cap diagnostics reduce removed coefficients from the same top-k selection
+  used for retention, avoiding cancellation from subtracting retained norms.
+  The state-only specialization omits these reductions. Exact Cliffords, gate
+  order, strict cutoff, public cap rounding and shared history handling remain.
+
+### Correctness
+
+H100 80GB, Torch 2.8.0+cu128, Triton 3.4.0:
+
+- Broad conformance: **404 passed, 1 expected failure in 76.02 s**. The expected
+  failure is the existing JAX stack cutoff-equality diagnostic issue.
+- Ownership, runner and algebra/analysis suite: **140 passed in 79.96 s**.
+- `git diff --check` passed.
+- Final focused ownership/diagnostics/backward validation after the last alias
+  and skipped-state fixes: **63 passed in 13.58 s**.
+
+The diagnostic tests cover mixed rotations/all nine Cliffords, 3/65/121 qubits,
+float32/float64, cutoff equality, binding caps, reactivation, per-gate results,
+small discarded norms beside large retained coefficients, and one persistent
+storage object across a gate sequence. Ownership tests cover independent copy,
+constructor/export aliases, externally modified keys and stale indices, shared
+terminal initialization without copying/compaction, gradient-only rows,
+`to_spo()`, skipped-only storage preservation, and old/new pickle formats.
+Existing runner tests exercise TFI energy/angle gradients against JAX and dense
+finite differences using the unchanged backward implementation.
+
+```sh
+python -m pytest tests/test_triton_backend.py tests/test_triton_invariants.py tests/test_triton_clifford.py tests/test_triton_algebra_analysis.py tests/test_triton_jax_conformance.py tests/test_backend_semantic_contract.py tests/test_triton_persistent.py tests/test_triton_persistent_diagnostics.py tests/test_triton_storage_ownership.py -q
+python -m pytest tests/test_triton_storage_ownership.py tests/test_triton_persistent_diagnostics.py tests/test_triton_backward.py -q
+```
+
+### Small forward/diagnostic benchmark
+
+Reproduce with `python benchmarks/benchmark_persistent_integration.py --diagnostics`.
+Raw results: `benchmarks/results/persistent_integration_stage2.json`.
+Eight-site periodic TFI/AFH, three layers, float64, cutoff 1e-4, nonbinding cap
+65536. Tiny disposable compilation, one measured pass per path, observations
+excluded; copying and final materialization included. Reference runs the pre-persistent per-gate algorithm retained in the current
+working tree: `conjugate_pauli_rotation` for state-only and
+`operations._rotation(..., backward=False)` for diagnostics. Their Triton
+`kernels.py` is unchanged from main commit `c9a2b004d2598f1741c04619dfa30865e86a9aad`,
+but these small reference runs use the current state wrappers and validation;
+they are **not measurements of a separate main checkout**. Persistent
+diagnostics uses the current public runner. The large table below instead uses
+measurements from an actual main archive for its Main diagnostics column.
+
+| Workload/path | Reference ms | Persistent ms | Reference peak allocated bytes | Persistent peak allocated bytes |
+|---|---:|---:|---:|---:|
+| TFI state-only | 6.214 | 5.163 | 109,056 | 111,104 |
+| TFI diagnostics/history | 8.493 | 6.979 | 110,080 | 111,104 |
+| AFH state-only | 17.132 | 14.926 | 2,615,808 | 2,856,448 |
+| AFH diagnostics/history | 20.676 | 20.519 | 2,624,512 | 2,856,448 |
+
+Reserved peaks: 2,097,152 bytes for TFI, 4,194,304 for AFH in every path.
+Key sets and coefficients match exactly; diagnostic histories and aggregates
+pass 1e-12 tolerances. These single short samples are sensitive to CPU overhead.
+
+### Large performance and main comparison
+
+Raw scripts, six runs, initialization probes and `summary.json` remain in
+`/tmp/spd-stage2-owned-large-cfmoi3hf`. The actual main baseline is reused from
+`/tmp/spd-stage2-large-bx8ep4dn`, main commit
+`c9a2b004d2598f1741c04619dfa30865e86a9aad`; main was not needlessly rerun.
+Same workloads as the earlier requested sanity check: TFI 11x11, 23 timesteps;
+AFH 6x6x6 at cutoff 3e-4 uncapped or 1e-5 with exact cap 20,000,000.
+Diagnostic timing uses the shared operation loop with that exact cap, avoiding
+public cap rounding. Only tiny disposable inputs are compiled first, with no
+full-workload warm-up. Timings exclude observations and terminal initialization.
+
+| Workload | State-only | Diagnostics | Overhead | Main diagnostics |
+|---|---:|---:|---:|---:|
+| TFI 11×11, 23 steps | 9.67 s | 10.84 s | +12.1% | 74.71 s |
+| AFH 6×6×6, uncapped | 0.689 s | 0.898 s | +30.2% | 2.505 s |
+| AFH 6×6×6, exact 20M cap | 14.62 s | 16.62 s | +13.7% | 29.56 s |
+
+State-only and Diagnostics are the revised SPO-owned implementation. Overhead
+is Diagnostics / State-only − 1, calculated from unrounded timings. Main
+diagnostics reuses the same actual-main measurements as the previous table.
+Revised diagnostic times are within 1% of the previous session samples
+(10.742 / 0.900 / 16.589 s respectively). These are sanity measurements, not
+statistical estimates.
+
+The uncapped state-only entry uses the short repeat, 0.689 s. The first sample
+was anomalously slow at 0.987 s; both are retained in the temporary directory,
+with the repeat under `uncapped-repeat/`. Peak memory and final row count were
+unchanged. The earlier session-era state-only sample was 0.654 s, so the smaller
+overhead percentage alone does not demonstrate an improvement in diagnostics.
+
+| Workload | State peak allocated GB | Diagnostic peak allocated GB | Main diagnostic peak allocated GB |
+|---|---:|---:|---:|
+| TFI | 50.914 | 50.914 | 51.714 |
+| AFH uncapped | 1.095 | 1.095 | 0.948 |
+| AFH capped | 7.341 | 7.552 | 7.057 |
+
+Decimal GB. Reserved peaks (state/diagnostic/main) are respectively
+79.530/66.150/70.701 GB for TFI, 1.497/1.497/1.309 GB for uncapped AFH, and
+8.376/7.957/7.789 GB for capped AFH. TFI state reserved memory increased from
+70.429 GB in the prior session-era check despite essentially unchanged allocated
+peak. Reserved allocator cache depends on allocation history; no allocation
+retries or OOMs occurred in these runs.
+
+Against actual main, TFI and uncapped AFH discarded counts match exactly at
+every gate, with maximum L1 errors 1.42e-14 / 5.68e-14 and squared-L2 errors
+3.47e-18 / 5.55e-17. Energies/norms agree to roundoff and final counts match.
+Capped AFH does **not** have exact history equality: 875 discarded-count entries
+differ (maximum 11,471); maximum L1/L2 differences are 0.103023 / 8.318e-6;
+final energy/norm2 differences are 3.167e-5 / 7.234e-7. The previous investigation
+identified exact top-k boundary ties at the first binding cap: 126,833 equal
+candidates competing for 120,845 places, with different retained tied keys.
+Same-input diagnostics matched at the first divergent gate and its successor.
+Tied ordering is unspecified, so later support trajectories can differ. The
+revised run also differs from the earlier session in 40 discarded-count entries
+(maximum 12), while final energy/norm2 agree to roundoff. This is not reported
+as exact diagnostic equality. Strict tests retain unambiguous binding caps.
+
+### Backward boundary and memory
+
+The large diagnostic outputs were passed to public `init_gradient_spo` for basis
+expectation, with and without lambda_ose=0.13. All probes confirm identical key
+and primal-coefficient pointers in SPO and SPGO. There is no temporary full
+primal copy and no ownership-consuming API change.
+
+| Workload | Retained adjoint GB | Basis extra peak GB | Basis + OSE extra peak GB |
+|---|---:|---:|---:|
+| TFI, 221,899,620 rows | 1.775 | 3.772 | 10.651 |
+| AFH uncapped, 2,265,180 rows | 0.018 | 0.039 | 0.109 |
+| AFH capped, 20,000,000 rows | 0.160 | 0.340 | 0.960 |
+
+Extra peaks are above pre-initialization allocated memory and include temporary
+loss tensors. Basis initialization took 11.86 / 0.29 / 1.48 ms respectively;
+basis + OSE took 51.23 / 27.57 / 29.80 ms. These are one-shot boundary probes,
+not full backward benchmarks. OSE still has substantial arithmetic workspace:
+sharing the primal eliminates cloning, but does not eliminate that workspace.
+
+Persistent backward/coefficient adjoints, angle gradients and analysis-loop
+integration remain stage 3. Current backward correctness is covered by existing
+tests; stage 2 makes no new full-backward runtime or peak-memory claims.
+
+Stage 2 final API addition: `spd.evolve` accepts keyword-only `in_place=False`.
+With `True`, Triton mutates the supplied object and retains capacity/index
+between circuit calls; shared tensors detach before mutation. NumPy/JAX reject
+this mode with `NotImplementedError`. The default still copies once and compacts
+on return. Saving strings materializes through serialization. The added tests
+compare consecutive in-place calls with functional calls and check unsupported
+backends explicitly.
+
+Final in-place API validation: ownership, diagnostics and runner suites: **96 passed in 76.73 s**. `git diff --check` passed.

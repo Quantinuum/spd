@@ -195,12 +195,39 @@ All four entry points below are exported from `spd.triton_backend`:
 | Forward with diagnostics | `conjugate_pauli_rot_forward` in [operations.py](operations.py) | `(state, live_count, diagnostics)` |
 | Backward with diagnostics | `conjugate_pauli_rot_backward` in [operations.py](operations.py) | `(state, live_count, angle_gradient, diagnostics)` |
 
-The rotation paths share the same [Triton kernel](kernels.py), specialized using
-compile-time flags. There is currently no diagnostic-free backward API.
-The fast sequence helper supports mixed Pauli rotations, exact Clifford gates,
-and skipped operations. It copies the input once and retains private storage
-across gates. Clifford key transformations rebuild the index; rotations use
-incremental insertion and occasional growth/compaction. See the
+Forward diagnostics use the [persistent pair-update kernel](persistent.py), with
+compile-time diagnostic reductions. SPO and SPGO own a storage object containing
+keys, coefficients, optional adjoints, and a reusable index. Public `spd.evolve`
+copies its input once, calls `apply_in_place` throughout the gate loop, and
+compacts on return. History/progress reductions read storage directly and exclude
+dead slots. No separate forward session is needed.
+
+For an explicit forward loop over normalized IR operations in execution order:
+
+```python
+work = spo.copy()
+for operation in operations:
+    work.apply_in_place(operation, trunc_val=1e-5, max_num_str=100000)
+```
+
+`copy()` makes independent storage, including SPGO adjoints. `apply_in_place`
+currently supports forward SPO evolution and returns
+`(self, live_count, None, diagnostics)`; pass `diagnostics=False` to omit reductions.
+Cliffords transform keys exactly and rebuild the index; rotations retain the
+index with incremental insertion and occasional growth/compaction.
+
+Legacy `xz_array`, `c_array`, and `grad_c_array` remain compact tensor views.
+Access can compact storage and requires a protective copy on the next in-place
+mutation because callers can retain or edit these tensors. Scalar observations
+avoid this export. `compact()` explicitly releases dead rows/spare capacity;
+`to_host()` and serialization also materialize the logical state.
+
+Basis/OSE terminal initializers share primal keys and coefficients and allocate
+the adjoint channel; they do not consume the caller's SPO. `to_spo()` retains its
+compact-view contract. Shared/exposed tensors are protected from subsequent
+in-place operations by detaching first. Backward still uses the
+[original rotation kernel](kernels.py); persistent backward evolution and its
+memory/performance validation are the next integration stage. See the
 [integration plan and validation](../../docs/triton_persistent_integration.md).
 
 "No performance degradation" refers to the updated state-only path compared
@@ -380,3 +407,10 @@ the shared runner.
 [Milestone 4 validation and costs](MILESTONE4.md) records tests and measurements.
 JAX-specific sorting APIs, PyTrees, donation and internal kernel helpers are not
 part of the common backend contract.
+
+Public `spd.evolve(..., in_place=True)` mutates the supplied Triton SPO and
+retains its capacity/index on return, permitting consecutive circuit calls on
+the same working state. The default remains input-preserving. NumPy and JAX
+raise `NotImplementedError` when this option is requested. Shared/exposed
+buffers may still detach; an execution error can leave earlier gates applied.
+Saving strings explicitly materializes the state for serialization.

@@ -14,11 +14,12 @@ def _validate_alpha(alpha):
 
 
 def _basis_mask(spo, basis):
-    half = spo.xz_array.shape[1] // 2
+    keys, _, _ = spo._raw_arrays()
+    half = spo._storage.width // 2
     if basis in ("0", "Z"):
-        part = spo.xz_array[:, :half]
+        part = keys[:, :half]
     elif basis in ("+", "X"):
-        part = spo.xz_array[:, half:]
+        part = keys[:, half:]
     else:
         raise NotImplementedError(f"Expectation value in basis {basis} not implemented.")
     return torch.all(part == 0, dim=1)
@@ -26,7 +27,7 @@ def _basis_mask(spo, basis):
 
 def operator_stabilizer_entropy(spo, alpha=1.0):
     _validate_alpha(alpha)
-    squared = spo.c_array.square()
+    squared = spo._raw_arrays()[1].square()
     normalization = squared.sum()
     probabilities = squared / torch.where(normalization > 0, normalization, 1)
     if alpha == 1:
@@ -44,14 +45,20 @@ def _check_spo(spo):
 
 def init_gradient_from_basis_expectation(spo, basis="0"):
     _check_spo(spo)
-    gradient = _basis_mask(spo, basis).to(spo.c_array.dtype)
-    return SparsePauliGradientOp(spo.xz_array, spo.c_array, gradient, spo.num_qubits)
+    gradient = _basis_mask(spo, basis).to(spo._storage.dtype)
+    if spo._storage.pruned:
+        gradient = torch.where(spo._raw_arrays()[1] != 0, gradient, 0)
+    return SparsePauliGradientOp._from_primal(spo, gradient)
 
 
 def init_gradient_from_ose(spo, alpha=1.0):
     _check_spo(spo)
+    return SparsePauliGradientOp._from_primal(spo, _ose_gradient(spo, alpha))
+
+
+def _ose_gradient(spo, alpha):
     _validate_alpha(alpha)
-    c = spo.c_array
+    c = spo._raw_arrays()[1]
     normalization = c.square().sum()
     if normalization.item() == 0:
         raise ValueError("OSE gradient is undefined for a zero-norm state")
@@ -63,7 +70,7 @@ def init_gradient_from_ose(spo, alpha=1.0):
         probability_grads = alpha * torch.where(p > 0, p.pow(alpha - 1), 0) / ((1 - alpha) * moment)
     mean = (p * probability_grads).sum()
     gradient = 2 * c / normalization * (probability_grads - mean)
-    return SparsePauliGradientOp(spo.xz_array, c, gradient, spo.num_qubits)
+    return gradient
 
 
 def init_gradient_spo(spo, *, loss_type="basis_expectation", basis="0",
@@ -81,9 +88,7 @@ def init_gradient_spo(spo, *, loss_type="basis_expectation", basis="0",
     if not math.isfinite(lambda_ose):
         raise ValueError("lambda_ose must be finite")
     if lambda_ose != 0:
-        # L2 restricted support excludes explicit zero-primal rows.
-        ose = init_gradient_from_ose(result.to_spo(), alpha)
-        result = SparsePauliGradientOp(result.xz_array, result.c_array,
-                                      result.grad_c_array + lambda_ose * ose.grad_c_array,
-                                      result.num_qubits)
+        # Compute directly on the shared primal buffers; no temporary SPO or
+        # compact key/coefficient copy is needed to add the OSE adjoint.
+        result._storage.grad = result._storage.grad + lambda_ose * _ose_gradient(result, alpha)
     return result

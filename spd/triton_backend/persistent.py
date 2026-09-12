@@ -38,7 +38,8 @@ def _insert(keys, table, start, end, mask, W: tl.constexpr, B: tl.constexpr):
 
 @triton.jit(do_not_specialize=['n', 'mask'])
 def _update(keys, coeff, table, gate, scalars, counts, n, mask,
-            W: tl.constexpr, B: tl.constexpr):
+            W: tl.constexpr, B: tl.constexpr,
+            stats=None, DIAGNOSTICS: tl.constexpr = False):
     i = tl.program_id(0) * B + tl.arange(0, B)
     valid = i < n
     parity = tl.full((B,), 0, tl.int32)
@@ -86,6 +87,15 @@ def _update(keys, coeff, table, gate, scalars, counts, n, mask,
     other = paired * cos - c * sin * (-sign)
     keep_own = owner & (tl.abs(own) > cutoff)
     keep_other = owner & anti & (tl.abs(other) > cutoff)
+    if DIAGNOSTICS:
+        removed_own = owner & ~keep_own & (own != 0)
+        removed_other = owner & anti & ~keep_other & (other != 0)
+        a = tl.where(removed_own, tl.abs(own), 0).to(tl.float64)
+        b = tl.where(removed_other, tl.abs(other), 0).to(tl.float64)
+        tl.store(stats + tl.program_id(0) * 3,
+                 tl.sum(removed_own.to(tl.int32) + removed_other.to(tl.int32), 0))
+        tl.store(stats + tl.program_id(0) * 3 + 1, tl.sum(a + b, 0))
+        tl.store(stats + tl.program_id(0) * 3 + 2, tl.sum(a * a + b * b, 0))
     tl.store(coeff + i, tl.where(keep_own, own, 0), owner)
     tl.store(coeff + partner, tl.where(keep_other, other, 0), paired_owner)
     create = keep_other & (partner < 0)
@@ -104,10 +114,14 @@ def _update(keys, coeff, table, gate, scalars, counts, n, mask,
 
 @triton.jit(do_not_specialize=['n'])
 def _compact(keys, coeff, out_keys, out_coeff, count, n,
-             W: tl.constexpr, B: tl.constexpr):
+             W: tl.constexpr, B: tl.constexpr,
+             grad=None, out_grad=None, GRADIENT: tl.constexpr = False):
     i = tl.program_id(0) * B + tl.arange(0, B)
     c = tl.load(coeff + i, i < n, 0)
     keep = (i < n) & (c != 0)
+    if GRADIENT:
+        g = tl.load(grad + i, i < n, 0)
+        keep |= (i < n) & (g != 0)
     offsets = tl.cumsum(keep.to(tl.int32)) - keep.to(tl.int32)
     base = tl.atomic_add(count, tl.sum(keep.to(tl.int32), 0), sem='relaxed')
     dest = base + offsets
@@ -115,25 +129,89 @@ def _compact(keys, coeff, out_keys, out_coeff, count, n,
         v = tl.load(keys + i.to(tl.int64) * W + w, keep, 0)
         tl.store(out_keys + dest.to(tl.int64) * W + w, v, keep)
     tl.store(out_coeff + dest, c, keep)
+    if GRADIENT:
+        tl.store(out_grad + dest, g, keep)
 
 
 class _Storage:
+    """Packed storage owned by an SPO/SPGO, with optional lazy execution buffers.
+
+    Wrapped/exposed tensors may have aliases. Only an owned copy is mutated by
+    kernels; this keeps constructors and zero-copy gradient views safe.
+    """
+    @classmethod
+    def wrap(cls, keys, coeff, nq, grad=None, *, pruned=False, live=None):
+        self = cls.__new__(cls)
+        self.keys, self.coeff, self.grad = keys, coeff, grad
+        self.n = self.capacity = len(coeff)
+        self.width, self.nq = keys.shape[1], nq
+        self.device, self.dtype = coeff.device, coeff.dtype
+        self.pruned, self.live = pruned, live
+        self.owned = False
+        self.dead_fraction = .1
+        self.table = self.counts = None
+        self.table_size = 0
+        self.rebuilds = self.compactions = self.growths = 0
+        return self
+
     def __init__(self, state, dead_fraction):
-        self.n = state.get_size()
-        self.live = int(torch.count_nonzero(state.c_array).item())
-        self.width = state.xz_array.shape[1]
-        self.nq = state.num_qubits
-        self.device = state.c_array.device
-        self.dtype = state.c_array.dtype
+        source = state._storage
+        self.n = source.n
+        self.width, self.nq = source.width, source.nq
+        self.device, self.dtype = source.device, source.dtype
+        self.pruned = source.pruned
         self.dead_fraction = dead_fraction
         self.capacity = max(16, 2 * self.n)
         self.keys = torch.empty((self.capacity, self.width), dtype=torch.int32, device=self.device)
         self.coeff = torch.empty(self.capacity, dtype=self.dtype, device=self.device)
-        self.keys[:self.n].copy_(state.xz_array)
-        self.coeff[:self.n].copy_(state.c_array)
+        self.keys[:self.n].copy_(source.keys[:self.n])
+        self.coeff[:self.n].copy_(source.coeff[:self.n])
+        self.grad = None
+        if source.grad is not None:
+            self.grad = torch.empty(self.capacity, dtype=self.dtype, device=self.device)
+            self.grad[:self.n].copy_(source.grad[:self.n])
+            self.live = int(torch.count_nonzero(
+                (source.coeff[:self.n] != 0) | (source.grad[:self.n] != 0)).item())
+        else:
+            self.live = int(torch.count_nonzero(source.coeff[:self.n]).item())
+        self.owned = True
         self.counts = torch.zeros(2, dtype=torch.int32, device=self.device)
         self.rebuilds = self.compactions = self.growths = 0
-        self._rebuild()
+        if source.owned and source.table is not None:
+            self.table_size = source.table_size
+            self.table = source.table.clone()
+        else:
+            self._rebuild()
+
+    def size(self):
+        return self.live if self.pruned else self.n
+
+    def materialize(self):
+        """Compact only at an explicit interoperability/public return boundary."""
+        if not self.owned:
+            # Another wrapper may have exposed/modified these shared keys.
+            self.table = None
+            self.table_size = 0
+        if self.pruned and self.n != self.live:
+            self.compact(final=True)
+        elif self.capacity != self.n:
+            self.keys = self.keys[:self.n].clone()
+            self.coeff = self.coeff[:self.n].clone()
+            if self.grad is not None:
+                self.grad = self.grad[:self.n].clone()
+            self.capacity = self.n
+            self.owned = True
+        # Index contents stay valid when rows are merely copied at the same IDs.
+
+    def export(self):
+        """Expose compact tensors; subsequent mutation must protect their aliases."""
+        with torch.cuda.device(self.device):
+            self.materialize()
+        self.owned = False
+        self.table = None  # Exposed keys can be modified by an external caller.
+        self.table_size = 0
+        self.pruned = False  # Explicit tensor rows, including user-written zeros.
+        return self.keys[:self.n], self.coeff[:self.n], (None if self.grad is None else self.grad[:self.n])
 
     def _rebuild(self):
         self.table_size = 1 << (max(4, 4 * self.n) - 1).bit_length()
@@ -152,27 +230,49 @@ class _Storage:
         coeff = torch.empty(self.capacity, dtype=self.dtype, device=self.device)
         keys[:self.n].copy_(self.keys[:self.n])
         coeff[:self.n].copy_(self.coeff[:self.n])
+        if self.grad is not None:
+            grad = torch.empty(self.capacity, dtype=self.dtype, device=self.device)
+            grad[:self.n].copy_(self.grad[:self.n])
+            self.grad = grad
         self.keys, self.coeff = keys, coeff
         self.growths += 1
 
-    def compact(self, cap=None, final=False):
+    def compact(self, cap=None, final=False, totals=None):
         size = self.live if cap is None else min(self.live, cap)
         capacity = size if final else max(16, 2 * size)
         keys = torch.empty((capacity, self.width), dtype=torch.int32, device=self.device)
         coeff = torch.empty(capacity, dtype=self.dtype, device=self.device)
+        grad = torch.empty_like(coeff) if self.grad is not None else None
         if size:
             if size < self.live:
                 selected = torch.topk(self.coeff[:self.n].abs(), size, sorted=False).indices
+                if totals is not None:
+                    # Sum removed terms directly: subtracting retained norms
+                    # would lose small discarded contributions to cancellation.
+                    removed = torch.ones(self.n, dtype=torch.bool, device=self.device)
+                    removed[selected] = False
+                    magnitudes = torch.where(removed, self.coeff[:self.n].abs(), 0).to(torch.float64)
+                    totals += torch.stack([(magnitudes != 0).sum().to(torch.float64),
+                                           magnitudes.sum(), magnitudes.square().sum()])
                 keys[:size].copy_(self.keys[selected])
                 coeff[:size].copy_(self.coeff[selected])
+                if grad is not None:
+                    grad[:size].copy_(self.grad[selected])
             else:
+                if self.counts is None:
+                    self.counts = torch.zeros(2, dtype=torch.int32, device=self.device)
                 self.counts.zero_()
                 _compact[((self.n + 127) // 128,)](self.keys, self.coeff, keys, coeff,
-                                                  self.counts, self.n, self.width, 128)
-        self.keys, self.coeff = keys, coeff
+                                                  self.counts, self.n, self.width, 128,
+                                                  grad=self.grad, out_grad=grad, GRADIENT=grad is not None)
+        self.keys, self.coeff, self.grad = keys, coeff, grad
         self.n = self.live = size
         self.capacity = capacity
         self.compactions += 1
+        self.owned = True
+        self.pruned = True
+        self.table = None
+        self.table_size = 0
         if not final:
             self._rebuild()
 
@@ -199,12 +299,16 @@ class _Storage:
                 self.n, q, r, self.width, codes[name], 128)
             self._rebuild()
 
-    def apply(self, gate, params, cap):
+    def apply(self, gate, params, cap, *, diagnostics=False):
         if not self.n:
             return
         if self.n >= 2**30:
             raise ValueError('Persistent prototype requires fewer than 2**30 slots')
         self._reserve()
+        if self.table is None:
+            self._rebuild()
+        if self.counts is None:
+            self.counts = torch.zeros(2, dtype=torch.int32, device=self.device)
         # Accommodate the worst-case new rows before mutation, so insertion can
         # never fill the table or fail partway through a gate.
         if 2 * self.n > self.table_size // 2:
@@ -213,21 +317,30 @@ class _Storage:
             _insert[((self.n + 127) // 128,)](self.keys, self.table, 0, self.n,
                                              self.table_size - 1, self.width, 128)
             self.rebuilds += 1
+        blocks = (self.n + 127) // 128
+        stats = torch.empty((blocks, 3), dtype=torch.float64, device=self.device) if diagnostics else None
         self.counts.zero_()
         _update[((self.n + 127) // 128,)](self.keys, self.coeff, self.table, gate, params,
                                          self.counts, self.n, self.table_size - 1,
-                                         self.width, 128, enable_fp_fusion=False)
+                                         self.width, 128, stats=stats, DIAGNOSTICS=diagnostics,
+                                         enable_fp_fusion=False)
         added, delta = self.counts.cpu().tolist()
         before = self.n
         self.n += added
         self.live += delta
+        self.pruned = True
+        totals = stats.sum(dim=0) if diagnostics else None
         if cap is not None and self.live > cap:
-            self.compact(cap)
+            self.compact(cap, totals=totals)
         elif self.n - self.live > max(16, self.dead_fraction * self.n):
             self.compact()
         elif added:
             _insert[((added + 127) // 128,)](self.keys, self.table, before, self.n,
                                             self.table_size - 1, self.width, 128)
+        if diagnostics:
+            values = totals.tolist()
+            return {"num_str_truncated": int(values[0]), "truncated_l1_norm": values[1],
+                    "truncated_l2_norm": math.sqrt(values[2])}
 
 
 def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
@@ -253,23 +366,13 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
         if stats is not None:
             stats.update(rebuilds=0, compactions=0, growths=0)
         return state
-    with torch.cuda.device(state.c_array.device):
-        storage = _Storage(state, dead_fraction)
-        for op in reversed(operations):
-            if isinstance(op, PauliRotation):
-                gate, params = _gate_data(op.pauli, float(op.theta), float(trunc_val),
-                                          state.num_qubits, state.c_array.dtype, state.c_array.device)
-                storage.apply(gate, params, max_num_str)
-            elif isinstance(op, (SingleQubitClifford, TwoQubitClifford)):
-                storage.apply_clifford(op)
-        if any(isinstance(op, PauliRotation) for op in operations):
-            storage.compact(final=True)
-        else:
-            # Clifford-only sequences preserve explicit zero rows, as the
-            # direct Clifford API does; cutoff and cap apply to rotations only.
-            storage.keys = storage.keys[:storage.n].clone()
-            storage.coeff = storage.coeff[:storage.n].clone()
-        if stats is not None:
-            stats.update(rebuilds=storage.rebuilds, compactions=storage.compactions,
-                         growths=storage.growths)
-        return SparsePauliOp(storage.keys, storage.coeff, state.num_qubits)
+    result = state.copy()
+    result._storage.dead_fraction = dead_fraction
+    for op in reversed(operations):
+        result.apply_in_place(op, trunc_val, max_num_str, diagnostics=False)
+    result.compact()
+    if stats is not None:
+        storage = result._storage
+        stats.update(rebuilds=storage.rebuilds, compactions=storage.compactions,
+                     growths=storage.growths)
+    return result

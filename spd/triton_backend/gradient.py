@@ -39,14 +39,31 @@ class SparsePauliGradientOp(SparsePauliOp, BaseSparsePauliGradientOp):
                 or 2 * ((num_qubits + 31) // 32) != keys.shape[1]):
             raise ValueError("num_qubits does not match the packed width")
         super().__init__(keys.to(torch.int32).contiguous(), c.contiguous(), num_qubits)
-        self.grad_c_array = g.contiguous()
+        self._storage.grad = g.contiguous()
+
+    @property
+    def grad_c_array(self):
+        return self._storage.export()[2]
+
+    @classmethod
+    def _from_primal(cls, spo, gradient):
+        """Share primal storage without a full-state copy; initialize only adjoints."""
+        from .persistent import _Storage
+        source = spo._storage
+        keys, c, _ = spo._raw_arrays()
+        source.owned = False
+        storage = _Storage.wrap(keys, c, source.nq, gradient,
+                                pruned=source.pruned, live=source.size())
+        return cls._from_storage(storage)
 
     def to_host(self):
-        keys, c = super().to_host()
-        return keys, c, self.grad_c_array.cpu().numpy()
+        self.compact()
+        keys, c, g = self._raw_arrays()
+        return keys.cpu().numpy().view(np.uint32), c.cpu().numpy(), g.cpu().numpy()
 
     def to_spo(self):
-        return SparsePauliOp(self.xz_array, self.c_array, self.num_qubits)
+        keys, c, _ = self._storage.export()
+        return SparsePauliOp(keys, c, self.num_qubits)
 
 
 def create_gradient_op(pauli_dict, num_qubits=None, precision=None, device="cuda"):

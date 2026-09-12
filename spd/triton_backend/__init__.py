@@ -45,27 +45,121 @@ def _pack(pauli, num_qubits):
 class SparsePauliOp(StateMethods, BaseSparsePauliOp):
     """Unique packed Pauli rows and real coefficients resident on one GPU.
 
-    Construct with create_op; rotations return new states and preserve inputs.
+    Construct with create_op; functional rotations preserve inputs.
+    copy() creates independent storage; apply_in_place() explicitly mutates it.
     Row order is unspecified. to_host() returns SPD-compatible uint32 keys.
     """
 
     def __init__(self, keys, coefficients, num_qubits):
-        self.xz_array = keys
-        self.c_array = coefficients
+        from .persistent import _Storage
+        self._storage = _Storage.wrap(keys, coefficients, num_qubits)
         self.num_qubits = num_qubits
 
+    @classmethod
+    def _from_storage(cls, storage):
+        result = cls.__new__(cls)
+        result._storage = storage
+        result.num_qubits = storage.nq
+        return result
+
+    @property
+    def precision(self):
+        """Coefficient precision without exporting or materializing tensor views."""
+        return "double" if self._storage.coeff.element_size() == 8 else "single"
+
+    @property
+    def xz_array(self):
+        """Compact packed tensor view. Retained views are protected on mutation."""
+        return self._storage.export()[0]
+
+    @property
+    def c_array(self):
+        """Compact coefficient tensor view. Internal execution uses storage directly."""
+        return self._storage.export()[1]
+
+    def _raw_arrays(self):
+        s = self._storage
+        return s.keys[:s.n], s.coeff[:s.n], None if s.grad is None else s.grad[:s.n]
+
+    def copy(self):
+        """Return an independent mutable copy, including any adjoint channel."""
+        from .persistent import _Storage
+        with torch.cuda.device(self._storage.device):
+            return type(self)._from_storage(_Storage(self, self._storage.dead_fraction))
+
+    def _mutable_storage(self):
+        if not self._storage.owned:
+            self._storage = self.copy()._storage
+        return self._storage
+
+    def compact(self):
+        """Release spare row capacity/dead slots; preserve the mathematical state."""
+        with torch.cuda.device(self._storage.device):
+            self._storage.materialize()
+        return self
+
+    def _rotate_in_place(self, generator, theta, cutoff, cap, *, diagnostics=True):
+        from .operations import _validate_rotation, _prepare_gate, _zero_info
+        cap = _validate_rotation(self, theta, cutoff, cap, False)
+        with torch.cuda.device(self._storage.device):
+            gate, params = _prepare_gate(self, generator, float(theta), float(cutoff))
+            if not self._storage.n:
+                return self, 0, None, _zero_info() if diagnostics else None
+            storage = self._mutable_storage()
+            info = storage.apply(gate, params, cap, diagnostics=diagnostics)
+        return self, self.get_size(), None, info
+
+    def apply_in_place(self, operation, trunc_val=0., max_num_str=None, *, diagnostics=True):
+        """Apply one forward IR gate to this object, retaining its private storage.
+
+        Returns the runner tuple (self, count, None, diagnostics). Copies once if
+        tensors are borrowed/shared/exposed; copy() explicitly obtains private
+        storage ahead of a gate loop. Skipped operations do not mutate anything.
+        """
+        from ..circuit_ir import SingleQubitClifford, TwoQubitClifford
+        from .operations import _zero_info
+        if isinstance(operation, SkippedOperation):
+            return self, None, None, None
+        if self._storage.grad is not None:
+            raise TypeError("Forward in-place evolution requires an SPO, not an SPGO")
+        if isinstance(operation, PauliRotation):
+            return self._rotate_in_place(operation.pauli.rstrip("I"), operation.theta,
+                                         trunc_val, max_num_str, diagnostics=diagnostics)
+        if isinstance(operation, (SingleQubitClifford, TwoQubitClifford)):
+            with torch.cuda.device(self._storage.device):
+                self._mutable_storage().apply_clifford(operation)
+            return self, self.get_size(), None, _zero_info() if diagnostics else None
+        raise ValueError(f"Unsupported operation: {operation}")
+
     def get_size(self):
-        return self.c_array.numel()
+        return self._storage.size()
 
     def synchronize(self):
-        torch.cuda.synchronize(self.c_array.device)
+        torch.cuda.synchronize(self._storage.device)
 
     def to_host(self):
-        return (self.xz_array.cpu().numpy().view(np.uint32),
-                self.c_array.cpu().numpy())
+        self.compact()
+        keys, c, _ = self._raw_arrays()
+        return keys.cpu().numpy().view(np.uint32), c.cpu().numpy()
+
+    def __getstate__(self):
+        # Serialize the logical operator, not hash tables or execution counters.
+        self.compact()
+        keys, c, g = self._raw_arrays()
+        state = {"xz_array": keys, "c_array": c, "num_qubits": self.num_qubits}
+        if g is not None:
+            state["grad_c_array"] = g
+        return state
+
+    def __setstate__(self, state):
+        # Also accepts pickles written before storage became an owned object.
+        from .persistent import _Storage
+        self.num_qubits = state["num_qubits"]
+        self._storage = _Storage.wrap(state["xz_array"], state["c_array"],
+                                      self.num_qubits, state.get("grad_c_array"))
 
     def get_norm_square(self):
-        return torch.sum(self.c_array.square()).item()
+        return self._storage.coeff[:self._storage.n].square().sum().item()
 
     def get_operator_stabilizer_entropy(self, alpha=1.0):
         from .losses import operator_stabilizer_entropy
@@ -74,14 +168,15 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
     get_OSE = get_operator_stabilizer_entropy
 
     def get_expectation_value(self, basis="Z"):
-        half = self.xz_array.shape[1] // 2
+        keys, c, _ = self._raw_arrays()
+        half = self._storage.width // 2
         if basis in ("Z", "0"):
-            part = self.xz_array[:, :half]
+            part = keys[:, :half]
         elif basis in ("X", "+"):
-            part = self.xz_array[:, half:]
+            part = keys[:, half:]
         else:
             raise ValueError(f"Unsupported basis: {basis}")
-        return torch.sum(torch.where(torch.all(part == 0, dim=1), self.c_array, 0)).item()
+        return torch.sum(torch.where(torch.all(part == 0, dim=1), c, 0)).item()
 
 
 def create_op(pauli_dict, num_qubits=None, precision=None, device="cuda"):

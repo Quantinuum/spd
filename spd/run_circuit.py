@@ -101,7 +101,7 @@ def _infer_backend_name_and_precision(state):
     # Recognize an already-loaded Triton state before importing JAX utilities.
     triton_module = sys.modules.get("spd.triton_backend")
     if triton_module is not None and isinstance(state, triton_module.SparsePauliOp):
-        return "triton", "double" if state.c_array.element_size() == 8 else "single"
+        return "triton", state.precision
 
     from . import jax_backend, numpy_backend
 
@@ -345,10 +345,14 @@ def evolve(
     save_strings=False,
     backend=None,
     progress=True,
+    in_place=False,
 ):
     """Propagate an SPO forward; progress=False skips reporting reductions.
 
     Truncation diagnostics/history are returned regardless of progress.
+    in_place=True is supported only for Triton: mutate the supplied SPO and
+    retain its storage across calls. Shared tensor buffers detach before mutation.
+    An error after execution starts can leave earlier gates applied.
     """
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spo, backend, state_name="spo")
@@ -356,6 +360,9 @@ def evolve(
         raise TypeError(
             f"spo must be a {backend.name} SparsePauliOp when backend='{backend.name}'."
         )
+
+    if in_place and backend.name != "triton":
+        raise NotImplementedError("in_place evolution is supported only for Triton")
 
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     normalized_circuit = _normalize_input_circuit(input_circuit, backend, rebase)
@@ -365,18 +372,20 @@ def evolve(
         else normalized_circuit
     )
 
+    if backend.name == "triton":
+        loop_state = spo if in_place or all(isinstance(op, SkippedOperation) for op in operations) else spo.copy()
+        apply_forward = lambda state, operation: state.apply_in_place(operation, trunc_val, max_num_str)
+    else:
+        loop_state = spo
+        apply_forward = lambda state, operation: backend.apply_forward(
+            state, operation, trunc_val=trunc_val, max_num_str=max_num_str,
+        )
+
     final_spo, _, _, info = _run_operation_loop(
-        operations[::-1],
-        spo,
-        lambda state, operation: backend.apply_forward(
-            state,
-            operation,
-            trunc_val=trunc_val,
-            max_num_str=max_num_str,
-        ),
-        total_start_time,
-        progress=progress,
+        operations[::-1], loop_state, apply_forward, total_start_time, progress=progress,
     )
+    if backend.name == "triton" and not in_place and final_spo is not spo:
+        final_spo = final_spo.compact()
 
     if save_strings:
         _save_state_pickle(final_spo, "strings", trunc_val)
