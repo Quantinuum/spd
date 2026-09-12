@@ -1,0 +1,132 @@
+{
+  "backend": "mono",
+  "qubits": 216,
+  "padded_qubits": 224,
+  "rotations": 4320,
+  "preparation_gates": 108,
+  "cutoff": 0.0001,
+  "cap": null,
+  "threads": 12,
+  "thetas": [
+    0.04881350392732475,
+    0.21518936637241948,
+    0.10276337607164387,
+    0.044883182996896864,
+    -0.07634520066109529,
+    0.14589411306665612,
+    -0.06241278873730749,
+    0.39177300078207977
+  ],
+  "circuit_sha256": "fead2d4bb308d4cb2576bf3839889d4ea27dddb19e78c4f24a7f3cd7fb89c972",
+  "blocks": [
+    {
+      "start_gate": 1,
+      "end_gate": 216,
+      "seconds": 0.03748703099972772,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 217,
+      "end_gate": 432,
+      "seconds": 0.03209201000026951,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 433,
+      "end_gate": 648,
+      "seconds": 0.019356398999661906,
+      "rows": 51,
+      "peak_rows": 51
+    },
+    {
+      "start_gate": 649,
+      "end_gate": 864,
+      "seconds": 0.01859039600003598,
+      "rows": 7659,
+      "peak_rows": 7659
+    },
+    {
+      "start_gate": 865,
+      "end_gate": 1080,
+      "seconds": 0.0195887899999434,
+      "rows": 38739,
+      "peak_rows": 38739
+    },
+    {
+      "start_gate": 1081,
+      "end_gate": 1296,
+      "seconds": 0.03792083500047738,
+      "rows": 296414,
+      "peak_rows": 296414
+    },
+    {
+      "start_gate": 1297,
+      "end_gate": 1512,
+      "seconds": 0.5811883079995823,
+      "rows": 4766263,
+      "peak_rows": 4766263
+    },
+    {
+      "start_gate": 1513,
+      "end_gate": 1728,
+      "seconds": 0.38055276599970966,
+      "rows": 6405963,
+      "peak_rows": 6405963
+    },
+    {
+      "start_gate": 1729,
+      "end_gate": 1944,
+      "seconds": 0.884724157999699,
+      "rows": 9872669,
+      "peak_rows": 9872669
+    },
+    {
+      "start_gate": 1945,
+      "end_gate": 2160,
+      "seconds": 3.487115445999734,
+      "rows": 22529260,
+      "peak_rows": 22529260
+    },
+    {
+      "start_gate": 2161,
+      "end_gate": 2376,
+      "seconds": 2.612884246000249,
+      "rows": 23580882,
+      "peak_rows": 23580882
+    },
+    {
+      "start_gate": 2377,
+      "end_gate": 2592,
+      "seconds": 3.9927377450003405,
+      "rows": 31042990,
+      "peak_rows": 31042990
+    },
+    {
+      "start_gate": 2593,
+      "end_gate": 2808,
+      "seconds": 6.238630230000126,
+      "rows": 43585394,
+      "peak_rows": 43585394
+    },
+    {
+      "start_gate": 2809,
+      "end_gate": 2883,
+      "seconds": 3.1963533360003566,
+      "rows": 50523107,
+      "peak_rows": 50523107
+    }
+  ],
+  "status": "stopped_at_50m_safety_boundary_not_capped",
+  "timing": "one pass; small synthetic Triton compilation preflight excluded; block synchronization included; observations/logging excluded",
+  "preparation": "exact computational-basis reference via occupied qubit indices; no X propagation required",
+  "rotation_seconds": 21.539221695999913,
+  "completed_rotations": 2883,
+  "safety_boundary_gate": 2883,
+  "finalization_seconds": 9.380000847158954e-07,
+  "total_seconds": 21.539222633999998,
+  "rows": 50523107,
+  "energy": -2.64615889533609,
+  "rss_bytes": 7108603904
+}

@@ -1,0 +1,6 @@
+{
+  "selector": "select_all+local_all",
+  "indexed": "inverted_all+local_all",
+  "contender": "select_all+local_all",
+  "rule": "Compare all-axis variants at 20M. At 50M retain best maintained-index and active-scan variants; also local-only if within 3% of scan at 20M. At 100M compare baseline and fastest 50M contender with two timed repeats."
+}

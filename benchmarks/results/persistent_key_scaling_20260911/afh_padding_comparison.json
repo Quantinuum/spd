@@ -1,0 +1,21 @@
+{
+  "seconds": [
+    77.89956698399965,
+    47.29529363399979
+  ],
+  "speedup": 1.6470891921474182,
+  "time_reduction": 0.3928683372050822,
+  "peak_allocated_gb": [
+    14.908269056,
+    15.753398272
+  ],
+  "energy_difference": 2.0816681711721685e-17,
+  "norm2_difference": 1.2682583871992392e-09,
+  "work_matches": true,
+  "gate_counts_match": true,
+  "theta_matches": true,
+  "rows": [
+    20000000,
+    20000000
+  ]
+}

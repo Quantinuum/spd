@@ -1,0 +1,81 @@
+{
+  "candidate1": {
+    "total_seconds": 9.398818254000616,
+    "final_step_seconds": 2.311487877000218,
+    "counts_equal": true,
+    "max_expectation_difference": 2.220446049250313e-16,
+    "max_norm_difference": 2.220446049250313e-16,
+    "last_call": {
+      "input_rows": 173836555,
+      "rebuilds": 5,
+      "compactions": 5,
+      "growths": 6,
+      "output_rows": 221899620
+    },
+    "memory": {
+      "step": 23,
+      "seconds": 2.311487877000218,
+      "live_rows": 221899620,
+      "logical_bytes": 8875984800,
+      "backing_storage_bytes": 8875984800,
+      "counters": {
+        "allocated_bytes.all.current": 8876334592,
+        "allocated_bytes.all.peak": 50914279936,
+        "requested_bytes.all.current": 8876003896,
+        "requested_bytes.all.peak": 50913947720,
+        "reserved_bytes.all.current": 70428655616,
+        "reserved_bytes.all.peak": 70428655616,
+        "inactive_split_bytes.all.current": 0,
+        "inactive_split_bytes.all.peak": 0,
+        "segment.all.current": 0,
+        "segment.all.allocated": 0,
+        "num_alloc_retries": 0,
+        "num_ooms": 0,
+        "num_device_alloc": 44,
+        "num_device_free": 0
+      }
+    }
+  },
+  "candidate2": {
+    "total_seconds": 9.398501519001911,
+    "final_step_seconds": 2.3108496300001207,
+    "counts_equal": true,
+    "max_expectation_difference": 2.220446049250313e-16,
+    "max_norm_difference": 1.1102230246251565e-16,
+    "last_call": {
+      "input_rows": 173836555,
+      "rebuilds": 5,
+      "compactions": 5,
+      "growths": 6,
+      "output_rows": 221899620
+    },
+    "memory": {
+      "step": 23,
+      "seconds": 2.3108496300001207,
+      "live_rows": 221899620,
+      "logical_bytes": 8875984800,
+      "backing_storage_bytes": 8875984800,
+      "counters": {
+        "allocated_bytes.all.current": 8876334592,
+        "allocated_bytes.all.peak": 50914279936,
+        "requested_bytes.all.current": 8876003896,
+        "requested_bytes.all.peak": 50913947720,
+        "reserved_bytes.all.current": 70428655616,
+        "reserved_bytes.all.peak": 70428655616,
+        "inactive_split_bytes.all.current": 0,
+        "inactive_split_bytes.all.peak": 0,
+        "segment.all.current": 0,
+        "segment.all.allocated": 0,
+        "num_alloc_retries": 0,
+        "num_ooms": 0,
+        "num_device_alloc": 44,
+        "num_device_free": 0
+      }
+    }
+  },
+  "anti_control": {
+    "total_seconds": 27.08310836599776,
+    "final_step_seconds": 6.805291976000262,
+    "speedup_persistent": 2.8815925560723414
+  }
+}

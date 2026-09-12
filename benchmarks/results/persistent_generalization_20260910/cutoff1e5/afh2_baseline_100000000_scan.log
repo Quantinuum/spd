@@ -1,0 +1,24 @@
+{"qubits": 512, "key_words": 32, "gate_counts": {"OpType.X": 256, "OpType.XXPhase": 3072, "OpType.Barrier": 8, "OpType.YYPhase": 3072, "OpType.ZZPhase": 3072, "OpType.Rz": 1024, "OpType.Measure": 512}, "thetas": [0.04881350392732475, 0.21518936637241948, 0.10276337607164387, 0.044883182996896864, -0.07634520066109529, 0.14589411306665612, -0.06241278873730749, 0.39177300078207977]}
+warm progress 2048 gates 10179 live rows
+warm progress 4096 gates 91762104 live rows
+warm progress 6144 gates 100000000 live rows
+Traceback (most recent call last):
+  File "/teamspace/studios/this_studio/spd/benchmarks/benchmark_persistent_generalization.py", line 181, in <module>
+    main()
+  File "/teamspace/studios/this_studio/spd/benchmarks/benchmark_persistent_generalization.py", line 126, in main
+    warm = evaluate(state)
+           ^^^^^^^^^^^^^^^
+  File "/teamspace/studios/this_studio/spd/benchmarks/benchmark_persistent_generalization.py", line 111, in evaluate
+    state = evolve_options(state, chunk, cutoff, a.cap, mode=a.variant, stats=stats)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/teamspace/studios/this_studio/spd/spd/triton_backend/persistent_options.py", line 228, in evolve_options
+    return base.evolve_step_persistent(state, operations, trunc_val, max_num_str,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/teamspace/studios/this_studio/spd/spd/triton_backend/persistent.py", line 237, in evolve_step_persistent
+    storage.apply(gate, params, max_num_str)
+  File "/teamspace/studios/this_studio/spd/benchmarks/benchmark_persistent_generalization.py", line 92, in apply
+    original(self, gate, params, cap)
+  File "/teamspace/studios/this_studio/spd/spd/triton_backend/persistent.py", line 197, in apply
+    added, delta = self.counts.cpu().tolist()
+                   ^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

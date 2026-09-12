@@ -1,0 +1,28 @@
+[
+  {
+    "pid": 32036,
+    "cmd": [
+      "/home/zeus/miniconda3/envs/cloudspace/bin/python",
+      "/teamspace/studios/this_studio/spd/benchmarks/benchmark_persistent_generalization.py",
+      "--workload",
+      "afh",
+      "--size",
+      "8",
+      "--layers",
+      "2",
+      "--random-scale",
+      "1",
+      "--cutoff",
+      ".00001",
+      "--cap",
+      "50000000",
+      "--variant",
+      "baseline",
+      "--repeats",
+      "1",
+      "--output",
+      "/teamspace/studios/this_studio/spd/benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_baseline_50000000_scan.json"
+    ],
+    "created": 1789075175.65
+  }
+]

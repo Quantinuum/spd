@@ -12,3 +12,8 @@ examples/**/*.pkl
 !examples/gradient/*.pkl
 
 AGENTS.md
+
+# Regenerable benchmark states and full profiler traces; retain compact JSON summaries.
+benchmarks/results/**/*.npz
+benchmarks/results/**/*.trace.json
+benchmarks/results/**/*_trace.json

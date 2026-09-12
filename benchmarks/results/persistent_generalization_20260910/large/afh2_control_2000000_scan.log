@@ -1,0 +1,7 @@
+{"qubits": 512, "key_words": 32, "gate_counts": {"OpType.X": 256, "OpType.XXPhase": 3072, "OpType.Barrier": 8, "OpType.YYPhase": 3072, "OpType.ZZPhase": 3072, "OpType.Rz": 1024, "OpType.Measure": 512}, "thetas": [0.04881350392732475, 0.21518936637241948, 0.10276337607164387, 0.044883182996896864, -0.07634520066109529, 0.14589411306665612, -0.06241278873730749, 0.39177300078207977]}
+warm progress 2048 gates 7659 live rows
+warm progress 4096 gates 2000000 live rows
+warm progress 6144 gates 2000000 live rows
+warm progress 8192 gates 2000000 live rows
+warm progress 10240 gates 2000000 live rows
+{"step": 1, "rows": 2000000, "energy": 0.008195810749526177, "norm2": 2.524993034862083, "seconds": [10.468749663999915, 10.50172944399992], "energy_seconds": [10.469304308000119, 10.502215704999799], "observations": [{"rows": 2000000, "energy": 0.008195825559200218, "norm2": 2.524993362896918}, {"rows": 2000000, "energy": 0.008195810749526177, "norm2": 2.524993034862083}], "work": {"input_live_sum": 13652422976, "input_slots_sum": 13671998986, "gates": 10240, "peak_live": 2000000, "peak_slots": 2000000, "at_cap": 6663, "rebuilds": 1836, "compactions": 1816, "growths": 56}, "live_row_rotations_per_second": 1302061140.8722525, "peak_allocated": 1409285632, "peak_reserved": 1908408320, "allocator_retries": 0}

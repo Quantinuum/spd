@@ -1,0 +1,20 @@
+{
+  "rows": [
+    1701,
+    1701
+  ],
+  "same_canonical_keys": true,
+  "bit_identical_coefficients": true,
+  "max_coefficient_difference": 0.0,
+  "runs": [
+    {
+      "run": "benchmarks/results/persistent_key_scaling_20260911/afh_default_pad0.json",
+      "snapshot_sha256": "2ae2af95ebf165cafab616a1a8c5c3679855cca09ab6d9dca799de39c9fc270f"
+    },
+    {
+      "run": "benchmarks/results/persistent_key_scaling_20260911/afh_default_pad32.json",
+      "snapshot_sha256": "9a60a3e98541f0b5b242e8f4831cdba89c219bb300db139e33ca9ae3d0660aec"
+    }
+  ],
+  "snapshots": "Removed after recording the comparison; rerun this script to regenerate."
+}

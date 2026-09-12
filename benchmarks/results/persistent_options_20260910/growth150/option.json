@@ -1,0 +1,10 @@
+{
+  "variant": "baseline",
+  "dead_fraction": 0.1,
+  "growth_factor": 1.5,
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "64aa5cd1ebe1c62aa0804a3f132553a65c5d7222cebe8e56b17ab881315a30d0",
+    "spd/triton_backend/experiment_kernels.py": "a51fd0b4f7b13f49328992b4fbd90df4a36f161ebdc504247a0b9937198c2448"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "cutoff": 0.0003,
+  "cap": null,
+  "results": {
+    "persistent": {
+      "total_seconds": 0.6080411239972818,
+      "last864_seconds": 0.1539859169988631,
+      "last216_seconds": 0.037265232000208925,
+      "rows": 2265180,
+      "peak_rows": 3553352,
+      "energy": 0.0031191758462805197
+    },
+    "cu": {
+      "total_seconds": 4.35336209900106,
+      "last864_seconds": 1.2650254520003728,
+      "last216_seconds": 0.36898943899996084,
+      "rows": 2265180,
+      "peak_rows": 3553352,
+      "energy": 0.0031191758462805093
+    },
+    "mono": {
+      "total_seconds": 25.101332293999803,
+      "last864_seconds": 16.840809918999184,
+      "last216_seconds": 5.147951836000175,
+      "rows": 29190443,
+      "peak_rows": 29190443,
+      "energy": -0.007758856831210767
+    }
+  },
+  "limits": [
+    "MonoProp native branch truncation differs; not equal-accuracy comparisons.",
+    "One complete pass per backend; tiny Triton compilation preflight excluded.",
+    "1e-4 MonoProp pilot stopped at50M safety boundary, not claimed complete."
+  ],
+  "script_sha256": "309c4d283b9ea0ad615013477891b67a9b651ca57191ce07df63db81f4afb891",
+  "versions": {
+    "monoprop": "0.9.0",
+    "cuquantum-python-cu12": "26.6.0",
+    "cupauliprop-cu12": "0.4.0",
+    "torch": "2.8.0+cu128",
+    "triton": "3.4.0"
+  },
+  "gpu": "H100 80GB",
+  "monoprop_threads": 12,
+  "speedup_cu_over_persistent": 7.159650765694791
+}

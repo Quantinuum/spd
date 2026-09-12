@@ -1,0 +1,6 @@
+{
+  "commit": "350828acd8428e133a7cb180201dffd01ff9fb59",
+  "persistent_source_matches_measured_baseline": true,
+  "baseline_files_unchanged": true,
+  "current_branch": "experiment/triton-persistent-options"
+}

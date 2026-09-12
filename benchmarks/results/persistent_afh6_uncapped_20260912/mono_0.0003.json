@@ -1,0 +1,174 @@
+{
+  "backend": "mono",
+  "qubits": 216,
+  "padded_qubits": 224,
+  "rotations": 4320,
+  "preparation_gates": 108,
+  "cutoff": 0.0003,
+  "cap": null,
+  "threads": 12,
+  "thetas": [
+    0.04881350392732475,
+    0.21518936637241948,
+    0.10276337607164387,
+    0.044883182996896864,
+    -0.07634520066109529,
+    0.14589411306665612,
+    -0.06241278873730749,
+    0.39177300078207977
+  ],
+  "circuit_sha256": "fead2d4bb308d4cb2576bf3839889d4ea27dddb19e78c4f24a7f3cd7fb89c972",
+  "blocks": [
+    {
+      "start_gate": 1,
+      "end_gate": 216,
+      "seconds": 0.040671452999959,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 217,
+      "end_gate": 432,
+      "seconds": 0.034663415999602876,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 433,
+      "end_gate": 648,
+      "seconds": 0.025868259000162652,
+      "rows": 51,
+      "peak_rows": 51
+    },
+    {
+      "start_gate": 649,
+      "end_gate": 864,
+      "seconds": 0.02068156099994667,
+      "rows": 4635,
+      "peak_rows": 4635
+    },
+    {
+      "start_gate": 865,
+      "end_gate": 1080,
+      "seconds": 0.019079802999840467,
+      "rows": 21531,
+      "peak_rows": 21531
+    },
+    {
+      "start_gate": 1081,
+      "end_gate": 1296,
+      "seconds": 0.023763711999890802,
+      "rows": 101640,
+      "peak_rows": 101640
+    },
+    {
+      "start_gate": 1297,
+      "end_gate": 1512,
+      "seconds": 0.13137707700025203,
+      "rows": 1061801,
+      "peak_rows": 1061801
+    },
+    {
+      "start_gate": 1513,
+      "end_gate": 1728,
+      "seconds": 0.07543634299963742,
+      "rows": 1365295,
+      "peak_rows": 1365295
+    },
+    {
+      "start_gate": 1729,
+      "end_gate": 1944,
+      "seconds": 0.11620611299986194,
+      "rows": 1955438,
+      "peak_rows": 1955438
+    },
+    {
+      "start_gate": 1945,
+      "end_gate": 2160,
+      "seconds": 0.4337512340007379,
+      "rows": 4039553,
+      "peak_rows": 4039553
+    },
+    {
+      "start_gate": 2161,
+      "end_gate": 2376,
+      "seconds": 0.2615652799995587,
+      "rows": 4184468,
+      "peak_rows": 4184468
+    },
+    {
+      "start_gate": 2377,
+      "end_gate": 2592,
+      "seconds": 0.4883543309997549,
+      "rows": 5192057,
+      "peak_rows": 5192057
+    },
+    {
+      "start_gate": 2593,
+      "end_gate": 2808,
+      "seconds": 0.7335625550003897,
+      "rows": 6926609,
+      "peak_rows": 6926609
+    },
+    {
+      "start_gate": 2809,
+      "end_gate": 3024,
+      "seconds": 1.7371771640000588,
+      "rows": 10820630,
+      "peak_rows": 10820630
+    },
+    {
+      "start_gate": 3025,
+      "end_gate": 3240,
+      "seconds": 1.6875813750002635,
+      "rows": 14511107,
+      "peak_rows": 14511107
+    },
+    {
+      "start_gate": 3241,
+      "end_gate": 3456,
+      "seconds": 2.430781513000511,
+      "rows": 19493025,
+      "peak_rows": 19493025
+    },
+    {
+      "start_gate": 3457,
+      "end_gate": 3672,
+      "seconds": 5.682981848999589,
+      "rows": 27757785,
+      "peak_rows": 27757785
+    },
+    {
+      "start_gate": 3673,
+      "end_gate": 3888,
+      "seconds": 2.717000235999876,
+      "rows": 27976320,
+      "peak_rows": 27976320
+    },
+    {
+      "start_gate": 3889,
+      "end_gate": 4104,
+      "seconds": 3.292875997999545,
+      "rows": 28367767,
+      "peak_rows": 28367767
+    },
+    {
+      "start_gate": 4105,
+      "end_gate": 4320,
+      "seconds": 5.147951836000175,
+      "rows": 29190443,
+      "peak_rows": 29190443
+    }
+  ],
+  "status": "complete",
+  "timing": "one pass; small synthetic Triton compilation preflight excluded; block synchronization included; observations/logging excluded",
+  "preparation": "exact computational-basis reference via occupied qubit indices; no X propagation required",
+  "rotation_seconds": 25.101331107999613,
+  "completed_rotations": 4320,
+  "safety_boundary_gate": null,
+  "finalization_seconds": 1.1860001905006357e-06,
+  "total_seconds": 25.101332293999803,
+  "rows": 29190443,
+  "energy": -0.007758856831210767,
+  "rss_bytes": 4133289984
+}

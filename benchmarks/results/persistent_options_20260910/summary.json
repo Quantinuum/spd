@@ -1,0 +1,242 @@
+{
+  "steps": [
+    {
+      "step": 3,
+      "input_rows": 853,
+      "output_rows": 2542,
+      "baseline_seconds": 0.02773687199987762,
+      "instrumented_wall_seconds": 0.06991376400037552,
+      "gpu_stages": {
+        "void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<double, double, bool, at::native::(anonymous namespace)::CompareEqFunctor<double> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<double, double, bool, at::native::(anonymous namespace)::CompareEqFunctor<double> >, std::array<char*, 2ul>)": {
+          "calls": 1,
+          "seconds": 1.3759999999999998e-06
+        },
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)": {
+          "calls": 1,
+          "seconds": 2.4e-06
+        },
+        "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4> >(at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4>)": {
+          "calls": 1,
+          "seconds": 2.497e-06
+        },
+        "Memcpy DtoH (Device -> Pinned)": {
+          "calls": 341,
+          "seconds": 0.00047482599999999867
+        },
+        "Memcpy DtoD (Device -> Device)": {
+          "calls": 12,
+          "seconds": 1.3120999999999997e-05
+        },
+        "fill": {
+          "calls": 686,
+          "seconds": 0.0006927050000000007
+        },
+        "insert_variant": {
+          "calls": 64,
+          "seconds": 0.00014924000000000006
+        },
+        "make_planes": {
+          "calls": 64,
+          "seconds": 7.655099999999998e-05
+        },
+        "update_variant": {
+          "calls": 62,
+          "seconds": 0.00030579499999999993
+        },
+        "Memcpy DtoH (Device -> Pageable)": {
+          "calls": 341,
+          "seconds": 0.00047427799999999844
+        },
+        "select_rows": {
+          "calls": 340,
+          "seconds": 0.00047368100000000075
+        },
+        "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1})": {
+          "calls": 4,
+          "seconds": 6.721e-06
+        },
+        "compact_variant": {
+          "calls": 1,
+          "seconds": 2.368e-06
+        }
+      },
+      "cpu_api_seconds": {
+        "aten::item": 0.006194322999999972,
+        "cudaMemcpyAsync": 0.005991089000000074,
+        "cudaStreamSynchronize": 0.0030708960000000634,
+        "aten::empty": 0.00023959899999998106,
+        "aten::zeros": 5.008600000000024e-05,
+        "aten::full": 6.791700000000037e-05
+      },
+      "snapshot_anticommuting_fraction": {
+        "Z": 0.02966363441293704,
+        "XX": 0.03495100493526929
+      },
+      "snapshot_all_gate_anticommuting_fraction": 0.03307484120153849,
+      "peak_allocated_bytes": 1084928,
+      "peak_reserved_bytes": 2097152
+    },
+    {
+      "step": 14,
+      "input_rows": 6130432,
+      "output_rows": 10181702,
+      "baseline_seconds": 0.0877011449993006,
+      "instrumented_wall_seconds": 0.10066637599993555,
+      "gpu_stages": {
+        "void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<double, double, bool, at::native::(anonymous namespace)::CompareEqFunctor<double> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<double, double, bool, at::native::(anonymous namespace)::CompareEqFunctor<double> >, std::array<char*, 2ul>)": {
+          "calls": 1,
+          "seconds": 2.3585999999999997e-05
+        },
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)": {
+          "calls": 1,
+          "seconds": 2.109e-05
+        },
+        "Memset (Device)": {
+          "calls": 1,
+          "seconds": 7.04e-07
+        },
+        "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4> >(at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4>)": {
+          "calls": 1,
+          "seconds": 2.3459e-05
+        },
+        "Memcpy DtoH (Device -> Pinned)": {
+          "calls": 341,
+          "seconds": 0.00047089999999999784
+        },
+        "Memcpy DtoD (Device -> Device)": {
+          "calls": 14,
+          "seconds": 0.001606916
+        },
+        "fill": {
+          "calls": 691,
+          "seconds": 0.001062761000000002
+        },
+        "insert_variant": {
+          "calls": 163,
+          "seconds": 0.004496742999999998
+        },
+        "make_planes": {
+          "calls": 163,
+          "seconds": 0.009860817999999999
+        },
+        "update_variant": {
+          "calls": 202,
+          "seconds": 0.018547328999999994
+        },
+        "Memcpy DtoH (Device -> Pageable)": {
+          "calls": 341,
+          "seconds": 0.00047359299999999845
+        },
+        "select_rows": {
+          "calls": 340,
+          "seconds": 0.014924019999999998
+        },
+        "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1})": {
+          "calls": 2,
+          "seconds": 0.000458223
+        },
+        "compact_variant": {
+          "calls": 4,
+          "seconds": 0.003489155
+        }
+      },
+      "cpu_api_seconds": {
+        "aten::item": 0.03110030900000006,
+        "cudaMemcpyAsync": 0.023477007000000036,
+        "cudaStreamSynchronize": 0.029170959000000014,
+        "aten::empty": 0.00014715700000006565,
+        "aten::zeros": 1.9253999999999904e-05,
+        "aten::full": 6.543599999999424e-05
+      },
+      "snapshot_anticommuting_fraction": {
+        "Z": 0.04912561406067899,
+        "XX": 0.06760211045925332
+      },
+      "snapshot_all_gate_anticommuting_fraction": 0.06104593431782372,
+      "peak_allocated_bytes": 2774704640,
+      "peak_reserved_bytes": 4053794816
+    },
+    {
+      "step": 23,
+      "input_rows": 173836555,
+      "output_rows": 221899620,
+      "baseline_seconds": 1.2874043490000986,
+      "instrumented_wall_seconds": 1.3068623050003225,
+      "gpu_stages": {
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)": {
+          "calls": 1,
+          "seconds": 0.0006058540000000001
+        },
+        "Memset (Device)": {
+          "calls": 1,
+          "seconds": 7.36e-07
+        },
+        "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4> >(at::native::ReduceOp<long, at::native::func_wrapper_t<long, at::native::sum_functor<long, long, long>::operator()(at::TensorIterator&)::{lambda(long, long)#1}>, unsigned int, long, 4, 4>)": {
+          "calls": 1,
+          "seconds": 0.00047457799999999997
+        },
+        "Memcpy DtoH (Device -> Pinned)": {
+          "calls": 341,
+          "seconds": 0.00048163999999999835
+        },
+        "Memcpy DtoD (Device -> Device)": {
+          "calls": 14,
+          "seconds": 0.036682815
+        },
+        "fill": {
+          "calls": 697,
+          "seconds": 0.007195994999999991
+        },
+        "insert_variant": {
+          "calls": 222,
+          "seconds": 0.09830083200000002
+        },
+        "make_planes": {
+          "calls": 222,
+          "seconds": 0.22017340799999993
+        },
+        "update_variant": {
+          "calls": 254,
+          "seconds": 0.4591079979999997
+        },
+        "Memcpy DtoH (Device -> Pageable)": {
+          "calls": 341,
+          "seconds": 0.00047224199999999826
+        },
+        "select_rows": {
+          "calls": 340,
+          "seconds": 0.3360652600000001
+        },
+        "compact_variant": {
+          "calls": 5,
+          "seconds": 0.090176732
+        },
+        "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1})": {
+          "calls": 8,
+          "seconds": 0.005672327999999999
+        }
+      },
+      "cpu_api_seconds": {
+        "aten::item": 0.7131984400000017,
+        "cudaMemcpyAsync": 0.5175179860000028,
+        "cudaStreamSynchronize": 0.7104725919999992,
+        "aten::empty": 0.0001902780000000762,
+        "aten::zeros": 2.1932000000000697e-05,
+        "aten::full": 0.00011329899999977806
+      },
+      "snapshot_anticommuting_fraction": {
+        "Z": 0.0545324654606995,
+        "XX": 0.07652884995526331
+      },
+      "snapshot_all_gate_anticommuting_fraction": 0.0687236812636439,
+      "peak_allocated_bytes": 60703629824,
+      "peak_reserved_bytes": 70952943616
+    }
+  ],
+  "trajectory_validation": {
+    "steps": 23,
+    "counts_equal": true,
+    "max_expectation_difference": 2.220446049250313e-16,
+    "max_norm_difference": 2.220446049250313e-16
+  }
+}

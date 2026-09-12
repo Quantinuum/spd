@@ -1,0 +1,12 @@
+TESTS 0
+START afh2_control_20000000_scan
+DONE afh2_control_20000000_scan 0 complete
+START afh2_inverted_20000000_scan
+DONE afh2_inverted_20000000_scan 0 complete
+START afh2_select_20000000_scan
+DONE afh2_select_20000000_scan 0 complete
+START afh2_local_20000000_scan
+DONE afh2_local_20000000_scan 0 complete
+START afh2_select+local_20000000_scan
+DONE afh2_select+local_20000000_scan 0 complete
+START afh2_baseline_50000000_scan

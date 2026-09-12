@@ -1,0 +1,27 @@
+[
+  {
+    "name": "afh2_control_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_inverted_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_select_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_local_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_select+local_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  }
+]

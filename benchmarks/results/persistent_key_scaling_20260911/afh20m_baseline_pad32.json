@@ -1,0 +1,90 @@
+{
+  "args": {
+    "workload": "afh",
+    "variant": "baseline",
+    "size": 8,
+    "steps": 18,
+    "layers": 2,
+    "random_scale": 1.0,
+    "cutoff": 1e-05,
+    "cap": 20000000,
+    "repeats": 1,
+    "stop_rows": 65000000,
+    "output": "benchmarks/results/persistent_key_scaling_20260911/afh20m_baseline_pad32.json",
+    "save_state": false,
+    "profile": false,
+    "extra_padding_qubits": 32
+  },
+  "qubits": 512,
+  "padded_qubits": 544,
+  "key_words": 34,
+  "cutoff": 1e-05,
+  "thetas": [
+    0.04881350392732475,
+    0.21518936637241948,
+    0.10276337607164387,
+    0.044883182996896864,
+    -0.07634520066109529,
+    0.14589411306665612,
+    -0.06241278873730749,
+    0.39177300078207977
+  ],
+  "gate_counts": {
+    "OpType.X": 256,
+    "OpType.XXPhase": 3072,
+    "OpType.Barrier": 8,
+    "OpType.YYPhase": 3072,
+    "OpType.ZZPhase": 3072,
+    "OpType.Rz": 1024,
+    "OpType.Measure": 512
+  },
+  "circuit_sha256": "5500d01b01b734e706ff90fef5281bac5b12062be148e3ddf5c0723d90fba74e",
+  "revision": "350828acd8428e133a7cb180201dffd01ff9fb59",
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "09cdd3b36a7535b235479fba48b3328d45c8e37f42debe7b7a5b2e4697d1b1c9",
+    "spd/triton_backend/experiment_kernels.py": "dd427f7139ef5252d2577b740eed9fe90870b870ef8a2ab21dbfb384c70f0ae3",
+    "benchmarks/benchmark_persistent_generalization.py": "30c9aea0dc90b88469da98556e2942cdae01f1bd99a8d7cc88d0d0d6f56ca726",
+    "examples/gradient/heisenberg_setup.py": "06eff30a81b35ccb3bf91cae500d9248a2c54fefaa92ceca2d974f2ca83fd4c3",
+    "examples/gradient/run_utils.py": "1d3632d612f0c97ba820338a95f5bfb82d176a14528a065e9a9d9a52cdd2c6dc"
+  },
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "torch": "2.8.0+cu128",
+  "steps": [
+    {
+      "step": 1,
+      "rows": 20000000,
+      "energy": 0.027074618961241297,
+      "norm2": 3.102394368882435,
+      "seconds": [
+        47.29529363399979
+      ],
+      "energy_seconds": [
+        47.29931236199991
+      ],
+      "observations": [
+        {
+          "rows": 20000000,
+          "energy": 0.027074618961241297,
+          "norm2": 3.102394368882435
+        }
+      ],
+      "work": {
+        "input_live_sum": 136110346515,
+        "input_slots_sum": 136290922408,
+        "gates": 10240,
+        "peak_live": 20000000,
+        "peak_slots": 21794862,
+        "at_cap": 6670,
+        "rebuilds": 2252,
+        "compactions": 2231,
+        "growths": 61
+      },
+      "live_row_rotations_per_second": 2877883528.291546,
+      "peak_allocated": 15753398272,
+      "peak_reserved": 18043895808,
+      "allocator_retries": 0
+    }
+  ],
+  "status": "complete"
+}

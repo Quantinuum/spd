@@ -1,0 +1,175 @@
+{
+  "backend": "cu",
+  "qubits": 216,
+  "padded_qubits": 224,
+  "rotations": 4320,
+  "preparation_gates": 108,
+  "cutoff": 0.0003,
+  "cap": null,
+  "threads": 12,
+  "thetas": [
+    0.04881350392732475,
+    0.21518936637241948,
+    0.10276337607164387,
+    0.044883182996896864,
+    -0.07634520066109529,
+    0.14589411306665612,
+    -0.06241278873730749,
+    0.39177300078207977
+  ],
+  "circuit_sha256": "fead2d4bb308d4cb2576bf3839889d4ea27dddb19e78c4f24a7f3cd7fb89c972",
+  "blocks": [
+    {
+      "start_gate": 1,
+      "end_gate": 216,
+      "seconds": 0.11113878699961788,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 217,
+      "end_gate": 432,
+      "seconds": 0.057918841000173416,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 433,
+      "end_gate": 648,
+      "seconds": 0.058241672999429284,
+      "rows": 51,
+      "peak_rows": 51
+    },
+    {
+      "start_gate": 649,
+      "end_gate": 864,
+      "seconds": 0.058538240999951086,
+      "rows": 4635,
+      "peak_rows": 4635
+    },
+    {
+      "start_gate": 865,
+      "end_gate": 1080,
+      "seconds": 0.06117404900032852,
+      "rows": 18663,
+      "peak_rows": 18663
+    },
+    {
+      "start_gate": 1081,
+      "end_gate": 1296,
+      "seconds": 0.06454026200026419,
+      "rows": 80725,
+      "peak_rows": 80725
+    },
+    {
+      "start_gate": 1297,
+      "end_gate": 1512,
+      "seconds": 0.08755734600072174,
+      "rows": 653677,
+      "peak_rows": 653677
+    },
+    {
+      "start_gate": 1513,
+      "end_gate": 1728,
+      "seconds": 0.1287074299998494,
+      "rows": 812852,
+      "peak_rows": 812852
+    },
+    {
+      "start_gate": 1729,
+      "end_gate": 1944,
+      "seconds": 0.1641240219996689,
+      "rows": 1198837,
+      "peak_rows": 1198837
+    },
+    {
+      "start_gate": 1945,
+      "end_gate": 2160,
+      "seconds": 0.26180460400064476,
+      "rows": 2266837,
+      "peak_rows": 2266837
+    },
+    {
+      "start_gate": 2161,
+      "end_gate": 2376,
+      "seconds": 0.25537380300011137,
+      "rows": 2077980,
+      "peak_rows": 2267768
+    },
+    {
+      "start_gate": 2377,
+      "end_gate": 2592,
+      "seconds": 0.26283078100004786,
+      "rows": 2494635,
+      "peak_rows": 2494635
+    },
+    {
+      "start_gate": 2593,
+      "end_gate": 2808,
+      "seconds": 0.31399860000055924,
+      "rows": 3005689,
+      "peak_rows": 3005807
+    },
+    {
+      "start_gate": 2809,
+      "end_gate": 3024,
+      "seconds": 0.46202687000004516,
+      "rows": 3440272,
+      "peak_rows": 3553352
+    },
+    {
+      "start_gate": 3025,
+      "end_gate": 3240,
+      "seconds": 0.3554882369999177,
+      "rows": 3472139,
+      "peak_rows": 3537767
+    },
+    {
+      "start_gate": 3241,
+      "end_gate": 3456,
+      "seconds": 0.34236924599917984,
+      "rows": 3014021,
+      "peak_rows": 3472139
+    },
+    {
+      "start_gate": 3457,
+      "end_gate": 3672,
+      "seconds": 0.37232350799968117,
+      "rows": 1966072,
+      "peak_rows": 3016066
+    },
+    {
+      "start_gate": 3673,
+      "end_gate": 3888,
+      "seconds": 0.2524622939999972,
+      "rows": 2023504,
+      "peak_rows": 2025459
+    },
+    {
+      "start_gate": 3889,
+      "end_gate": 4104,
+      "seconds": 0.27125021100073354,
+      "rows": 2196160,
+      "peak_rows": 2196336
+    },
+    {
+      "start_gate": 4105,
+      "end_gate": 4320,
+      "seconds": 0.36898943899996084,
+      "rows": 2265180,
+      "peak_rows": 2322438
+    }
+  ],
+  "status": "complete",
+  "timing": "one pass; small synthetic Triton compilation preflight excluded; block synchronization included; observations/logging excluded",
+  "cap_method": "none; native coefficient cutoff only",
+  "rotation_seconds": 4.310858244000883,
+  "completed_rotations": 4320,
+  "safety_boundary_gate": null,
+  "finalization_seconds": 0.04250385500017728,
+  "total_seconds": 4.35336209900106,
+  "rows": 2265180,
+  "energy": 0.0031191758462805093,
+  "norm2": 2.559136467881403,
+  "rss_bytes": 853213184
+}

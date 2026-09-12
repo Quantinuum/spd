@@ -1,0 +1,15 @@
+{
+  "baseline_seconds": 73.503657438,
+  "final_step_seconds": 18.64919244200007,
+  "counts_equal": true,
+  "max_expectation_difference": 2.220446049250313e-16,
+  "max_norm_difference": 1.1102230246251565e-16,
+  "tests": {
+    "passed": 116,
+    "seconds": 3.26,
+    "files": [
+      "tests/test_triton_backend.py",
+      "tests/test_triton_invariants.py"
+    ]
+  }
+}

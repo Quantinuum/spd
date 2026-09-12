@@ -1,0 +1,43 @@
+{
+  "reference": "benchmarks/results/forward_profile_20260910/baseline",
+  "runs": {
+    "candidate1": {
+      "total_seconds": 27.086327095999422,
+      "final_step_seconds": 6.809514394999951,
+      "speedup_vs_original": 2.713681230293357,
+      "counts_equal": true,
+      "max_expectation_difference": 1.1102230246251565e-16,
+      "max_norm_difference": 1.1102230246251565e-16,
+      "peak_allocated_bytes": 51658223104,
+      "peak_reserved_bytes": 70701285376,
+      "allocation_retries": 0,
+      "ooms": 0
+    },
+    "candidate2": {
+      "total_seconds": 27.076854904000356,
+      "final_step_seconds": 6.816342437000003,
+      "speedup_vs_original": 2.7146305469598877,
+      "counts_equal": true,
+      "max_expectation_difference": 1.1102230246251565e-16,
+      "max_norm_difference": 1.1102230246251565e-16,
+      "peak_allocated_bytes": 51658223104,
+      "peak_reserved_bytes": 70701285376,
+      "allocation_retries": 0,
+      "ooms": 0
+    },
+    "full_control": {
+      "total_seconds": 73.48137530599843,
+      "final_step_seconds": 18.663886804000413,
+      "speedup_vs_original": 1.0003032350974488,
+      "counts_equal": true,
+      "max_expectation_difference": 3.3306690738754696e-16,
+      "max_norm_difference": 1.1102230246251565e-16,
+      "peak_allocated_bytes": 51658223104,
+      "peak_reserved_bytes": 70701285376,
+      "allocation_retries": 0,
+      "ooms": 0
+    }
+  },
+  "candidate_mean_total_seconds": 27.08159099999989,
+  "speedup_vs_full_control": 2.713333027812093
+}

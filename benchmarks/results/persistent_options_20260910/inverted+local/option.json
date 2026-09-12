@@ -1,0 +1,10 @@
+{
+  "variant": "inverted+local",
+  "dead_fraction": 0.1,
+  "growth_factor": null,
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "0063ca7984d5c5f7f8cf40381b6cc5b9eef73653dfb4117c475fedeace0581cf",
+    "spd/triton_backend/experiment_kernels.py": "a51fd0b4f7b13f49328992b4fbd90df4a36f161ebdc504247a0b9937198c2448"
+  }
+}

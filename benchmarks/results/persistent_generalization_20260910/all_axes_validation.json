@@ -1,0 +1,12 @@
+{
+  "tests": 458,
+  "seconds": 224.84,
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "09cdd3b36a7535b235479fba48b3328d45c8e37f42debe7b7a5b2e4697d1b1c9",
+    "spd/triton_backend/experiment_kernels.py": "dd427f7139ef5252d2577b740eed9fe90870b870ef8a2ab21dbfb384c70f0ae3",
+    "tests/test_triton_persistent_all_axes.py": "c58fdbb40c0bbf4fd9ae3b95d6188d2bd1a0f379ffbce61872cc36b0a6d1f690",
+    "tests/test_triton_persistent_wide_options.py": "426c78cb17672f595681f1798d885821f12dab03b348264ab8627d962bf6565a",
+    "tests/test_triton_persistent_options.py": "3fd07709acf21852f6cad8b357666947367219fe93a1a0d91a0282c7f19926e4"
+  }
+}

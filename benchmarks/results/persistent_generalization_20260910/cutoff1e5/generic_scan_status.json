@@ -1,0 +1,37 @@
+[
+  {
+    "name": "afh2_local_all_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_select_all_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_inverted_all_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_select_all+local_all_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_inverted_all+local_all_20000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_inverted_all+local_all_50000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  },
+  {
+    "name": "afh2_select_all+local_all_50000000_scan",
+    "returncode": 0,
+    "status": "complete"
+  }
+]

@@ -1,0 +1,49 @@
+{
+  "variant": "select_all+local_all",
+  "unprofiled_seconds": [
+    58.94744369099999
+  ],
+  "instrumented_seconds": 59.71298683799978,
+  "work": {
+    "input_live_sum": 136110346515,
+    "input_slots_sum": 136290922408,
+    "gates": 10240,
+    "peak_live": 20000000,
+    "peak_slots": 21794862,
+    "at_cap": 6670,
+    "rebuilds": 2252,
+    "compactions": 2231,
+    "growths": 61
+  },
+  "rows": 20000000,
+  "energy": 0.027074618961241304,
+  "norm2": 3.102394376794234,
+  "topk_calls": 2224,
+  "kernel_seconds": 51.18160357300272,
+  "streams": [
+    7
+  ],
+  "groups": {
+    "other kernels": {
+      "calls": 83046,
+      "seconds": 39.684808939002714
+    },
+    "insert_variant": {
+      "calls": 2344,
+      "seconds": 6.066508024999995
+    },
+    "update_variant": {
+      "calls": 2324,
+      "seconds": 1.7567353029999981
+    },
+    "select_rows": {
+      "calls": 10239,
+      "seconds": 3.5831912480000137
+    },
+    "compact_variant": {
+      "calls": 7,
+      "seconds": 0.090360058
+    }
+  },
+  "plane_grids": {}
+}

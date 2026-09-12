@@ -1,0 +1,121 @@
+Running 23 steps on 11x11 OBC lattice with backend=triton, precision=double
+dt=0.04, total_t=0.92, threshold=3.814697265625e-06, max_num_str=1000000000
+per-step gate count=341
+Triton timing mode: warm one pass per step; synchronized second pass
+initial observable expectation=1.0 size=1
+step 1/23: exp_val=0.9872680689481184 size=106
+initial --> 106 Time taken: 0.015994063000107417 s Norm: 0.9999999999784838
+allocator: {"step": 1, "seconds": 0.015994063000107417, "live_rows": 106, "logical_bytes": 4240, "backing_storage_bytes": 4240, "counters": {"allocated_bytes.all.current": 353792, "allocated_bytes.all.peak": 368640, "requested_bytes.all.current": 23336, "requested_bytes.all.peak": 35752, "reserved_bytes.all.current": 2097152, "reserved_bytes.all.peak": 2097152, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 1, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 2/23: exp_val=0.9527802865260726 size=853
+106 --> 853 Time taken: 0.01652906500021345 s Norm: 0.9999999981639018
+Avg throughput (# string / gate / s): 9892241.333547208
+allocator: {"step": 2, "seconds": 0.01652906500021345, "live_rows": 853, "logical_bytes": 34120, "backing_storage_bytes": 34120, "counters": {"allocated_bytes.all.current": 384000, "allocated_bytes.all.peak": 501760, "requested_bytes.all.current": 53216, "requested_bytes.all.peak": 170088, "reserved_bytes.all.current": 2097152, "reserved_bytes.all.peak": 2097152, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 1, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 3/23: exp_val=0.9061848081047893 size=2542
+853 --> 2542 Time taken: 0.017026858000463108 s Norm: 0.999999990348529
+Avg throughput (# string / gate / s): 33996143.03380319
+allocator: {"step": 3, "seconds": 0.017026858000463108, "live_rows": 2542, "logical_bytes": 101680, "backing_storage_bytes": 101680, "counters": {"allocated_bytes.all.current": 451072, "allocated_bytes.all.peak": 858624, "requested_bytes.all.current": 120776, "requested_bytes.all.peak": 526720, "reserved_bytes.all.current": 2097152, "reserved_bytes.all.peak": 2097152, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 1, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 4/23: exp_val=0.859518323777968 size=6896
+2542 --> 6896 Time taken: 0.016990064999845345 s Norm: 0.9999999574838113
+Avg throughput (# string / gate / s): 94712939.5923234
+allocator: {"step": 4, "seconds": 0.016990064999845345, "live_rows": 6896, "logical_bytes": 275840, "backing_storage_bytes": 275840, "counters": {"allocated_bytes.all.current": 625152, "allocated_bytes.all.peak": 1690624, "requested_bytes.all.current": 294936, "requested_bytes.all.peak": 1359056, "reserved_bytes.all.current": 2097152, "reserved_bytes.all.peak": 2097152, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 1, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 5/23: exp_val=0.823102147262767 size=17890
+6896 --> 17890 Time taken: 0.017578413000592263 s Norm: 0.9999998707879175
+Avg throughput (# string / gate / s): 240409245.1268277
+allocator: {"step": 5, "seconds": 0.017578413000592263, "live_rows": 17890, "logical_bytes": 715600, "backing_storage_bytes": 715600, "counters": {"allocated_bytes.all.current": 1065472, "allocated_bytes.all.peak": 4154880, "requested_bytes.all.current": 734696, "requested_bytes.all.peak": 3823712, "reserved_bytes.all.current": 25165824, "reserved_bytes.all.peak": 25165824, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 3, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 6/23: exp_val=0.8023600634140251 size=45249
+17890 --> 45249 Time taken: 0.018145071999242646 s Norm: 0.9999996255342497
+Avg throughput (# string / gate / s): 593285025.2922295
+allocator: {"step": 6, "seconds": 0.018145071999242646, "live_rows": 45249, "logical_bytes": 1809960, "backing_storage_bytes": 1809960, "counters": {"allocated_bytes.all.current": 2160128, "allocated_bytes.all.peak": 9909760, "requested_bytes.all.current": 1829056, "requested_bytes.all.peak": 9578360, "reserved_bytes.all.current": 27262976, "reserved_bytes.all.peak": 27262976, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 4, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 7/23: exp_val=0.7966507053448578 size=105972
+45249 --> 105972 Time taken: 0.018753682000351546 s Norm: 0.9999989908817499
+Avg throughput (# string / gate / s): 1374832979.439274
+allocator: {"step": 7, "seconds": 0.018753682000351546, "live_rows": 105972, "logical_bytes": 4238880, "backing_storage_bytes": 4238880, "counters": {"allocated_bytes.all.current": 4588544, "allocated_bytes.all.peak": 22183424, "requested_bytes.all.current": 4257976, "requested_bytes.all.peak": 21850376, "reserved_bytes.all.current": 48234496, "reserved_bytes.all.peak": 48234496, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 5, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 8/23: exp_val=0.8007972470919498 size=228871
+105972 --> 228871 Time taken: 0.020350709000013012 s Norm: 0.999997306159975
+Avg throughput (# string / gate / s): 2805343612.350975
+allocator: {"step": 8, "seconds": 0.020350709000013012, "live_rows": 228871, "logical_bytes": 9154840, "backing_storage_bytes": 9154840, "counters": {"allocated_bytes.all.current": 9504768, "allocated_bytes.all.peak": 50763264, "requested_bytes.all.current": 9173936, "requested_bytes.all.peak": 50430928, "reserved_bytes.all.current": 69206016, "reserved_bytes.all.peak": 69206016, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 6, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 9/23: exp_val=0.8081610177151826 size=487404
+228871 --> 487404 Time taken: 0.021907657000156178 s Norm: 0.9999934550044425
+Avg throughput (# string / gate / s): 5574529832.155459
+allocator: {"step": 9, "seconds": 0.021907657000156178, "live_rows": 487404, "logical_bytes": 19496160, "backing_storage_bytes": 19496160, "counters": {"allocated_bytes.all.current": 19845632, "allocated_bytes.all.peak": 100316160, "requested_bytes.all.current": 19515256, "requested_bytes.all.peak": 99983752, "reserved_bytes.all.current": 153092096, "reserved_bytes.all.peak": 153092096, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 10, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 10/23: exp_val=0.8139538929652543 size=994285
+487404 --> 994285 Time taken: 0.026298497000425414 s Norm: 0.999984963484898
+Avg throughput (# string / gate / s): 9606175383.17545
+allocator: {"step": 10, "seconds": 0.026298497000425414, "live_rows": 994285, "logical_bytes": 39771400, "backing_storage_bytes": 39771400, "counters": {"allocated_bytes.all.current": 40120832, "allocated_bytes.all.peak": 207717376, "requested_bytes.all.current": 39790496, "requested_bytes.all.peak": 207386000, "reserved_bytes.all.current": 257949696, "reserved_bytes.all.peak": 257949696, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 13, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 11/23: exp_val=0.8160403794848189 size=1976955
+994285 --> 1976955 Time taken: 0.033779280000089784 s Norm: 0.9999673017535259
+Avg throughput (# string / gate / s): 14997253345.798178
+allocator: {"step": 11, "seconds": 0.033779280000089784, "live_rows": 1976955, "logical_bytes": 79078200, "backing_storage_bytes": 79078200, "counters": {"allocated_bytes.all.current": 79427584, "allocated_bytes.all.peak": 408604160, "requested_bytes.all.current": 79097296, "requested_bytes.all.peak": 408272336, "reserved_bytes.all.current": 551550976, "reserved_bytes.all.peak": 551550976, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 17, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 12/23: exp_val=0.8151603645869914 size=3549247
+1976955 --> 3549247 Time taken: 0.04831368500072131 s Norm: 0.999931286316366
+Avg throughput (# string / gate / s): 19502081883.96172
+allocator: {"step": 12, "seconds": 0.04831368500072131, "live_rows": 3549247, "logical_bytes": 141969880, "backing_storage_bytes": 141969880, "counters": {"allocated_bytes.all.current": 142319104, "allocated_bytes.all.peak": 734923264, "requested_bytes.all.current": 141988976, "requested_bytes.all.peak": 734591808, "reserved_bytes.all.current": 1159725056, "reserved_bytes.all.peak": 1159725056, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 21, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 13/23: exp_val=0.8141926215418308 size=6130432
+3549247 --> 6130432 Time taken: 0.07134029000008013 s Norm: 0.9998624143359777
+Avg throughput (# string / gate / s): 23133985991.62053
+allocator: {"step": 13, "seconds": 0.07134029000008013, "live_rows": 6130432, "logical_bytes": 245217280, "backing_storage_bytes": 245217280, "counters": {"allocated_bytes.all.current": 245566464, "allocated_bytes.all.peak": 1382255616, "requested_bytes.all.current": 245236376, "requested_bytes.all.peak": 1381923792, "reserved_bytes.all.current": 2061500416, "reserved_bytes.all.peak": 2061500416, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 25, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 14/23: exp_val=0.8154476441185619 size=10181702
+6130432 --> 10181702 Time taken: 0.11014061300011235 s Norm: 0.9997402479810492
+Avg throughput (# string / gate / s): 25251528670.87423
+allocator: {"step": 14, "seconds": 0.11014061300011235, "live_rows": 10181702, "logical_bytes": 407268080, "backing_storage_bytes": 407268080, "counters": {"allocated_bytes.all.current": 407618048, "allocated_bytes.all.peak": 2360775680, "requested_bytes.all.current": 407287176, "requested_bytes.all.peak": 2360444000, "reserved_bytes.all.current": 2585788416, "reserved_bytes.all.peak": 2585788416, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 29, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 15/23: exp_val=0.8203666324612635 size=16322811
+10181702 --> 16322811 Time taken: 0.17515445099979843 s Norm: 0.9995340559197724
+Avg throughput (# string / gate / s): 25800197715.24505
+allocator: {"step": 15, "seconds": 0.17515445099979843, "live_rows": 16322811, "logical_bytes": 652912440, "backing_storage_bytes": 652912440, "counters": {"allocated_bytes.all.current": 653261824, "allocated_bytes.all.peak": 3886972928, "requested_bytes.all.current": 652931536, "requested_bytes.all.peak": 3886640856, "reserved_bytes.all.current": 4640997376, "reserved_bytes.all.peak": 4640997376, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 35, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 16/23: exp_val=0.8280233077359687 size=25858045
+16322811 --> 25858045 Time taken: 0.26129465400026675 s Norm: 0.9992001574003455
+Avg throughput (# string / gate / s): 27523854154.29379
+allocator: {"step": 16, "seconds": 0.26129465400026675, "live_rows": 25858045, "logical_bytes": 1034321800, "backing_storage_bytes": 1034321800, "counters": {"allocated_bytes.all.current": 1034671104, "allocated_bytes.all.peak": 5889529344, "requested_bytes.all.current": 1034340896, "requested_bytes.all.peak": 5889197656, "reserved_bytes.all.current": 8017412096, "reserved_bytes.all.peak": 8017412096, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 40, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 17/23: exp_val=0.8367044405454915 size=39217720
+25858045 --> 39217720 Time taken: 0.41764666400013084 s Norm: 0.9986757586046362
+Avg throughput (# string / gate / s): 26566518755.903492
+allocator: {"step": 17, "seconds": 0.41764666400013084, "live_rows": 39217720, "logical_bytes": 1568708800, "backing_storage_bytes": 1568708800, "counters": {"allocated_bytes.all.current": 1569058304, "allocated_bytes.all.peak": 9227678208, "requested_bytes.all.current": 1568727896, "requested_bytes.all.peak": 9227347048, "reserved_bytes.all.current": 10324279296, "reserved_bytes.all.peak": 10324279296, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 44, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 18/23: exp_val=0.8444610679717854 size=56220919
+39217720 --> 56220919 Time taken: 0.6101722009998412 s Norm: 0.9978860110571318
+Avg throughput (# string / gate / s): 26668353495.67857
+allocator: {"step": 18, "seconds": 0.6101722009998412, "live_rows": 56220919, "logical_bytes": 2248836760, "backing_storage_bytes": 2248836760, "counters": {"allocated_bytes.all.current": 2249186304, "allocated_bytes.all.peak": 12778874880, "requested_bytes.all.current": 2248855856, "requested_bytes.all.peak": 12778542728, "reserved_bytes.all.current": 13931380736, "reserved_bytes.all.peak": 13931380736, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 47, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 19/23: exp_val=0.8492094770487932 size=76647324
+56220919 --> 76647324 Time taken: 0.8509614250006052 s Norm: 0.9967600094854395
+Avg throughput (# string / gate / s): 26621694904.07146
+allocator: {"step": 19, "seconds": 0.8509614250006052, "live_rows": 76647324, "logical_bytes": 3065892960, "backing_storage_bytes": 3065892960, "counters": {"allocated_bytes.all.current": 3066242560, "allocated_bytes.all.peak": 18399005184, "requested_bytes.all.current": 3065912056, "requested_bytes.all.peak": 18398673872, "reserved_bytes.all.current": 24144510976, "reserved_bytes.all.peak": 24144510976, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 51, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 20/23: exp_val=0.8506241991368326 size=101566136
+76647324 --> 101566136 Time taken: 1.096901570999762 s Norm: 0.9952369396750246
+Avg throughput (# string / gate / s): 27701113512.22287
+allocator: {"step": 20, "seconds": 1.096901570999762, "live_rows": 101566136, "logical_bytes": 4062645440, "backing_storage_bytes": 4062645440, "counters": {"allocated_bytes.all.current": 4062994944, "allocated_bytes.all.peak": 23633772544, "requested_bytes.all.current": 4062664536, "requested_bytes.all.peak": 23633440592, "reserved_bytes.all.current": 35448160256, "reserved_bytes.all.peak": 35448160256, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 53, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 21/23: exp_val=0.8507418674236681 size=133423815
+101566136 --> 133423815 Time taken: 1.4990633010002057 s Norm: 0.9932426692811729
+Avg throughput (# string / gate / s): 26727214667.164013
+allocator: {"step": 21, "seconds": 1.4990633010002057, "live_rows": 133423815, "logical_bytes": 5336952600, "backing_storage_bytes": 5336952600, "counters": {"allocated_bytes.all.current": 5337302528, "allocated_bytes.all.peak": 32369138176, "requested_bytes.all.current": 5336971696, "requested_bytes.all.peak": 32368806440, "reserved_bytes.all.current": 46584037376, "reserved_bytes.all.peak": 46584037376, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 56, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 22/23: exp_val=0.8485055402732968 size=173836555
+133423815 --> 173836555 Time taken: 1.878971437000473 s Norm: 0.99065323510181
+Avg throughput (# string / gate / s): 27881154579.24697
+allocator: {"step": 22, "seconds": 1.878971437000473, "live_rows": 173836555, "logical_bytes": 6953462200, "backing_storage_bytes": 6953462200, "counters": {"allocated_bytes.all.current": 6953811968, "allocated_bytes.all.peak": 41558841856, "requested_bytes.all.current": 6953481296, "requested_bytes.all.peak": 41558509200, "reserved_bytes.all.current": 53378809856, "reserved_bytes.all.peak": 53378809856, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 58, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+step 23/23: exp_val=0.846651058594837 size=221899620
+173836555 --> 221899620 Time taken: 2.4000806479998573 s Norm: 0.9873090532359033
+Avg throughput (# string / gate / s): 28112812748.075626
+allocator: {"step": 23, "seconds": 2.4000806479998573, "live_rows": 221899620, "logical_bytes": 8875984800, "backing_storage_bytes": 8875984800, "counters": {"allocated_bytes.all.current": 8876334592, "allocated_bytes.all.peak": 51972026368, "requested_bytes.all.current": 8876003896, "requested_bytes.all.peak": 51971694280, "reserved_bytes.all.current": 64284000256, "reserved_bytes.all.peak": 64284000256, "inactive_split_bytes.all.current": 0, "inactive_split_bytes.all.peak": 0, "segment.all.current": 0, "segment.all.allocated": 0, "num_alloc_retries": 0, "num_ooms": 0, "num_device_alloc": 60, "num_device_free": 0}}
+checkpoint saved to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+Wrote benchmark data to benchmarks/results/persistent_options_20260910/growth110/triton_benchmark_data_dt_0.04_total_t_0.92_threshold_log_18.pkl
+final results = [1.0, 0.9872680689481184, 0.9527802865260726, 0.9061848081047893, 0.859518323777968, 0.823102147262767, 0.8023600634140251, 0.7966507053448578, 0.8007972470919498, 0.8081610177151826, 0.8139538929652543, 0.8160403794848189, 0.8151603645869914, 0.8141926215418308, 0.8154476441185619, 0.8203666324612635, 0.8280233077359687, 0.8367044405454915, 0.8444610679717854, 0.8492094770487932, 0.8506241991368326, 0.8507418674236681, 0.8485055402732968, 0.846651058594837]

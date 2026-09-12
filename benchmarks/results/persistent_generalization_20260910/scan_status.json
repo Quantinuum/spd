@@ -1,0 +1,70 @@
+[
+  {
+    "name": "xxz21_baseline_19",
+    "returncode": 0
+  },
+  {
+    "name": "xxz21_control_19",
+    "returncode": 0
+  },
+  {
+    "name": "xxz21_inverted_19",
+    "returncode": 0
+  },
+  {
+    "name": "xxz21_select_19",
+    "returncode": 0
+  },
+  {
+    "name": "xxz21_local_19",
+    "returncode": 0
+  },
+  {
+    "name": "xxz21_fingerprint_19",
+    "returncode": 0
+  },
+  {
+    "name": "xxz21_soa_19",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_baseline_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_control_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_inverted_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_select_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_device_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_local_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_fingerprint_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_soa_3000000_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_baseline_500_scan",
+    "returncode": 0
+  },
+  {
+    "name": "afh2_control_500_scan",
+    "returncode": 0
+  }
+]

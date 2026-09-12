@@ -1,0 +1,8 @@
+{
+  "bitset_build_seconds": 50.77365109599998,
+  "selection_seconds_saved": 2.90580744200001,
+  "net_bitset_cost_seconds": 47.86784365399997,
+  "gpu_kernel_gap_seconds": 47.8882150780001,
+  "profiled_wall_gap_seconds": 47.725619066000036,
+  "unprofiled_wall_gap_seconds": 47.93882058899999
+}

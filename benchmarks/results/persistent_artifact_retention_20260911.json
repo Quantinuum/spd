@@ -1,0 +1,193 @@
+{
+  "reason": "Retain compact experiment evidence; remove regenerable full states and two large traces.",
+  "files": [
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_baseline_3000000.npz",
+      "bytes": 231840,
+      "sha256": "5cabfefa67fc630f13cbadd107a66219f2f48ca78b94e2990a725ebbd8996caa"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_baseline_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "33bf284da2e4c7cc927b02c36d42c918ae29e0170385d1cafb6339fe43e23976"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_baseline_500_scan.npz",
+      "bytes": 68504,
+      "sha256": "dcb58899fc9505d244b68df733634ea6be1d1c2d8cce88df893a9f1dfd2dff98"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_control_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "5e888ff5e75086d903e98ce5d998f507dfc1b029d7448954ce030c0a778e1f0f"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_control_500_scan.npz",
+      "bytes": 68504,
+      "sha256": "62aaba36d1170a518f492282793e72909d340bdc7b644bf78d3ff35a1e612eac"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_device_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "ba67dbf54bfa3970bb6f287bc49144477ce02bcb81e497fa7575bb34d85db54c"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_fingerprint_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "f8ceb2677c004d9fe128ba272e561237e4a85669accfb70a94ec595a84ac6d0f"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_inverted_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "3948dc03edcd9979392062d6ee6ae1d8185b2ae0847a67af5df76222eeb2bb76"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_inverted_500_scan.npz",
+      "bytes": 68504,
+      "sha256": "73882623fba1bae1f199e820fe1a88a08f6d34189a05f677a00011ad2e457ba0"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_local_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "1602dabd0faae9214996f385690c9768226caa5b683b8c19746f9ac8247b1bb5"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_select_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "fcb712ede10d2d9da6a4a2e88a688894fdbb63486bd5f48356a9286d0a8c710a"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh2_soa_3000000_scan.npz",
+      "bytes": 231840,
+      "sha256": "3ba5631b6e2c3eed4a82814340aacb42406fbc9cf4288358e6d28d57990f7077"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/afh3_baseline_3000000.npz",
+      "bytes": 1188600,
+      "sha256": "ebebdd865a1627065a44368f1eb44d878318d942058231bd043584c05353c744"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_baseline_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "66849cc77040a721256fb06914a6b59588b34fd4273e3ce9118687a19d519bc6"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_control_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "20e4ed322c2e76aa4eda7dcd68ed05423fd4d442d317cc6b63affbb01ea672b7"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_inverted_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "dc6a40fa4815f050abd7946f46a17741f45fc3ceda4f009d617789452d02d20e"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_inverted_all+local_all_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "efda7a366bb9faf324de0616b09c78870ff58c7544057b912ac94c9b14f64853"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_inverted_all_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "beb3d28a52742ca9b1feed5ee9e9537e2acee6cbf5fcb458a32016bb2318b7c7"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_local_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "13f0cd57b54681bcf6cc44e9b77fb9fe6eca602cc05d41183e90a63fc54aba43"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_local_all_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "588e88b37e294aa2f13fcdbf142f12b87d1be6cc59fcb50a8075e6f256222582"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_select+local_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "76dedd589e9acb930774d5341478f978978e80e17f1ecc93f3e8947112b7eae9"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_select_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "75efabd4065db4beeafedc3a9efd97dd55bf37171e78cab091e4c44624ed7ce1"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_select_all+local_all_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "d598cfb196ae5dcbb1f577d5eeb1918ada08aa10b08ce5456e2734fccad9ae2f"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_select_all_20000000_scan.npz",
+      "bytes": 2720000612,
+      "sha256": "3ca8a847ec441444c820b0bbbb1e5002167a38a4c1c12fb374a1f094c19faa62"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_baseline_2000000_scan.npz",
+      "bytes": 272000504,
+      "sha256": "3f22115665d3be32dbff43d372c3cfa9adc19c96c2b323d7c6426dbf200f6c42"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_baseline_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "2701a39fe459563268f8bc8494d9ce6c780f2d655733615d3a0fc94828702834"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_control_2000000_scan.npz",
+      "bytes": 272000504,
+      "sha256": "a89f7cc912d4d1a960281d4c1d7ba92d2b41443e23a665942ef9a78b0b5cc4f1"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_control_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "801c4e0ad8e65f6e5ffe935ad2a705f1691569e58b2f2a4af089eafaca0ee8ad"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_device_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "9a330695e8abfefab789fffc6d7c692f0987ad0a02ec9fb609f65f4f526cf709"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_fingerprint_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "b1abb9a307dca7fcee2858043f0443acb42e5784982e14a0ed50e6b29c65ebdf"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_inverted_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "8e744b14d3b7b29651892783108c17bcfb4301f866afda219c2950223270c926"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_local_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "6fed9576606770ba3882dfaaf6cfe152f5739a0b8fc84aa9c7f72005876b8959"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_select_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "79b7af0dcbe1732c18a19ba4d262a33913298025ed4c6fb3e2fec931aee61b43"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/large/afh2_soa_5000000_scan.npz",
+      "bytes": 680000504,
+      "sha256": "9cbfe0c3832bebfa8245a4c391faf58b2626041ceba3fecf5fa1b0a79df07dd2"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260910/scale1/afh2_baseline_3000000_scan.npz",
+      "bytes": 32339672,
+      "sha256": "d8b059c1aa52982e4e8bfea8f0d545bfcabca82f66de795d473c500d63ce79fb"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260911_profile/afh20m_inverted.trace.json",
+      "bytes": 331795134,
+      "sha256": "fcaf0cf908b621df799cf97dc5e90ef0705e61b19bea3ac8f73243ba02c69516"
+    },
+    {
+      "path": "benchmarks/results/persistent_generalization_20260911_profile/afh20m_select.trace.json",
+      "bytes": 329468723,
+      "sha256": "54032b100deaed654bc9daaa74bc63acc641656b568364706b97bc5451812a4b"
+    }
+  ],
+  "total_bytes": 36601095973,
+  "retained": "Run JSONs, comparison JSONs, kernel summaries, validation records, logs, scripts and notes.",
+  "status": "deleted"
+}

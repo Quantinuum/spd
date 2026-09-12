@@ -1,0 +1,29 @@
+[
+  {
+    "pid": 22646,
+    "cmd": [
+      "/home/zeus/miniconda3/envs/cloudspace/bin/python",
+      "/teamspace/studios/this_studio/spd/benchmarks/benchmark_persistent_generalization.py",
+      "--workload",
+      "afh",
+      "--size",
+      "8",
+      "--layers",
+      "2",
+      "--random-scale",
+      "1",
+      "--cutoff",
+      ".0001",
+      "--cap",
+      "2000000",
+      "--variant",
+      "control",
+      "--repeats",
+      "2",
+      "--save-state",
+      "--output",
+      "/teamspace/studios/this_studio/spd/benchmarks/results/persistent_generalization_20260910/large/afh2_control_2000000_scan.json"
+    ],
+    "created": 1789074037.03
+  }
+]

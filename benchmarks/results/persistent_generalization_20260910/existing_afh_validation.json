@@ -1,0 +1,9 @@
+{
+  "source": "/teamspace/studios/this_studio/spd/afh_3d_L8x8x8_np8_lbfgs_initrandom_tv0p001_mns3000000_lo0_a1",
+  "backend": "jax",
+  "algorithm": "stack_sort_merge",
+  "initial_parameters_exactly_equal": true,
+  "saved_initial_energy": -2.724006707967931,
+  "triton_energy": -2.72400670796793,
+  "energy_difference": 8.881784197001252e-16
+}

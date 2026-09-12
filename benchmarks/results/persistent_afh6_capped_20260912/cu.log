@@ -1,0 +1,22 @@
+{"start_gate": 1, "end_gate": 216, "seconds": 0.11313240099980248, "rows": 15, "peak_rows": 15}
+{"start_gate": 217, "end_gate": 432, "seconds": 0.056413017000068066, "rows": 15, "peak_rows": 15}
+{"start_gate": 433, "end_gate": 648, "seconds": 0.056512369999836665, "rows": 51, "peak_rows": 51}
+{"start_gate": 649, "end_gate": 864, "seconds": 0.05844145599985495, "rows": 10179, "peak_rows": 10179}
+{"start_gate": 865, "end_gate": 1080, "seconds": 0.06199728399997184, "rows": 111387, "peak_rows": 111387}
+{"start_gate": 1081, "end_gate": 1296, "seconds": 0.08578977300021506, "rows": 1418521, "peak_rows": 1418521}
+{"start_gate": 1297, "end_gate": 1496, "seconds": 0.4739672970003994, "rows": 16910094, "peak_rows": 16910094}
+{"start_gate": 1497, "end_gate": 1512, "seconds": 0.939993709999726, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 1513, "end_gate": 1728, "seconds": 2.8721374990000186, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 1729, "end_gate": 1944, "seconds": 3.5434085850001793, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 1945, "end_gate": 2160, "seconds": 5.670110962999843, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 2161, "end_gate": 2376, "seconds": 4.876225116000114, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 2377, "end_gate": 2592, "seconds": 4.846823120999943, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 2593, "end_gate": 2808, "seconds": 5.320048700999905, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 2809, "end_gate": 3024, "seconds": 7.524855987000137, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 3025, "end_gate": 3240, "seconds": 6.759295918000134, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 3241, "end_gate": 3456, "seconds": 7.056058359999952, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 3457, "end_gate": 3672, "seconds": 8.50574171199969, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 3673, "end_gate": 3888, "seconds": 6.920491912999751, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 3889, "end_gate": 4104, "seconds": 7.3082027129999005, "rows": 20000000, "peak_rows": 20000000}
+{"start_gate": 4105, "end_gate": 4320, "seconds": 9.125942937999753, "rows": 20000000, "peak_rows": 20000000}
+{"backend": "cu", "qubits": 216, "padded_qubits": 224, "rotations": 4320, "preparation_gates": 108, "cutoff": 1e-05, "cap": 20000000, "threads": 12, "thetas": [0.04881350392732475, 0.21518936637241948, 0.10276337607164387, 0.044883182996896864, -0.07634520066109529, 0.14589411306665612, -0.06241278873730749, 0.39177300078207977], "circuit_sha256": "fead2d4bb308d4cb2576bf3839889d4ea27dddb19e78c4f24a7f3cd7fb89c972", "status": "complete", "timing": "one pass; small synthetic Triton compilation preflight excluded; block synchronization included; observations/logging excluded", "cap_method": "external torch.topk and CuPy gather/reconstruct, included in time", "rotation_seconds": 82.1755908339992, "completed_rotations": 4320, "first_cap_gate": 1499, "finalization_seconds": 0.23429214699990553, "total_seconds": 82.4098829809991, "rows": 20000000, "energy": 0.026277877291381035, "norm2": 3.1025725246470954, "rss_bytes": 896397312}

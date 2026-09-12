@@ -1,0 +1,496 @@
+{
+  "args": {
+    "workload": "xxz",
+    "variant": "baseline",
+    "size": 21,
+    "steps": 19,
+    "layers": 2,
+    "cap": 1000000000,
+    "repeats": 1,
+    "stop_rows": 65000000,
+    "output": "/teamspace/studios/this_studio/spd/benchmarks/results/persistent_generalization_20260910/xxz21_baseline_19.json",
+    "save_state": false
+  },
+  "qubits": 441,
+  "padded_qubits": 448,
+  "key_words": 28,
+  "cutoff": 3.814697265625e-06,
+  "thetas": null,
+  "gate_counts": {
+    "OpType.Rz": 441,
+    "OpType.Barrier": 1,
+    "OpType.XXPhase": 840
+  },
+  "circuit_sha256": "f1a3e1bfae5948e0c789414f04c0d0f55160841d02329edf7e797d421c1e58ba",
+  "revision": "350828acd8428e133a7cb180201dffd01ff9fb59",
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "0063ca7984d5c5f7f8cf40381b6cc5b9eef73653dfb4117c475fedeace0581cf",
+    "spd/triton_backend/experiment_kernels.py": "a51fd0b4f7b13f49328992b4fbd90df4a36f161ebdc504247a0b9937198c2448",
+    "benchmarks/benchmark_persistent_generalization.py": "b53ca67ac9791618472855c6759defe43b6835d82c46d325d3f93ba482ec3208",
+    "examples/gradient/heisenberg_setup.py": "06eff30a81b35ccb3bf91cae500d9248a2c54fefaa92ceca2d974f2ca83fd4c3",
+    "examples/gradient/run_utils.py": "1d3632d612f0c97ba820338a95f5bfb82d176a14528a065e9a9d9a52cdd2c6dc"
+  },
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "torch": "2.8.0+cu128",
+  "steps": [
+    {
+      "step": 1,
+      "rows": 106,
+      "energy": 0.9872680689481184,
+      "norm2": 0.9999999999569675,
+      "seconds": [
+        0.05701785800010839
+      ],
+      "energy_seconds": [
+        0.05717491800010066
+      ],
+      "work": {
+        "input_live_sum": 33364,
+        "input_slots_sum": 33364,
+        "gates": 1281,
+        "peak_live": 106,
+        "peak_slots": 106,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 585150.0068616498,
+      "peak_allocated": 1360384,
+      "peak_reserved": 2097152,
+      "allocator_retries": 0
+    },
+    {
+      "step": 2,
+      "rows": 853,
+      "energy": 0.9527802865260725,
+      "norm2": 0.9999999963278036,
+      "seconds": [
+        0.05751406800004588
+      ],
+      "energy_seconds": [
+        0.05770525100001578
+      ],
+      "work": {
+        "input_live_sum": 462839,
+        "input_slots_sum": 462839,
+        "gates": 1281,
+        "peak_live": 853,
+        "peak_slots": 853,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 8047405.027925181,
+      "peak_allocated": 1766912,
+      "peak_reserved": 2097152,
+      "allocator_retries": 0
+    },
+    {
+      "step": 3,
+      "rows": 2542,
+      "energy": 0.9061848081047894,
+      "norm2": 0.9999999806970579,
+      "seconds": [
+        0.05722815800004355
+      ],
+      "energy_seconds": [
+        0.057416632000013124
+      ],
+      "work": {
+        "input_live_sum": 1866443,
+        "input_slots_sum": 1878339,
+        "gates": 1281,
+        "peak_live": 2542,
+        "peak_slots": 2549,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 32614067.36170994,
+      "peak_allocated": 2606080,
+      "peak_reserved": 4194304,
+      "allocator_retries": 0
+    },
+    {
+      "step": 4,
+      "rows": 6896,
+      "energy": 0.859518323777968,
+      "norm2": 0.9999999149676245,
+      "seconds": [
+        0.05763289900005475
+      ],
+      "energy_seconds": [
+        0.05781688499996562
+      ],
+      "work": {
+        "input_live_sum": 5315731,
+        "input_slots_sum": 5406026,
+        "gates": 1281,
+        "peak_live": 6896,
+        "peak_slots": 7155,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 92234315.68130818,
+      "peak_allocated": 5100544,
+      "peak_reserved": 25165824,
+      "allocator_retries": 0
+    },
+    {
+      "step": 5,
+      "rows": 17890,
+      "energy": 0.823102147262767,
+      "norm2": 0.9999997415758516,
+      "seconds": [
+        0.058192772999973386
+      ],
+      "energy_seconds": [
+        0.058371930000021166
+      ],
+      "work": {
+        "input_live_sum": 15165972,
+        "input_slots_sum": 15294593,
+        "gates": 1281,
+        "peak_live": 17890,
+        "peak_slots": 18395,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 260616073.40840995,
+      "peak_allocated": 11756544,
+      "peak_reserved": 25165824,
+      "allocator_retries": 0
+    },
+    {
+      "step": 6,
+      "rows": 45249,
+      "energy": 0.8023600634140252,
+      "norm2": 0.9999992510686401,
+      "seconds": [
+        0.0645083340000383
+      ],
+      "energy_seconds": [
+        0.06468650600004366
+      ],
+      "work": {
+        "input_live_sum": 38989485,
+        "input_slots_sum": 39688769,
+        "gates": 1281,
+        "peak_live": 45249,
+        "peak_slots": 47649,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 604410044.1344036,
+      "peak_allocated": 28094464,
+      "peak_reserved": 48234496,
+      "allocator_retries": 0
+    },
+    {
+      "step": 7,
+      "rows": 105972,
+      "energy": 0.7966507053448579,
+      "norm2": 0.9999979817645184,
+      "seconds": [
+        0.06940069299980678
+      ],
+      "energy_seconds": [
+        0.0695919929999036
+      ],
+      "work": {
+        "input_live_sum": 93520741,
+        "input_slots_sum": 95662701,
+        "gates": 1281,
+        "peak_live": 105972,
+        "peak_slots": 112792,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 1347547653.4544168,
+      "peak_allocated": 68495360,
+      "peak_reserved": 90177536,
+      "allocator_retries": 0
+    },
+    {
+      "step": 8,
+      "rows": 228871,
+      "energy": 0.8007972470919497,
+      "norm2": 0.9999946123272065,
+      "seconds": [
+        0.07676544200012358
+      ],
+      "energy_seconds": [
+        0.07689625900002284
+      ],
+      "work": {
+        "input_live_sum": 211567037,
+        "input_slots_sum": 217737181,
+        "gates": 1281,
+        "peak_live": 228871,
+        "peak_slots": 251358,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 2756019264.497421,
+      "peak_allocated": 129990656,
+      "peak_reserved": 174063616,
+      "allocator_retries": 0
+    },
+    {
+      "step": 9,
+      "rows": 487404,
+      "energy": 0.8081610177151826,
+      "norm2": 0.9999869100517221,
+      "seconds": [
+        0.09555907300000399
+      ],
+      "energy_seconds": [
+        0.09569392499997775
+      ],
+      "work": {
+        "input_live_sum": 454179749,
+        "input_slots_sum": 461043564,
+        "gates": 1281,
+        "peak_live": 487404,
+        "peak_slots": 504709,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 4752868929.567588,
+      "peak_allocated": 286853632,
+      "peak_reserved": 320864256,
+      "allocator_retries": 0
+    },
+    {
+      "step": 10,
+      "rows": 994285,
+      "energy": 0.8139538929652543,
+      "norm2": 0.9999699271958925,
+      "seconds": [
+        0.1337488100000428
+      ],
+      "energy_seconds": [
+        0.13395809500002542
+      ],
+      "work": {
+        "input_live_sum": 939740373,
+        "input_slots_sum": 960969133,
+        "gates": 1281,
+        "peak_live": 994285,
+        "peak_slots": 1044675,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 7026158759.840176,
+      "peak_allocated": 590637568,
+      "peak_reserved": 614465536,
+      "allocator_retries": 0
+    },
+    {
+      "step": 11,
+      "rows": 1976955,
+      "energy": 0.8160403794848189,
+      "norm2": 0.999934604576227,
+      "seconds": [
+        0.1993485390000842
+      ],
+      "energy_seconds": [
+        0.19965762300012102
+      ],
+      "work": {
+        "input_live_sum": 1849808206,
+        "input_slots_sum": 1917090347,
+        "gates": 1281,
+        "peak_live": 1976957,
+        "peak_slots": 2140206,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 9279266430.93792,
+      "peak_allocated": 1132866560,
+      "peak_reserved": 1621098496,
+      "allocator_retries": 0
+    },
+    {
+      "step": 12,
+      "rows": 3549247,
+      "energy": 0.8151603645869911,
+      "norm2": 0.9998625773543023,
+      "seconds": [
+        0.32501412900001014
+      ],
+      "energy_seconds": [
+        0.32551862700006495
+      ],
+      "work": {
+        "input_live_sum": 3503190926,
+        "input_slots_sum": 3635176187,
+        "gates": 1281,
+        "peak_live": 3549250,
+        "peak_slots": 3767250,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 10778580416.729794,
+      "peak_allocated": 2182896128,
+      "peak_reserved": 3005218816,
+      "allocator_retries": 0
+    },
+    {
+      "step": 13,
+      "rows": 6130432,
+      "energy": 0.8141926215418307,
+      "norm2": 0.9997248476010041,
+      "seconds": [
+        0.5260474879999038
+      ],
+      "energy_seconds": [
+        0.526860951999879
+      ],
+      "work": {
+        "input_live_sum": 6179769501,
+        "input_slots_sum": 6453709799,
+        "gates": 1281,
+        "peak_live": 6130432,
+        "peak_slots": 6679527,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 11747550633.681822,
+      "peak_allocated": 3792432640,
+      "peak_reserved": 5500829696,
+      "allocator_retries": 0
+    },
+    {
+      "step": 14,
+      "rows": 10181702,
+      "energy": 0.8154476441185619,
+      "norm2": 0.9994805634241031,
+      "seconds": [
+        0.8577841990002071
+      ],
+      "energy_seconds": [
+        0.8590781700002026
+      ],
+      "work": {
+        "input_live_sum": 10458994042,
+        "input_slots_sum": 10872526497,
+        "gates": 1281,
+        "peak_live": 10181702,
+        "peak_slots": 11223587,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 12193036493.549906,
+      "peak_allocated": 6478769664,
+      "peak_reserved": 9674162176,
+      "allocator_retries": 0
+    },
+    {
+      "step": 15,
+      "rows": 16322809,
+      "energy": 0.8203666324612634,
+      "norm2": 0.9990683288541689,
+      "seconds": [
+        1.3588497380001172
+      ],
+      "energy_seconds": [
+        1.360865173000093
+      ],
+      "work": {
+        "input_live_sum": 16919414447,
+        "input_slots_sum": 17714148839,
+        "gates": 1281,
+        "peak_live": 16322809,
+        "peak_slots": 17604921,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 12451276968.931896,
+      "peak_allocated": 10425366016,
+      "peak_reserved": 15525216256,
+      "allocator_retries": 0
+    },
+    {
+      "step": 16,
+      "rows": 25858044,
+      "energy": 0.8280233077359235,
+      "norm2": 0.998400954255331,
+      "seconds": [
+        2.1054596760000095
+      ],
+      "energy_seconds": [
+        2.108596673999955
+      ],
+      "work": {
+        "input_live_sum": 26424623031,
+        "input_slots_sum": 28201741020,
+        "gates": 1281,
+        "peak_live": 25858044,
+        "peak_slots": 28489252,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 12550524397.219507,
+      "peak_allocated": 16228919808,
+      "peak_reserved": 24438112256,
+      "allocator_retries": 0
+    },
+    {
+      "step": 17,
+      "rows": 39217713,
+      "energy": 0.8367044405446067,
+      "norm2": 0.9973532696347658,
+      "seconds": [
+        3.203859916000056
+      ],
+      "energy_seconds": [
+        3.208574988999999
+      ],
+      "work": {
+        "input_live_sum": 40485398904,
+        "input_slots_sum": 43303630524,
+        "gates": 1281,
+        "peak_live": 39272427,
+        "peak_slots": 43323667,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 12636444777.693363,
+      "peak_allocated": 24981062144,
+      "peak_reserved": 37482397696,
+      "allocator_retries": 0
+    },
+    {
+      "step": 18,
+      "rows": 56220917,
+      "energy": 0.8444610679545905,
+      "norm2": 0.9957764877189013,
+      "seconds": [
+        4.710507200999928
+      ],
+      "energy_seconds": [
+        4.717196810999894
+      ],
+      "work": {
+        "input_live_sum": 59698718229,
+        "input_slots_sum": 63282719517,
+        "gates": 1281,
+        "peak_live": 56626206,
+        "peak_slots": 62896675,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 12673522336.687521,
+      "peak_allocated": 36184293888,
+      "peak_reserved": 54322528256,
+      "allocator_retries": 0
+    },
+    {
+      "step": 19,
+      "rows": 76647367,
+      "energy": 0.8492094769063452,
+      "norm2": 0.9935305080750174,
+      "seconds": [
+        6.576852823000081
+      ],
+      "energy_seconds": [
+        6.58594672900017
+      ],
+      "work": {
+        "input_live_sum": 83321589442,
+        "input_slots_sum": 88676667400,
+        "gates": 1281,
+        "peak_live": 77400729,
+        "peak_slots": 84483450,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 12668915009.107992,
+      "peak_allocated": 50691700224,
+      "peak_reserved": 76783026176,
+      "allocator_retries": 0
+    }
+  ],
+  "stop_reason": "row safety boundary after complete timestep",
+  "status": "complete"
+}

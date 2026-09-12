@@ -1,0 +1,130 @@
+{
+  "steps": [
+    {
+      "step": 3,
+      "input_rows": 853,
+      "output_rows": 2542,
+      "baseline_seconds": 0.03229774500005078,
+      "instrumented_wall_seconds": 0.05042958199965142,
+      "gpu_stages": {
+        "fill": {
+          "calls": 682,
+          "seconds": 0.0006524299999999993
+        },
+        "build_anticommuting_index": {
+          "calls": 341,
+          "seconds": 0.0005427730000000005
+        },
+        "rotate": {
+          "calls": 341,
+          "seconds": 0.0010039050000000018
+        },
+        "Memcpy DtoH (Device -> Pinned)": {
+          "calls": 341,
+          "seconds": 0.0004729469999999985
+        }
+      },
+      "cpu_api_seconds": {
+        "aten::full": 0.0064512809999999554,
+        "aten::empty": 0.003986216999999968,
+        "aten::zeros": 0.0041109970000000155,
+        "aten::item": 0.005077467999999974,
+        "cudaMemcpyAsync": 0.001303344000000011,
+        "cudaStreamSynchronize": 0.0021114629999999844
+      },
+      "snapshot_anticommuting_fraction": {
+        "Z": 0.02966363441293704,
+        "XX": 0.03495100493526929
+      },
+      "snapshot_all_gate_anticommuting_fraction": 0.03307484120153849,
+      "peak_allocated_bytes": 858624,
+      "peak_reserved_bytes": 2097152
+    },
+    {
+      "step": 14,
+      "input_rows": 6130432,
+      "output_rows": 10181702,
+      "baseline_seconds": 0.680032079999819,
+      "instrumented_wall_seconds": 0.3289299889997892,
+      "gpu_stages": {
+        "fill": {
+          "calls": 682,
+          "seconds": 0.01118475599999998
+        },
+        "build_anticommuting_index": {
+          "calls": 341,
+          "seconds": 0.041408985999999995
+        },
+        "rotate": {
+          "calls": 341,
+          "seconds": 0.24509927
+        },
+        "Memcpy DtoH (Device -> Pinned)": {
+          "calls": 341,
+          "seconds": 0.0004752729999999987
+        }
+      },
+      "cpu_api_seconds": {
+        "aten::full": 0.0074749330000002685,
+        "aten::empty": 0.00427278500000007,
+        "aten::zeros": 0.0043639379999996925,
+        "aten::item": 0.2790604660000001,
+        "cudaMemcpyAsync": 0.0015981600000002036,
+        "cudaStreamSynchronize": 0.27512739700000044
+      },
+      "snapshot_anticommuting_fraction": {
+        "Z": 0.04929706228407528,
+        "XX": 0.06752905502905503
+      },
+      "snapshot_all_gate_anticommuting_fraction": 0.06105963824857833,
+      "peak_allocated_bytes": 2254075392,
+      "peak_reserved_bytes": 3026190336
+    },
+    {
+      "step": 23,
+      "input_rows": 173836555,
+      "output_rows": 221899620,
+      "baseline_seconds": 18.663886804000413,
+      "instrumented_wall_seconds": 6.817166016000101,
+      "gpu_stages": {
+        "fill": {
+          "calls": 682,
+          "seconds": 0.22172237900000055
+        },
+        "build_anticommuting_index": {
+          "calls": 341,
+          "seconds": 1.007483557
+        },
+        "rotate": {
+          "calls": 341,
+          "seconds": 5.559089401999999
+        },
+        "Memcpy DtoH (Device -> Pinned)": {
+          "calls": 341,
+          "seconds": 0.0004747679999999989
+        }
+      },
+      "cpu_api_seconds": {
+        "aten::full": 0.008932543999992581,
+        "aten::empty": 0.004680621000003699,
+        "aten::zeros": 0.004913475999999635,
+        "aten::item": 6.7580709490000075,
+        "cudaMemcpyAsync": 0.0022405859999987013,
+        "cudaStreamSynchronize": 6.752783251999997
+      },
+      "snapshot_anticommuting_fraction": {
+        "Z": 0.05461847085684452,
+        "XX": 0.07656117133800813
+      },
+      "snapshot_all_gate_anticommuting_fraction": 0.06877505181243396,
+      "peak_allocated_bytes": 51658223104,
+      "peak_reserved_bytes": 70701285376
+    }
+  ],
+  "trajectory_validation": {
+    "steps": 23,
+    "counts_equal": true,
+    "max_expectation_difference": 3.3306690738754696e-16,
+    "max_norm_difference": 1.1102230246251565e-16
+  }
+}

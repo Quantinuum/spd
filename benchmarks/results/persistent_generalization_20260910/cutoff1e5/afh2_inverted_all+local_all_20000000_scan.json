@@ -1,0 +1,89 @@
+{
+  "args": {
+    "workload": "afh",
+    "variant": "inverted_all+local_all",
+    "size": 8,
+    "steps": 18,
+    "layers": 2,
+    "random_scale": 1.0,
+    "cutoff": 1e-05,
+    "cap": 20000000,
+    "repeats": 1,
+    "stop_rows": 65000000,
+    "output": "/teamspace/studios/this_studio/spd/benchmarks/results/persistent_generalization_20260910/cutoff1e5/afh2_inverted_all+local_all_20000000_scan.json",
+    "save_state": true,
+    "profile": false
+  },
+  "qubits": 512,
+  "padded_qubits": 512,
+  "key_words": 32,
+  "cutoff": 1e-05,
+  "thetas": [
+    0.04881350392732475,
+    0.21518936637241948,
+    0.10276337607164387,
+    0.044883182996896864,
+    -0.07634520066109529,
+    0.14589411306665612,
+    -0.06241278873730749,
+    0.39177300078207977
+  ],
+  "gate_counts": {
+    "OpType.X": 256,
+    "OpType.XXPhase": 3072,
+    "OpType.Barrier": 8,
+    "OpType.YYPhase": 3072,
+    "OpType.ZZPhase": 3072,
+    "OpType.Rz": 1024,
+    "OpType.Measure": 512
+  },
+  "circuit_sha256": "df98358c041e98121e52e6a83c818c33037a95ca34b5bf248e71ab46bfaaa629",
+  "revision": "350828acd8428e133a7cb180201dffd01ff9fb59",
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "09cdd3b36a7535b235479fba48b3328d45c8e37f42debe7b7a5b2e4697d1b1c9",
+    "spd/triton_backend/experiment_kernels.py": "dd427f7139ef5252d2577b740eed9fe90870b870ef8a2ab21dbfb384c70f0ae3",
+    "benchmarks/benchmark_persistent_generalization.py": "7889a28495b726635112fe72322c1cad7262bd7f4e9e9abecb8ece9e0c96c562",
+    "examples/gradient/heisenberg_setup.py": "06eff30a81b35ccb3bf91cae500d9248a2c54fefaa92ceca2d974f2ca83fd4c3",
+    "examples/gradient/run_utils.py": "1d3632d612f0c97ba820338a95f5bfb82d176a14528a065e9a9d9a52cdd2c6dc"
+  },
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "torch": "2.8.0+cu128",
+  "steps": [
+    {
+      "step": 1,
+      "rows": 20000000,
+      "energy": 0.02707461896124129,
+      "norm2": 3.1023943693305247,
+      "seconds": [
+        107.34734513100011
+      ],
+      "energy_seconds": [
+        107.35083927300002
+      ],
+      "observations": [
+        {
+          "rows": 20000000,
+          "energy": 0.02707461896124129,
+          "norm2": 3.1023943693305247
+        }
+      ],
+      "work": {
+        "input_live_sum": 136110346515,
+        "input_slots_sum": 136290922408,
+        "gates": 10240,
+        "peak_live": 20000000,
+        "peak_slots": 21794862,
+        "at_cap": 6670,
+        "rebuilds": 2252,
+        "compactions": 2231,
+        "growths": 61
+      },
+      "live_row_rotations_per_second": 1267943295.1872194,
+      "peak_allocated": 18155151872,
+      "peak_reserved": 20724056064,
+      "allocator_retries": 0
+    }
+  ],
+  "status": "complete"
+}

@@ -1,0 +1,180 @@
+{
+  "backend": "persistent",
+  "qubits": 216,
+  "padded_qubits": 224,
+  "rotations": 4320,
+  "preparation_gates": 108,
+  "cutoff": 0.0003,
+  "cap": null,
+  "threads": 12,
+  "thetas": [
+    0.04881350392732475,
+    0.21518936637241948,
+    0.10276337607164387,
+    0.044883182996896864,
+    -0.07634520066109529,
+    0.14589411306665612,
+    -0.06241278873730749,
+    0.39177300078207977
+  ],
+  "circuit_sha256": "fead2d4bb308d4cb2576bf3839889d4ea27dddb19e78c4f24a7f3cd7fb89c972",
+  "blocks": [
+    {
+      "start_gate": 1,
+      "end_gate": 216,
+      "seconds": 0.010039683000286459,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 217,
+      "end_gate": 432,
+      "seconds": 0.009474995999880775,
+      "rows": 15,
+      "peak_rows": 15
+    },
+    {
+      "start_gate": 433,
+      "end_gate": 648,
+      "seconds": 0.009960903999854054,
+      "rows": 51,
+      "peak_rows": 51
+    },
+    {
+      "start_gate": 649,
+      "end_gate": 864,
+      "seconds": 0.010761039000499295,
+      "rows": 4635,
+      "peak_rows": 4635
+    },
+    {
+      "start_gate": 865,
+      "end_gate": 1080,
+      "seconds": 0.013077579999844602,
+      "rows": 18663,
+      "peak_rows": 18663
+    },
+    {
+      "start_gate": 1081,
+      "end_gate": 1296,
+      "seconds": 0.012657323999519576,
+      "rows": 80725,
+      "peak_rows": 80725
+    },
+    {
+      "start_gate": 1297,
+      "end_gate": 1512,
+      "seconds": 0.015466028999981063,
+      "rows": 653677,
+      "peak_rows": 653677
+    },
+    {
+      "start_gate": 1513,
+      "end_gate": 1728,
+      "seconds": 0.017715892000524036,
+      "rows": 812852,
+      "peak_rows": 812852
+    },
+    {
+      "start_gate": 1729,
+      "end_gate": 1944,
+      "seconds": 0.021024736000072153,
+      "rows": 1198837,
+      "peak_rows": 1198837
+    },
+    {
+      "start_gate": 1945,
+      "end_gate": 2160,
+      "seconds": 0.03194105900001887,
+      "rows": 2266837,
+      "peak_rows": 2266837
+    },
+    {
+      "start_gate": 2161,
+      "end_gate": 2376,
+      "seconds": 0.03007075299956341,
+      "rows": 2077980,
+      "peak_rows": 2267768
+    },
+    {
+      "start_gate": 2377,
+      "end_gate": 2592,
+      "seconds": 0.030792491000283917,
+      "rows": 2494635,
+      "peak_rows": 2494635
+    },
+    {
+      "start_gate": 2593,
+      "end_gate": 2808,
+      "seconds": 0.03802764300053241,
+      "rows": 3005689,
+      "peak_rows": 3005807
+    },
+    {
+      "start_gate": 2809,
+      "end_gate": 3024,
+      "seconds": 0.052583772999241774,
+      "rows": 3440272,
+      "peak_rows": 3553352
+    },
+    {
+      "start_gate": 3025,
+      "end_gate": 3240,
+      "seconds": 0.0491334709995499,
+      "rows": 3472139,
+      "peak_rows": 3537767
+    },
+    {
+      "start_gate": 3241,
+      "end_gate": 3456,
+      "seconds": 0.051593982999293075,
+      "rows": 3014021,
+      "peak_rows": 3472139
+    },
+    {
+      "start_gate": 3457,
+      "end_gate": 3672,
+      "seconds": 0.0573190209997847,
+      "rows": 1966072,
+      "peak_rows": 3016066
+    },
+    {
+      "start_gate": 3673,
+      "end_gate": 3888,
+      "seconds": 0.02907576799952949,
+      "rows": 2023504,
+      "peak_rows": 2025459
+    },
+    {
+      "start_gate": 3889,
+      "end_gate": 4104,
+      "seconds": 0.03032589599933999,
+      "rows": 2196160,
+      "peak_rows": 2196336
+    },
+    {
+      "start_gate": 4105,
+      "end_gate": 4320,
+      "seconds": 0.037265232000208925,
+      "rows": 2265180,
+      "peak_rows": 2322438
+    }
+  ],
+  "status": "complete",
+  "timing": "one pass; small synthetic Triton compilation preflight excluded; block synchronization included; observations/logging excluded",
+  "preflight_seconds": 0.8102558359996692,
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/kernels.py": "b1da2f0930d472bea52112db07324acb3d2fe7ce54c830a0ff018754ef919221",
+    "spd/triton_backend/__init__.py": "23a216031f754c0277f31cc5e9242f4270bf6616af685fe01dec753ba385460d"
+  },
+  "rotation_seconds": 0.5583072729978085,
+  "completed_rotations": 4320,
+  "safety_boundary_gate": null,
+  "finalization_seconds": 0.04973385099947336,
+  "total_seconds": 0.6080411239972818,
+  "rows": 2265180,
+  "energy": 0.0031191758462805197,
+  "norm2": 2.559136467881403,
+  "rss_bytes": 887377920
+}

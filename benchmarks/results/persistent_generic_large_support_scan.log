@@ -1,0 +1,16 @@
+TESTS 0
+START afh2_local_all_20000000_scan
+DONE afh2_local_all_20000000_scan 0 complete
+START afh2_select_all_20000000_scan
+DONE afh2_select_all_20000000_scan 0 complete
+START afh2_inverted_all_20000000_scan
+DONE afh2_inverted_all_20000000_scan 0 complete
+START afh2_select_all+local_all_20000000_scan
+DONE afh2_select_all+local_all_20000000_scan 0 complete
+START afh2_inverted_all+local_all_20000000_scan
+DONE afh2_inverted_all+local_all_20000000_scan 0 complete
+START afh2_inverted_all+local_all_50000000_scan
+DONE afh2_inverted_all+local_all_50000000_scan 0 complete
+START afh2_select_all+local_all_50000000_scan
+DONE afh2_select_all+local_all_50000000_scan 0 complete
+START afh2_baseline_100000000_scan

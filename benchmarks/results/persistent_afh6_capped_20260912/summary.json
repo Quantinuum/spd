@@ -1,0 +1,195 @@
+{
+  "workload": "6x6x6 AFH, two layers, seed0 scale1, full_H=False nine terms, float64, cutoff1e-5, GPU cap20M",
+  "hardware": "H100 80GB; Xeon Platinum8470 12 physical/24 logical CPUs; MonoProp12 threads12 partitions",
+  "versions": {
+    "torch": "2.8.0+cu128",
+    "triton": "3.4.0",
+    "monoprop": "0.9.0",
+    "cuquantum-python-cu12": "26.6.0",
+    "cupauliprop-cu12": "0.4.0",
+    "cupy-cuda12x": "14.2.0"
+  },
+  "script_sha256": "a9e313d4ccf76b7869c98ca2928a85f618d72a85b18bcd8b22b8af0baaea58c9",
+  "results": {
+    "persistent": {
+      "status": "complete",
+      "total_seconds": 14.442384928000592,
+      "last864_seconds": 5.513964481000585,
+      "last216_seconds": 1.5699711720003506,
+      "prefix1496_seconds": 0.16158458600011727,
+      "prefix1496_rows": 16910094,
+      "energy": 0.02624196576697883,
+      "last_four_blocks": [
+        {
+          "start_gate": 3457,
+          "end_gate": 3672,
+          "seconds": 1.4875289390001853,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3673,
+          "end_gate": 3888,
+          "seconds": 1.1985543400001006,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3889,
+          "end_gate": 4104,
+          "seconds": 1.2579100299999482,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 4105,
+          "end_gate": 4320,
+          "seconds": 1.5699711720003506,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        }
+      ]
+    },
+    "anti": {
+      "status": "complete",
+      "total_seconds": 19.94895372699966,
+      "last864_seconds": 6.566672506000032,
+      "last216_seconds": 1.7926729529999648,
+      "prefix1496_seconds": 0.6273467199998777,
+      "prefix1496_rows": 16910094,
+      "energy": 0.026248980325768355,
+      "last_four_blocks": [
+        {
+          "start_gate": 3457,
+          "end_gate": 3672,
+          "seconds": 1.6924702890000844,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3673,
+          "end_gate": 3888,
+          "seconds": 1.5175442009999642,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3889,
+          "end_gate": 4104,
+          "seconds": 1.5639850630000183,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 4105,
+          "end_gate": 4320,
+          "seconds": 1.7926729529999648,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        }
+      ]
+    },
+    "main": {
+      "status": "complete",
+      "total_seconds": 28.19599773999971,
+      "last864_seconds": 9.04266539199989,
+      "last216_seconds": 2.4020463570000175,
+      "prefix1496_seconds": 0.7311274170001525,
+      "prefix1496_rows": 16910094,
+      "energy": 0.026253627795295185,
+      "last_four_blocks": [
+        {
+          "start_gate": 3457,
+          "end_gate": 3672,
+          "seconds": 2.312053526999989,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3673,
+          "end_gate": 3888,
+          "seconds": 2.141121693000059,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3889,
+          "end_gate": 4104,
+          "seconds": 2.187443814999824,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 4105,
+          "end_gate": 4320,
+          "seconds": 2.4020463570000175,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        }
+      ]
+    },
+    "cu": {
+      "status": "complete",
+      "total_seconds": 82.4098829809991,
+      "last864_seconds": 31.860379275999094,
+      "last216_seconds": 9.125942937999753,
+      "prefix1496_seconds": 0.9062535980001485,
+      "prefix1496_rows": 16910094,
+      "energy": 0.026277877291381035,
+      "last_four_blocks": [
+        {
+          "start_gate": 3457,
+          "end_gate": 3672,
+          "seconds": 8.50574171199969,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3673,
+          "end_gate": 3888,
+          "seconds": 6.920491912999751,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 3889,
+          "end_gate": 4104,
+          "seconds": 7.3082027129999005,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        },
+        {
+          "start_gate": 4105,
+          "end_gate": 4320,
+          "seconds": 9.125942937999753,
+          "rows": 20000000,
+          "peak_rows": 20000000
+        }
+      ]
+    },
+    "mono": {
+      "status": "stopped_at_term_boundary",
+      "total_seconds": 3.0433602840003005,
+      "last864_seconds": null,
+      "last216_seconds": null,
+      "prefix1496_seconds": 3.0433593720003955,
+      "prefix1496_rows": 21854756,
+      "energy": -1.5873832515625281,
+      "last_four_blocks": null
+    }
+  },
+  "main_transfer_check": {
+    "commit": "350828acd8428e133a7cb180201dffd01ff9fb59",
+    "base": "c9a2b00",
+    "clean_apply": true,
+    "tests": "145 passed in 3.64s; persistent/backend/invariants; temporary worktree removed"
+  },
+  "limitations": [
+    "One pass per implementation; tiny disposable Triton compilation preflight only.",
+    "MonoProp native lacks a top-k/prune API. Stop after first gate exceeding20M; no completed capped MonoProp claim. Native sine-branch truncation differs from combined-output cutoff.",
+    "cuPauliProp cap via external torch.topk and CuPy gather/reconstruct; included in timing.",
+    "Main full-index control is current direct forward path with full build_index launch restored; inspected diff confirms equivalence to main algorithm.",
+    "Late blocks are rotation windows3457-4320; 108 Clifford preparation gates separately included in full GPU total.",
+    "Capped outputs agree in row count but differ in energy; no full coefficient equality asserted."
+  ]
+}

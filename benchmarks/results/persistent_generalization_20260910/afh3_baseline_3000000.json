@@ -1,0 +1,82 @@
+{
+  "args": {
+    "workload": "afh",
+    "variant": "baseline",
+    "size": 8,
+    "steps": 18,
+    "layers": 3,
+    "cap": 3000000,
+    "repeats": 2,
+    "stop_rows": 65000000,
+    "output": "benchmarks/results/persistent_generalization_20260910/afh3_baseline_3000000.json",
+    "save_state": true
+  },
+  "qubits": 512,
+  "padded_qubits": 512,
+  "key_words": 32,
+  "cutoff": 0.001,
+  "thetas": [
+    0.0048813503927324755,
+    0.02151893663724195,
+    0.010276337607164388,
+    0.004488318299689687,
+    -0.00763452006610953,
+    0.014589411306665613,
+    -0.0062412788737307495,
+    0.03917730007820798,
+    0.046366276050102934,
+    -0.01165584811742223,
+    0.02917250380826646,
+    0.0028894919752904483
+  ],
+  "gate_counts": {
+    "OpType.X": 256,
+    "OpType.XXPhase": 4608,
+    "OpType.Barrier": 12,
+    "OpType.YYPhase": 4608,
+    "OpType.ZZPhase": 4608,
+    "OpType.Rz": 1536,
+    "OpType.Measure": 512
+  },
+  "circuit_sha256": "0aabe6f2836ec115ad497395397525077348aaea08eb528099a6cdde2dfc6df6",
+  "revision": "350828acd8428e133a7cb180201dffd01ff9fb59",
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "0063ca7984d5c5f7f8cf40381b6cc5b9eef73653dfb4117c475fedeace0581cf",
+    "spd/triton_backend/experiment_kernels.py": "a51fd0b4f7b13f49328992b4fbd90df4a36f161ebdc504247a0b9937198c2448",
+    "benchmarks/benchmark_persistent_generalization.py": "cbc05db0b1bb525e7a06633e449efbee4e8bace39039cc52fcb32f0256413a9f",
+    "examples/gradient/heisenberg_setup.py": "06eff30a81b35ccb3bf91cae500d9248a2c54fefaa92ceca2d974f2ca83fd4c3",
+    "examples/gradient/run_utils.py": "1d3632d612f0c97ba820338a95f5bfb82d176a14528a065e9a9d9a52cdd2c6dc"
+  },
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "torch": "2.8.0+cu128",
+  "steps": [
+    {
+      "step": 1,
+      "rows": 8736,
+      "energy": -3.1539990119032297,
+      "norm2": 8.966599916938804,
+      "seconds": [
+        4.312525758999982,
+        4.29688506399998
+      ],
+      "energy_seconds": [
+        4.335257207000041,
+        4.2970816460001515
+      ],
+      "work": {
+        "input_live_sum": 87311866,
+        "input_slots_sum": 92774872,
+        "gates": 15360,
+        "peak_live": 9223,
+        "peak_slots": 9702,
+        "at_cap": 0
+      },
+      "live_row_rotations_per_second": 20282889.920120236,
+      "peak_allocated": 10254848,
+      "peak_reserved": 29360128,
+      "allocator_retries": 0
+    }
+  ],
+  "status": "complete"
+}

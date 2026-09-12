@@ -1,0 +1,9 @@
+{
+  "variant": "local",
+  "dead_fraction": 0.1,
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "de663458ef1a67a8eacad50f9aa8bee2357be749e4a6c90caec2b3c2a226cb14",
+    "spd/triton_backend/persistent_options.py": "689c37db16677af751d303fe1c8ebb6f0883421ef7c3380cd51000f1a740ef59",
+    "spd/triton_backend/experiment_kernels.py": "8c6914efa59354edca67f689852ce1a932a57cb2b8a2013a9c3f070cb0622f0c"
+  }
+}

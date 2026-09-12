@@ -1,0 +1,18 @@
+START afh2_control_5000000_scan
+DONE afh2_control_5000000_scan 0
+START afh2_inverted_5000000_scan
+DONE afh2_inverted_5000000_scan 0
+START afh2_select_5000000_scan
+DONE afh2_select_5000000_scan 0
+START afh2_local_5000000_scan
+DONE afh2_local_5000000_scan 0
+START afh2_fingerprint_5000000_scan
+DONE afh2_fingerprint_5000000_scan 0
+START afh2_soa_5000000_scan
+DONE afh2_soa_5000000_scan 0
+START afh2_device_5000000_scan
+DONE afh2_device_5000000_scan 0
+START afh2_baseline_2000000_scan
+DONE afh2_baseline_2000000_scan 0
+START afh2_control_2000000_scan
+Terminated

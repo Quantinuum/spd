@@ -1,0 +1,36 @@
+START xxz21_baseline_19
+DONE xxz21_baseline_19 0
+START xxz21_control_19
+DONE xxz21_control_19 0
+START xxz21_inverted_19
+DONE xxz21_inverted_19 0
+START xxz21_select_19
+DONE xxz21_select_19 0
+START xxz21_local_19
+DONE xxz21_local_19 0
+START xxz21_fingerprint_19
+DONE xxz21_fingerprint_19 0
+START xxz21_soa_19
+DONE xxz21_soa_19 0
+START afh2_baseline_3000000_scan
+DONE afh2_baseline_3000000_scan 0
+START afh2_control_3000000_scan
+DONE afh2_control_3000000_scan 0
+START afh2_inverted_3000000_scan
+DONE afh2_inverted_3000000_scan 0
+START afh2_select_3000000_scan
+DONE afh2_select_3000000_scan 0
+START afh2_device_3000000_scan
+DONE afh2_device_3000000_scan 0
+START afh2_local_3000000_scan
+DONE afh2_local_3000000_scan 0
+START afh2_fingerprint_3000000_scan
+DONE afh2_fingerprint_3000000_scan 0
+START afh2_soa_3000000_scan
+DONE afh2_soa_3000000_scan 0
+START afh2_baseline_500_scan
+DONE afh2_baseline_500_scan 0
+START afh2_control_500_scan
+DONE afh2_control_500_scan 0
+START afh2_inverted_500_scan
+Terminated
