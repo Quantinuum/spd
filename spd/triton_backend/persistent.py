@@ -1,6 +1,6 @@
-"""Experimental persistent storage within one immutable-input forward timestep.
+"""Private persistent storage within one immutable-input forward sequence.
 
-Not selected by the public API. Dead keys remain indexed until compaction, but
+Dead keys remain indexed until compaction, but
 have zero coefficients immediately. Pair owners update both coefficients; new
 keys are indexed only after the rotation kernel completes.
 """
@@ -10,7 +10,7 @@ import torch
 import triton
 import triton.language as tl
 
-from .kernels import _mix, _popc
+from .kernels import _mix, _popc, clifford
 
 
 @triton.jit
@@ -176,6 +176,29 @@ class _Storage:
         if not final:
             self._rebuild()
 
+    def apply_clifford(self, operation):
+        """Map each private row exactly, then rebuild the changed key index."""
+        import operator
+        from ..circuit_ir import TwoQubitClifford
+
+        codes = {"H": 0, "S": 1, "Sdg": 2, "X": 3, "Y": 4,
+                 "Z": 5, "CX": 6, "CZ": 7, "CY": 8}
+        name = operation.gate_name.removeprefix("OpType.")
+        two = isinstance(operation, TwoQubitClifford)
+        if name not in codes or two != name.startswith("C"):
+            raise ValueError(f"Unsupported Clifford operation: {operation}")
+        q = operator.index(operation.control_qubit if two else operation.qubit)
+        r = operator.index(operation.target_qubit) if two else q
+        if not 0 <= q < self.nq or not 0 <= r < self.nq or (two and q == r):
+            raise ValueError("Clifford requires distinct qubits within system size")
+        if self.n:
+            # The kernel reads/writes only its own row. No inter-row dependence,
+            # and all control bits are loaded before any packed words change.
+            clifford[((self.n + 127) // 128,)](
+                self.keys, self.coeff, self.keys, self.coeff,
+                self.n, q, r, self.width, codes[name], 128)
+            self._rebuild()
+
     def apply(self, gate, params, cap):
         if not self.n:
             return
@@ -209,9 +232,10 @@ class _Storage:
 
 def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
                            *, dead_fraction=.1, stats=None):
-    """Prototype: copy once, mutate privately across gates, materialize once."""
+    """Copy once, mutate privately across gates, materialize once."""
     from . import SparsePauliOp, _gate_data
-    from ..circuit_ir import PauliRotation, SkippedOperation
+    from ..circuit_ir import (PauliRotation, SkippedOperation,
+                              SingleQubitClifford, TwoQubitClifford)
     operations = tuple(operations)
     if not math.isfinite(trunc_val) or trunc_val < 0:
         raise ValueError('trunc_val must be finite and nonnegative')
@@ -220,11 +244,12 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
     if max_num_str is not None and (not isinstance(max_num_str, int) or max_num_str < 1):
         raise ValueError('max_num_str must be a positive integer or None')
     for op in operations:
-        if not isinstance(op, (PauliRotation, SkippedOperation)):
-            raise NotImplementedError('Persistent prototype supports Pauli rotations only')
+        if not isinstance(op, (PauliRotation, SkippedOperation,
+                               SingleQubitClifford, TwoQubitClifford)):
+            raise NotImplementedError(f'Unsupported persistent operation: {op}')
         if isinstance(op, PauliRotation) and not math.isfinite(op.theta):
             raise ValueError('theta must be finite')
-    if not any(isinstance(op, PauliRotation) for op in operations):
+    if all(isinstance(op, SkippedOperation) for op in operations):
         if stats is not None:
             stats.update(rebuilds=0, compactions=0, growths=0)
         return state
@@ -235,7 +260,15 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
                 gate, params = _gate_data(op.pauli, float(op.theta), float(trunc_val),
                                           state.num_qubits, state.c_array.dtype, state.c_array.device)
                 storage.apply(gate, params, max_num_str)
-        storage.compact(final=True)
+            elif isinstance(op, (SingleQubitClifford, TwoQubitClifford)):
+                storage.apply_clifford(op)
+        if any(isinstance(op, PauliRotation) for op in operations):
+            storage.compact(final=True)
+        else:
+            # Clifford-only sequences preserve explicit zero rows, as the
+            # direct Clifford API does; cutoff and cap apply to rotations only.
+            storage.keys = storage.keys[:storage.n].clone()
+            storage.coeff = storage.coeff[:storage.n].clone()
         if stats is not None:
             stats.update(rebuilds=storage.rebuilds, compactions=storage.compactions,
                          growths=storage.growths)

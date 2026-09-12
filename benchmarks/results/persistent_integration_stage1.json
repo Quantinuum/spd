@@ -1,0 +1,59 @@
+{
+  "device": "NVIDIA H100 80GB HBM3",
+  "torch": "2.8.0+cu128",
+  "triton": "3.4.0",
+  "precision": "double",
+  "cutoff": 0.0001,
+  "cap": 4096,
+  "timed_passes": 1,
+  "workloads": {
+    "tfi_1d_8_3layers": {
+      "operations": 65,
+      "reference": {
+        "seconds": 0.0052364109997142805,
+        "peak_allocated_bytes": 69120,
+        "peak_reserved_bytes": 2097152,
+        "peak_extra_allocated_bytes": 16896,
+        "terms": 200,
+        "energy": -7.226307077616228
+      },
+      "persistent": {
+        "seconds": 0.004510642000241205,
+        "peak_allocated_bytes": 71168,
+        "peak_reserved_bytes": 2097152,
+        "peak_extra_allocated_bytes": 18944,
+        "terms": 200,
+        "energy": -7.226307077616228
+      },
+      "correctness": {
+        "same_keys": true,
+        "max_coefficient_error": 0.0,
+        "energy_error": 0.0
+      }
+    },
+    "afh_1d_8_3layers": {
+      "operations": 120,
+      "reference": {
+        "seconds": 0.0438960789997509,
+        "peak_allocated_bytes": 527360,
+        "peak_reserved_bytes": 2097152,
+        "peak_extra_allocated_bytes": 376832,
+        "terms": 4096,
+        "energy": 0.28755068944520934
+      },
+      "persistent": {
+        "seconds": 0.014097923998633632,
+        "peak_allocated_bytes": 664064,
+        "peak_reserved_bytes": 2097152,
+        "peak_extra_allocated_bytes": 513536,
+        "terms": 4096,
+        "energy": 0.2875506894452089
+      },
+      "correctness": {
+        "same_keys": true,
+        "max_coefficient_error": 0.0,
+        "energy_error": 4.440892098500626e-16
+      }
+    }
+  }
+}

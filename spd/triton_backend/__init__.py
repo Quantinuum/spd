@@ -158,14 +158,12 @@ def conjugate_pauli_rotation(spo, pauli, theta, trunc_val=0., max_num_str=None):
 
 def evolve_step(spo, operations, trunc_val=0., max_num_str=None):
     """Apply circuit operations in reverse (Heisenberg) order."""
+    from .persistent import evolve_step_persistent
+
     operations = tuple(operations)
-    for op in operations:
-        if not isinstance(op, (PauliRotation, SkippedOperation)):
-            raise NotImplementedError("Triton evolution currently supports Pauli rotations only")
-    for op in reversed(operations):
-        if isinstance(op, PauliRotation):
-            spo = conjugate_pauli_rotation(spo, op.pauli, op.theta, trunc_val, max_num_str)
-    return spo
+    if all(isinstance(op, SkippedOperation) for op in operations):
+        return spo
+    return evolve_step_persistent(spo, operations, trunc_val, max_num_str)
 
 # Import after the state-only API so gradient/standard operations can reuse it.
 from .gradient import SparsePauliGradientOp, create_gradient_op

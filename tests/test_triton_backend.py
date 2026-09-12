@@ -76,7 +76,7 @@ def test_reverse_order_and_unsupported_operations():
     result = evolve_step(state, operations)
     assert as_dict(result) == as_dict(expected)
     with pytest.raises(NotImplementedError):
-        evolve_step(state, [SingleQubitClifford("OpType.H", 0)])
+        evolve_step(state, [object()])
 
 
 def test_invalid_inputs():

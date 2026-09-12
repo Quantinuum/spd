@@ -191,14 +191,17 @@ All four entry points below are exported from `spd.triton_backend`:
 | Path | Function and implementation | Returns |
 |---|---|---|
 | Fast forward rotation | `conjugate_pauli_rotation` in [__init__.py](__init__.py) | State only |
-| Fast sequence | `evolve_step` in [__init__.py](__init__.py); calls `conjugate_pauli_rotation` | State only |
+| Fast sequence | `evolve_step` in [__init__.py](__init__.py); uses [persistent storage](persistent.py) | State only |
 | Forward with diagnostics | `conjugate_pauli_rot_forward` in [operations.py](operations.py) | `(state, live_count, diagnostics)` |
 | Backward with diagnostics | `conjugate_pauli_rot_backward` in [operations.py](operations.py) | `(state, live_count, angle_gradient, diagnostics)` |
 
 The rotation paths share the same [Triton kernel](kernels.py), specialized using
 compile-time flags. There is currently no diagnostic-free backward API.
-The fast sequence helper supports Pauli rotations and skipped operations;
-Clifford gates currently use their separate gate APIs.
+The fast sequence helper supports mixed Pauli rotations, exact Clifford gates,
+and skipped operations. It copies the input once and retains private storage
+across gates. Clifford key transformations rebuild the index; rotations use
+incremental insertion and occasional growth/compaction. See the
+[integration plan and validation](../../docs/triton_persistent_integration.md).
 
 "No performance degradation" refers to the updated state-only path compared
 with the original state-only path. Diagnostics still add measurable overhead:

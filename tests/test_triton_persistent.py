@@ -1,4 +1,4 @@
-"""Semantic checks for the opt-in persistent timestep prototype."""
+"""Semantic checks against the independent per-gate forward implementation."""
 import numpy as np
 import pytest
 
@@ -7,15 +7,29 @@ pytest.importorskip('triton')
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason='requires NVIDIA GPU')
 
 from spd.circuit_ir import PauliRotation
-from spd.triton_backend import create_op, evolve_step
+from spd.triton_backend import create_op, evolve_step, conjugate_pauli_rotation
 from spd.triton_backend.persistent import evolve_step_persistent
 from tests.test_triton_backend import as_dict
 from tests.test_triton_invariants import collision_observable
 
 
+def reference_sequence(state, operations, cutoff, cap=None):
+    from spd import triton_backend as gpu
+    from spd.circuit_ir import SingleQubitClifford, TwoQubitClifford
+    for op in reversed(operations):
+        if isinstance(op, PauliRotation):
+            state = conjugate_pauli_rotation(state, op.pauli, op.theta, cutoff, cap)
+        elif isinstance(op, SingleQubitClifford):
+            state = getattr(gpu, f"conjugate_{op.gate_name.split('.')[-1]}_forward")(state, op.qubit)
+        elif isinstance(op, TwoQubitClifford):
+            state = getattr(gpu, f"conjugate_{op.gate_name.split('.')[-1]}_forward")(
+                state, op.control_qubit, op.target_qubit)
+    return state
+
+
 def check(state, ops, cutoff, cap=None, dead_fraction=.1):
     before = as_dict(state)
-    expected = as_dict(evolve_step(state, ops, cutoff, cap))
+    expected = as_dict(reference_sequence(state, ops, cutoff, cap))
     stats = {}
     result = evolve_step_persistent(state, ops, cutoff, cap,
                                     dead_fraction=dead_fraction, stats=stats)
@@ -118,3 +132,63 @@ def test_two_qubit_dense_oracle(precision, atol):
         keys, values = result.to_host()
         actual = sum((c*matrix(p) for p,c in zip(labels_from_keys(keys, 2), values)), np.zeros((4,4), complex))
         np.testing.assert_allclose(actual, expected, atol=atol, rtol=atol)
+
+
+@pytest.mark.parametrize('nq', [3, 65, 121])
+@pytest.mark.parametrize('precision,tol', [('single', 3e-6), ('double', 3e-13)])
+@pytest.mark.parametrize('cap', [None, 17])
+def test_public_mixed_sequence(nq, precision, tol, cap):
+    from spd.circuit_ir import SingleQubitClifford, TwoQubitClifford, SkippedOperation
+    rng = np.random.default_rng(251)
+    labels = [''.join(row) for row in rng.choice(list('IXYZ'), (129, nq))]
+    state = create_op(dict(zip(labels, rng.normal(size=129))), precision=precision)
+    before = tuple(a.copy() for a in state.to_host())
+    ops = []
+    for name in ['H', 'S', 'Sdg', 'X', 'Y', 'Z', 'CX', 'CY', 'CZ']:
+        ops.append(PauliRotation('rotation', ''.join(rng.choice(list('IXYZ'), nq)), .371))
+        ops.append(TwoQubitClifford('OpType.' + name, 0, nq - 1) if name.startswith('C')
+                   else SingleQubitClifford('OpType.' + name, nq - 1))
+        ops.append(SkippedOperation('barrier'))
+    expected = as_dict(reference_sequence(state, ops, .1, cap))
+    actual = as_dict(evolve_step(state, iter(ops), .1, cap))
+    assert actual.keys() == expected.keys()
+    np.testing.assert_allclose([actual[k] for k in expected], list(expected.values()), atol=tol, rtol=tol)
+    for a, b in zip(state.to_host(), before):
+        np.testing.assert_array_equal(a, b)
+
+
+def test_cliffords_preserve_zero_rows_and_ignore_rotation_truncation():
+    from spd.circuit_ir import SingleQubitClifford, TwoQubitClifford
+    state = create_op({'XI': 0., 'IZ': .01, 'YY': 1.}, precision='double')
+    ops = [SingleQubitClifford('OpType.S', 0), TwoQubitClifford('OpType.CY', 0, 1)]
+    actual = evolve_step(state, ops, trunc_val=2., max_num_str=1)
+    expected = reference_sequence(state, ops, 2., 1)
+    assert actual.get_size() == expected.get_size() == 3
+    assert as_dict(actual) == as_dict(expected)
+
+
+def test_public_sequence_keeps_storage_across_rotations(monkeypatch):
+    from spd.triton_backend.persistent import _Storage
+    calls = []
+    original = _Storage._rebuild
+    def record(storage):
+        calls.append(id(storage))
+        original(storage)
+    monkeypatch.setattr(_Storage, '_rebuild', record)
+    state = create_op({'X': .4, 'Y': .7, 'Z': .1}, precision='double')
+    ops = [PauliRotation('rotation', 'Z', .031)] * 20
+    expected = as_dict(reference_sequence(state, ops, 0.))
+    actual = as_dict(evolve_step(state, ops))
+    assert len(calls) == 1
+    np.testing.assert_allclose([actual[k] for k in expected], list(expected.values()), atol=3e-13)
+
+
+def test_mixed_empty_and_invalid_cliffords():
+    from spd.circuit_ir import SingleQubitClifford, TwoQubitClifford
+    state = create_op({}, num_qubits=65)
+    ops = [SingleQubitClifford('OpType.H', 64), PauliRotation('rotation', 'X', .3)]
+    result = evolve_step(state, ops)
+    assert result.get_size() == 0 and result.num_qubits == 65
+    for op in [SingleQubitClifford('OpType.H', 65), TwoQubitClifford('OpType.CX', 0, 0)]:
+        with pytest.raises(ValueError):
+            evolve_step(state, [op])
