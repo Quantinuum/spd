@@ -433,10 +433,13 @@ def backpropagate(
     save_strings=False,
     backend=None,
     progress=True,
+    in_place=False,
 ):
     """Propagate an SPGO backward; progress=False skips reporting reductions.
 
     Angle gradients and truncation diagnostics are always returned.
+    in_place=True mutates the Triton SPGO and retains storage across calls.
+    Shared buffers detach first; errors may leave earlier gates applied.
     """
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
@@ -444,6 +447,9 @@ def backpropagate(
         raise TypeError(
             f"spgo must be a {backend.name} SparsePauliGradientOp when backend='{backend.name}'."
         )
+
+    if in_place and backend.name != "triton":
+        raise NotImplementedError("in_place backward evolution is supported only for Triton")
 
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     normalized_circuit = _normalize_input_circuit(input_circuit, backend, rebase)
@@ -454,24 +460,31 @@ def backpropagate(
     )
     grads = []
 
-    def _apply_backward(state, operation):
-        next_state, num_string, grad_i, step_info = backend.apply_backward(
-            state,
-            operation,
-            trunc_val=trunc_val,
-            max_num_str=max_num_str,
+    if backend.name == "triton":
+        loop_state = spgo if in_place or all(isinstance(op, SkippedOperation) for op in operations) else spgo.copy()
+        apply_backward = lambda state, operation: state.apply_in_place(operation, trunc_val, max_num_str)
+    else:
+        loop_state = spgo
+        apply_backward = lambda state, operation: backend.apply_backward(
+            state, operation, trunc_val=trunc_val, max_num_str=max_num_str,
         )
+
+    def _apply_backward(state, operation):
+        next_state, num_string, grad_i, step_info = apply_backward(state, operation)
         if grad_i is not None:
             grads.append(grad_i)
         return next_state, num_string, grad_i, step_info
 
     final_spgo, _, _, info = _run_operation_loop(
         operations,
-        spgo,
+        loop_state,
         _apply_backward,
         total_start_time,
         progress=progress,
     )
+
+    if backend.name == "triton" and not in_place and final_spgo is not spgo:
+        final_spgo.compact()
 
     if save_strings:
         _save_state_pickle(final_spgo, "grad_strings", trunc_val)
@@ -489,14 +502,22 @@ def backpropagate_noise_analysis(
     save_strings=False,
     backend=None,
     progress=True,
+    in_place=False,
 ):
-    """Backpropagate an SPGO and measure operation-aligned noise susceptibilities."""
+    """Backpropagate an SPGO and measure operation-aligned noise susceptibilities.
+
+    in_place=True is Triton-only and retains mutable storage across calls.
+    Shared buffers detach first; errors may leave earlier gates applied.
+    """
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
     if not backend.is_spgo_instance(spgo):
         raise TypeError(
             f"spgo must be a {backend.name} SparsePauliGradientOp when backend='{backend.name}'."
         )
+
+    if in_place and backend.name != "triton":
+        raise NotImplementedError("in_place backward evolution is supported only for Triton")
 
     max_num_str = _normalize_max_num_str(backend.name, max_num_str)
     circuit_ir = _normalize_input_circuit(input_circuit, backend, rebase)
@@ -512,13 +533,17 @@ def backpropagate_noise_analysis(
         "two_qubit_depolarizing": [],
     }
 
-    def _apply_backward(state, operation):
-        next_state, num_string, grad_i, step_info = backend.apply_backward(
-            state,
-            operation,
-            trunc_val=trunc_val,
-            max_num_str=max_num_str,
+    if backend.name == "triton":
+        loop_state = spgo if in_place or all(isinstance(op, SkippedOperation) for op in operations) else spgo.copy()
+        apply_backward = lambda state, operation: state.apply_in_place(operation, trunc_val, max_num_str)
+    else:
+        loop_state = spgo
+        apply_backward = lambda state, operation: backend.apply_backward(
+            state, operation, trunc_val=trunc_val, max_num_str=max_num_str,
         )
+
+    def _apply_backward(state, operation):
+        next_state, num_string, grad_i, step_info = apply_backward(state, operation)
         if grad_i is not None:
             parameter_grads.append(grad_i)
 
@@ -555,11 +580,14 @@ def backpropagate_noise_analysis(
 
     final_spgo, _, _, info = _run_operation_loop(
         operations,
-        spgo,
+        loop_state,
         _apply_backward,
         total_start_time,
         progress=progress,
     )
+
+    if backend.name == "triton" and not in_place and final_spgo is not spgo:
+        final_spgo.compact()
 
     if save_strings:
         _save_state_pickle(final_spgo, "grad_strings", trunc_val)

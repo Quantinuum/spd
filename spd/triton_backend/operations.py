@@ -130,7 +130,13 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
 
 def conjugate_pauli_rot_backward(spgo, xzk, theta, trunc_val, max_num_str=None):
     """Reverse both primal/adjoint arrays; return state, count, dL/dtheta, info."""
-    return _rotation(spgo, xzk, theta, trunc_val, max_num_str, True)
+    _validate_rotation(spgo, theta, trunc_val, max_num_str, True)
+    _prepare_gate(spgo, xzk, float(theta), float(trunc_val))
+    if not spgo.get_size():
+        return spgo, 0, 0., _zero_info()
+    result = spgo.copy()
+    _, size, angle, info = result._rotate_in_place(xzk, theta, trunc_val, max_num_str)
+    return result.compact(), size, angle, info
 
 
 def create_measurement_op(measurement_dict, padded_system_size, *, precision=None):

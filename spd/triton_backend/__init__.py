@@ -100,19 +100,21 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
 
     def _rotate_in_place(self, generator, theta, cutoff, cap, *, diagnostics=True):
         from .operations import _validate_rotation, _prepare_gate, _zero_info
-        cap = _validate_rotation(self, theta, cutoff, cap, False)
+        backward = self._storage.grad is not None
+        cap = _validate_rotation(self, theta, cutoff, cap, backward)
         with torch.cuda.device(self._storage.device):
             gate, params = _prepare_gate(self, generator, float(theta), float(cutoff))
             if not self._storage.n:
-                return self, 0, None, _zero_info() if diagnostics else None
+                return self, 0, 0. if backward else None, _zero_info() if diagnostics else None
             storage = self._mutable_storage()
             info = storage.apply(gate, params, cap, diagnostics=diagnostics)
-        return self, self.get_size(), None, info
+        angle, info = info if backward else (None, info)
+        return self, self.get_size(), angle, info
 
     def apply_in_place(self, operation, trunc_val=0., max_num_str=None, *, diagnostics=True):
-        """Apply one forward IR gate to this object, retaining its private storage.
+        """Apply one IR gate, retaining storage: forward for SPO, backward for SPGO.
 
-        Returns the runner tuple (self, count, None, diagnostics). Copies once if
+        Returns (self, count, angle_gradient_or_None, diagnostics). Copies once if
         tensors are borrowed/shared/exposed; copy() explicitly obtains private
         storage ahead of a gate loop. Skipped operations do not mutate anything.
         """
@@ -120,8 +122,6 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
         from .operations import _zero_info
         if isinstance(operation, SkippedOperation):
             return self, None, None, None
-        if self._storage.grad is not None:
-            raise TypeError("Forward in-place evolution requires an SPO, not an SPGO")
         if isinstance(operation, PauliRotation):
             return self._rotate_in_place(operation.pauli.rstrip("I"), operation.theta,
                                          trunc_val, max_num_str, diagnostics=diagnostics)

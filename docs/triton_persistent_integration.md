@@ -10,7 +10,9 @@ baseline stage. No applicable AGENTS.md files were found.
 
 ## Review and commit stages
 
-Pause after each stage for user review and commit instruction. No merge or push.
+Pause after each stage for user review and commit instruction. Merge/push require
+user instruction; the user authorized committing stage 3 and pushing the
+integration branch as a backup. No merge into main is authorized.
 
 1. **Standalone forward sequence (approved).** Route `evolve_step`
    through basic persistent storage, support mixed exact Cliffords, preserve the
@@ -21,7 +23,7 @@ Pause after each stage for user review and commit instruction. No merge or push.
    the public runner's operation loop. Preserve progress, history aggregation,
    save-strings behavior, requested/effective caps, and public return types.
    Observation access must not reconstruct storage or expose mutable snapshots.
-3. **Backward and analysis.** Extend storage with adjoints and support defined by
+3. **Backward and analysis (approved for commit).** Extend storage with adjoints and support defined by
    meaningful `(c,g)` pairs. Preserve inclusive backward cutoff, primal-ranked
    caps, gradient-only support growth, exact inverse Cliffords and pre-rotation
    angle gradients. Integrate ordinary and noise-analysis backward loops;
@@ -150,9 +152,8 @@ expectation and norm convention; corrected comparisons recovered the completed
 
 ## Stage 2: SPO-owned storage and public forward diagnostics/history
 
-Stage 1 was approved and committed as `3abb844`. This revised stage 2 is
-approved for commit, including the requested `spd.evolve(..., in_place=True)`
-option. It replaces the earlier `_ForwardSession` design with
+Stage 1 was approved and committed as `3abb844`. Revised stage 2 was committed
+as `f03cce5`, including the requested `spd.evolve(..., in_place=True)` option. It replaces the earlier `_ForwardSession` design with
 the agreed SPO/SPGO ownership model; no separate execution context is needed.
 
 ### Ownership and implementation
@@ -282,7 +283,7 @@ peak. Reserved allocator cache depends on allocation history; no allocation
 retries or OOMs occurred in these runs.
 
 Against actual main, TFI and uncapped AFH discarded counts match exactly at
-every gate, with maximum L1 errors 1.42e-14 / 5.68e-14 and squared-L2 errors
+every gate, with maximum L1 errors 1.42e-14 / 5.68e-14 and L2 errors
 3.47e-18 / 5.55e-17. Energies/norms agree to roundoff and final counts match.
 Capped AFH does **not** have exact history equality: 875 discarded-count entries
 differ (maximum 11,471); maximum L1/L2 differences are 0.103023 / 8.318e-6;
@@ -327,3 +328,200 @@ compare consecutive in-place calls with functional calls and check unsupported
 backends explicitly.
 
 Final in-place API validation: ownership, diagnostics and runner suites: **96 passed in 76.73 s**. `git diff --check` passed.
+
+
+## Stage 3: persistent backward and analysis
+
+Stage 2 is committed as `f03cce5`. Stage 3 was approved for commit and remote
+backup, including both backward in-place entry points.
+
+### Implementation and API behavior
+
+The existing generic pair-update kernel now has a compile-time backward
+specialization. A stable pair owner reads both incoming coefficient and adjoint
+channels, reduces the pre-rotation angle contribution once, then applies the
+inverse rotation to both channels. Dead rows have both channels zeroed and can
+be reactivated. Forward remains its own compile-time specialization.
+
+Backward retention preserves the existing inclusive primal cutoff and meaningful
+`(c,g)` support. At cutoff zero, nonzero adjoints with zero primal coefficients
+survive and can create partner rows. A binding top-k cap ranks primal magnitudes
+but assigns dead slots a score below every live row, so dead zeros cannot steal
+places from live gradient-only rows. This is a correctness mask, not an optional
+row-selection/indexing experiment. Temporary cap scores are released before
+output copying and diagnostic workspace allocation. Discarded-count/L1/L2
+accounting remains based on primal coefficients; angle gradients are computed
+before truncation/capping as in the original implementation.
+
+`SparsePauliGradientOp.apply_in_place()` selects backward evolution from the
+adjoint channel. Exact inverse Cliffords transform both channels and rebuild the
+index; rotations retain it. Public `backpropagate` and
+`backpropagate_noise_analysis` copy once, retain storage across gates, and compact
+on return. Their defaults remain input-preserving. At the user's request, both backward
+entry points now accept `in_place=False`: `True` mutates the supplied Triton
+SPGO and retains its storage on return. NumPy/JAX raise `NotImplementedError`
+when this mode is requested. Skipped-only backward returns the original SPGO.
+Direct diagnostic backward rotations use a private single-gate copy; the old
+`operations._rotation(..., backward=True)` remains an independent reference.
+
+Noise susceptibility reads storage after each gate, without exporting compact
+arrays. Existing basis/OSE/L2 initialization, scalar observations, algebra,
+translation, serialization and analysis APIs remain supported. SPGO initialization
+shares the SPO's primal buffers; public backward makes one private working copy,
+including adjoints, to preserve its input. It does not consume either caller
+object or promise zero-copy backward evolution.
+
+### Validation
+
+- Initial existing backward/diagnostic/ownership suite: **66 passed in 27.04 s**.
+- Mixed persistent backward, existing backward, runner, algebra/analysis and
+  Clifford suites: **270 passed in 91.93 s**.
+- Broader forward/JAX/semantic/persistent conformance, including the new
+  backward/noise tests: **224 passed, 1 expected failure in 75.07 s**.
+  The expected failure is the existing JAX cutoff-equality diagnostic issue.
+- Final focused backward/forward-diagnostic/ownership suite, including the
+  forward-only entry-point guard and cap workspace lifetime adjustment:
+  **69 passed in 6.11 s**. `git diff --check` passed.
+
+New tests compare every gate with the retained per-gate implementation for
+float32/float64 and 3/65/121-qubit keys, including all nine Cliffords, binding
+caps, inclusive cutoff, dead-owner reactivation, pre-update angle gradients,
+gradient-only support growth, preservation of shared terminal primals, skipped
+operations and storage lifecycle. Further tests compare full mixed-gate noise
+histories and backward execution with truncation diagnostics disabled. Existing
+tests supply independent NumPy/JAX comparisons, dense finite differences,
+terminal-loss checks and the example optimizer paths.
+
+### Backward runtime and memory
+
+Small benchmark: `python benchmarks/benchmark_persistent_backward.py`.
+Raw results: `benchmarks/results/persistent_integration_stage3_backward.json`.
+Eight-site TFI/AFH with three layers, float64, cutoff 1e-4, cap 65536, basis
+expectation plus 0.13 * OSE(alpha=2). These use a separate seeded parameter set
+from the stage 2 forward benchmark. Terminal supports are 136 / 32,603 rows.
+
+Larger scripts/results remain in `/tmp/spd-stage3-backward-large`:
+TFI 11x11 uses **10 forward steps**, with 994,285 terminal rows, cutoff 2^-18;
+AFH 6x6x6 uses cutoff 3e-4, with 2,265,180 terminal rows. Both use basis expectation
+plus 0.13 * OSE(alpha=2), and nonbinding caps. This is not a measurement of
+backpropagating the 23-step TFI or exact-20M AFH workload.
+
+Every row below measures one backward pass on the **same terminal SPGO** for
+both implementations. Compile first on tiny disposable inputs, prepare gate
+metadata, then measure once per path. Timings include the backward loop,
+diagnostics/history, copying and final compaction; exclude forward construction,
+terminal initialization and host comparisons. GPU measurements run sequentially.
+The reference is the original per-gate backward kernel retained in the current
+worktree, with current wrappers—not a separate main checkout.
+
+| Workload | Original per-gate backward | Persistent backward | Original peak allocated MB | Persistent peak allocated MB |
+|---|---:|---:|---:|---:|
+| TFI 8 sites, 3 layers | 10.139 ms | 10.401 ms | 0.119 | 0.120 |
+| AFH 8 sites, 3 layers | 25.824 ms | 16.969 ms | 4.450 | 5.097 |
+| TFI 11x11, 10 steps | 0.807 s | 0.468 s | 247.971 | 279.973 |
+| AFH 6x6x6, uncapped | 1.970 s | 1.428 s | 845.969 | 968.318 |
+
+Decimal MB. Reserved peaks (reference/persistent) are 2.097/2.097 MB,
+6.291/6.291 MB, 274.727/297.796 MB, and 1033.896/1012.924 MB respectively.
+Allocated peaks include the shared terminal inputs retained during both paths;
+raw JSON also records incremental peaks above those inputs.
+
+Keys, coefficients and adjoints match **exactly** in all four workloads.
+Discarded counts match at every gate. Maximum angle-gradient error is 8.88e-16
+across the small cases and 1.39e-16 / 5.55e-17 for the larger TFI/AFH cases.
+The larger cases' maximum L1/L2 diagnostic errors are 5.55e-17 / 1.08e-19 and
+7.11e-15 / 1.39e-17 respectively. Final backward supports are 16 / 24 / 89,945 /
+384,943 rows. These comparisons validate backward results on shared terminal
+inputs; independent end-to-end energy/gradient checks are in the existing tests.
+
+### Forward regression measurements
+
+The existing small forward benchmark was rerun after extending the kernel.
+Raw results: `benchmarks/results/persistent_integration_stage3_forward.json`.
+Workloads and measurement protocol match the stage 2 small benchmark.
+
+| Workload/path | Original per-gate ms | Persistent ms | Original peak allocated bytes | Persistent peak allocated bytes |
+|---|---:|---:|---:|---:|
+| TFI state-only | 6.298 | 5.178 | 109,056 | 111,104 |
+| TFI diagnostics | 10.551 | 7.355 | 110,080 | 111,104 |
+| AFH state-only | 16.204 | 16.986 | 2,615,808 | 2,856,448 |
+| AFH diagnostics | 22.572 | 16.882 | 2,624,512 | 2,856,448 |
+
+Reserved peaks remain 2,097,152 bytes for TFI and 4,194,304 for AFH.
+Keys and coefficients match exactly, energies agree to roundoff, and histories
+pass the existing strict comparison. Allocated peaks match stage 2. Short
+one-shot timings fluctuate; the AFH state-only sample shows no speedup and is
+not presented as evidence of a timing guarantee.
+
+### Limits and next acceptance stage
+
+Persistent backward exchanges some additional live memory for index/buffer reuse.
+The larger cases use about 13–14% more peak allocated memory than the original
+per-gate backward path while taking about 42% / 28% less time. The small TFI case
+shows no speedup. These one-shot samples establish sanity, not statistical timing
+bounds. Forward state-only and forward diagnostic results are reported separately
+in stage 2; backward gains must not be attributed to those paths.
+
+The stage 2 TFI state-only reserved-memory increase remains an allocation-history
+question: unchanged peak allocated memory does not prove identical headroom.
+Stage 4 acceptance should include allocator tracing of that workload before any
+claim of equivalent memory headroom, along with consolidated forward/diagnostic/
+backward performance checks. OSE initialization still uses arithmetic workspace;
+this stage introduces no optional local arithmetic, alternate indexing, layout,
+padding or multi-GPU experiments. Top-k boundary ties remain unspecified.
+
+
+### Follow-up: public backward in-place mode and complete pipeline memory
+
+Both `backpropagate` and `backpropagate_noise_analysis` now accept keyword-only
+`in_place=False`. When requested, Triton mutates the supplied SPGO, retains its
+storage on return, and detaches shared buffers before mutation. NumPy/JAX raise
+`NotImplementedError`. Defaults and skipped-only identity remain unchanged.
+New tests cover repeated public calls, both analysis modes, rejected backends,
+and preservation of the originating SPO. The persistent-backward suite passed
+**34 tests in 5.31 s** after this addition.
+
+For compact same-support basis/OSE initialization, an SPO of X bytes and an SPGO
+of Y bytes share their primal buffers: retained combined storage is roughly Y,
+with roughly Y-X additional adjoint bytes. This is not a peak-memory guarantee:
+loss workspace, spare capacity, dead slots and the retained index also matter.
+L2 initialization can construct different support and is not covered by that
+simple sharing formula.
+
+The initializer marks primal buffers shared. Therefore the first backward mutation
+still makes one private working copy, even with `in_place=True`. The implementation
+uses a conservative sharing flag, not lifetime tracking: deleting the original
+SPO alone does not remove that copy. No consuming initialization API was added.
+
+Complete forward → basis+0.13*OSE(alpha=2) initialization → backward measurements
+are in `/tmp/spd-stage3-inplace-memory`, including scripts, phase metrics, raw
+arrays and comparisons. Same TFI 11x11 **10-step** and uncapped AFH 6x6x6 workloads
+as the preceding backward benchmark. Separate processes, tiny compilation only,
+one measured pipeline per mode, no cache clearing between phases. Peaks include
+all three phases and initialization workspace. The source SPO remains alive.
+
+| Workload | Functional peak allocated MB | In-place peak allocated MB | In-place + compact before initialization MB |
+|---|---:|---:|---:|
+| TFI 11x11, 10 steps | 279.622 | 327.790 | 271.667 |
+| AFH 6x6x6, uncapped | 1094.671 | 1207.420 | 1094.670 |
+
+Reserved peaks for the same three modes: TFI 299.893 / 423.625 / 297.796 MB;
+AFH 1497.367 MB in all modes. Decimal MB throughout.
+
+TFI forward peak alone falls from 207.978 to 183.779 MB and forward copies from
+ten to one. However, leaving forward capacity untrimmed increases storage held
+across initialization and the backward copy. One explicit `spo.compact()` before
+initialization restores compact primal storage. Then the total TFI peak falls
+about 2.8%; AFH total peak is unchanged because forward dominates (its backward
+peak falls from 968.318 to 950.196 MB). Initialization makes zero primal copies
+and backward makes one private copy in every measured mode.
+
+Keys and coefficients match exactly in all modes, discarded counts match at every
+gate, and adjoints/angles/diagnostic norms agree to roundoff. Removing the remaining
+handoff copy requires explicit ownership transfer/consumption or lifetime-aware
+sharing. Such a change must define what happens to the source SPO and exposed
+views; it cannot silently consume the current public input.
+
+The consuming variational-pipeline feasibility result and deferred TODO are
+preserved in [triton_variational_pipeline_todo.md](triton_variational_pipeline_todo.md).
+This follow-up is outside stage 4 acceptance.

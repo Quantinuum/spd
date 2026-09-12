@@ -1,7 +1,7 @@
-"""Private persistent storage within one immutable-input forward sequence.
+"""Persistent SPO/SPGO storage and forward/backward pair updates.
 
 Dead keys remain indexed until compaction, but
-have zero coefficients immediately. Pair owners update both coefficients; new
+have zero coefficients/adjoints immediately. Pair owners update both rows; new
 keys are indexed only after the rotation kernel completes.
 """
 import math
@@ -39,7 +39,8 @@ def _insert(keys, table, start, end, mask, W: tl.constexpr, B: tl.constexpr):
 @triton.jit(do_not_specialize=['n', 'mask'])
 def _update(keys, coeff, table, gate, scalars, counts, n, mask,
             W: tl.constexpr, B: tl.constexpr,
-            stats=None, DIAGNOSTICS: tl.constexpr = False):
+            stats=None, DIAGNOSTICS: tl.constexpr = False,
+            grad=None, BACKWARD: tl.constexpr = False):
     i = tl.program_id(0) * B + tl.arange(0, B)
     valid = i < n
     parity = tl.full((B,), 0, tl.int32)
@@ -82,22 +83,39 @@ def _update(keys, coeff, table, gate, scalars, counts, n, mask,
     sin = tl.load(scalars + 1)
     cutoff = tl.load(scalars + 2)
     sign = tl.where((phase & 3) == 1, 1, -1)
+    if BACKWARD:
+        adj = tl.load(grad + i, owner, 0)
+        adj_pair = tl.load(grad + partner, paired_owner, 0)
+        # Read both incoming channels before this owner mutates either row.
+        theta_grad = tl.where(paired_owner, sign * (c * adj_pair - paired * adj), 0)
+        tl.store(stats + tl.program_id(0) * 4 + 3,
+                 tl.sum(theta_grad.to(tl.float64), 0))
+        sin = -sin
+        own_grad = tl.where(anti, adj * cos - adj_pair * sin * sign, adj)
+        other_grad = adj_pair * cos - adj * sin * (-sign)
     own = tl.where(anti, c * cos - paired * sin * sign, c)
     # Match the original partner row's arithmetic order (phase sign is opposite).
     other = paired * cos - c * sin * (-sign)
-    keep_own = owner & (tl.abs(own) > cutoff)
-    keep_other = owner & anti & (tl.abs(other) > cutoff)
+    if BACKWARD:
+        keep_own = owner & ((own != 0) | (own_grad != 0)) & (tl.abs(own) >= cutoff)
+        keep_other = owner & anti & ((other != 0) | (other_grad != 0)) & (tl.abs(other) >= cutoff)
+    else:
+        keep_own = owner & (tl.abs(own) > cutoff)
+        keep_other = owner & anti & (tl.abs(other) > cutoff)
     if DIAGNOSTICS:
         removed_own = owner & ~keep_own & (own != 0)
         removed_other = owner & anti & ~keep_other & (other != 0)
         a = tl.where(removed_own, tl.abs(own), 0).to(tl.float64)
         b = tl.where(removed_other, tl.abs(other), 0).to(tl.float64)
-        tl.store(stats + tl.program_id(0) * 3,
+        tl.store(stats + tl.program_id(0) * (4 if BACKWARD else 3),
                  tl.sum(removed_own.to(tl.int32) + removed_other.to(tl.int32), 0))
-        tl.store(stats + tl.program_id(0) * 3 + 1, tl.sum(a + b, 0))
-        tl.store(stats + tl.program_id(0) * 3 + 2, tl.sum(a * a + b * b, 0))
+        tl.store(stats + tl.program_id(0) * (4 if BACKWARD else 3) + 1, tl.sum(a + b, 0))
+        tl.store(stats + tl.program_id(0) * (4 if BACKWARD else 3) + 2, tl.sum(a * a + b * b, 0))
     tl.store(coeff + i, tl.where(keep_own, own, 0), owner)
     tl.store(coeff + partner, tl.where(keep_other, other, 0), paired_owner)
+    if BACKWARD:
+        tl.store(grad + i, tl.where(keep_own, own_grad, 0), owner)
+        tl.store(grad + partner, tl.where(keep_other, other_grad, 0), paired_owner)
     create = keep_other & (partner < 0)
     offsets = tl.cumsum(create.to(tl.int32)) - create.to(tl.int32)
     base = tl.atomic_add(counts, tl.sum(create.to(tl.int32), 0), sem='relaxed')
@@ -107,8 +125,15 @@ def _update(keys, coeff, table, gate, scalars, counts, n, mask,
         g = tl.load(gate + w).to(tl.uint32)
         tl.store(keys + dest.to(tl.int64) * W + w, v ^ g, create)
     tl.store(coeff + dest, other, create)
-    delta = (keep_own.to(tl.int32) - (owner & (c != 0)).to(tl.int32)
-             + keep_other.to(tl.int32) - (paired_owner & (paired != 0)).to(tl.int32))
+    if BACKWARD:
+        tl.store(grad + dest, other_grad, create)
+        was_own = owner & ((c != 0) | (adj != 0))
+        was_other = paired_owner & ((paired != 0) | (adj_pair != 0))
+    else:
+        was_own = owner & (c != 0)
+        was_other = paired_owner & (paired != 0)
+    delta = (keep_own.to(tl.int32) - was_own.to(tl.int32)
+             + keep_other.to(tl.int32) - was_other.to(tl.int32))
     tl.atomic_add(counts + 1, tl.sum(delta, 0), sem='relaxed')
 
 
@@ -245,7 +270,14 @@ class _Storage:
         grad = torch.empty_like(coeff) if self.grad is not None else None
         if size:
             if size < self.live:
-                selected = torch.topk(self.coeff[:self.n].abs(), size, sorted=False).indices
+                scores = self.coeff[:self.n].abs()
+                if self.grad is not None:
+                    # Zero-primal live adjoints outrank dead slots at cutoff zero.
+                    meaningful = (self.coeff[:self.n] != 0) | (self.grad[:self.n] != 0)
+                    scores = torch.where(meaningful, scores, -torch.inf)
+                    del meaningful
+                selected = torch.topk(scores, size, sorted=False).indices
+                del scores
                 if totals is not None:
                     # Sum removed terms directly: subtracting retained norms
                     # would lose small discarded contributions to cancellation.
@@ -291,12 +323,16 @@ class _Storage:
         r = operator.index(operation.target_qubit) if two else q
         if not 0 <= q < self.nq or not 0 <= r < self.nq or (two and q == r):
             raise ValueError("Clifford requires distinct qubits within system size")
+        code = codes[name]
+        if self.grad is not None and code in (1, 2):
+            code = 3 - code  # Inverse S/Sdg on primal and adjoint channels.
         if self.n:
             # The kernel reads/writes only its own row. No inter-row dependence,
             # and all control bits are loaded before any packed words change.
             clifford[((self.n + 127) // 128,)](
                 self.keys, self.coeff, self.keys, self.coeff,
-                self.n, q, r, self.width, codes[name], 128)
+                self.n, q, r, self.width, code, 128,
+                grad=self.grad, out_grad=self.grad, GRADIENT=self.grad is not None)
             self._rebuild()
 
     def apply(self, gate, params, cap, *, diagnostics=False):
@@ -318,35 +354,41 @@ class _Storage:
                                              self.table_size - 1, self.width, 128)
             self.rebuilds += 1
         blocks = (self.n + 127) // 128
-        stats = torch.empty((blocks, 3), dtype=torch.float64, device=self.device) if diagnostics else None
+        backward = self.grad is not None
+        stats = torch.empty((blocks, 4 if backward else 3), dtype=torch.float64,
+                            device=self.device) if diagnostics or backward else None
         self.counts.zero_()
         _update[((self.n + 127) // 128,)](self.keys, self.coeff, self.table, gate, params,
                                          self.counts, self.n, self.table_size - 1,
                                          self.width, 128, stats=stats, DIAGNOSTICS=diagnostics,
-                                         enable_fp_fusion=False)
+                                         grad=self.grad, BACKWARD=backward, enable_fp_fusion=False)
         added, delta = self.counts.cpu().tolist()
         before = self.n
         self.n += added
         self.live += delta
         self.pruned = True
-        totals = stats.sum(dim=0) if diagnostics else None
+        totals = (stats.sum(dim=0) if diagnostics else
+                  stats[:, 3:].sum(dim=0) if backward else None)
         if cap is not None and self.live > cap:
-            self.compact(cap, totals=totals)
+            self.compact(cap, totals=totals[:3] if diagnostics else None)
         elif self.n - self.live > max(16, self.dead_fraction * self.n):
             self.compact()
         elif added:
             _insert[((added + 127) // 128,)](self.keys, self.table, before, self.n,
                                             self.table_size - 1, self.width, 128)
+        info = None
         if diagnostics:
-            values = totals.tolist()
-            return {"num_str_truncated": int(values[0]), "truncated_l1_norm": values[1],
+            values = totals[:3].tolist()
+            info = {"num_str_truncated": int(values[0]), "truncated_l1_norm": values[1],
                     "truncated_l2_norm": math.sqrt(values[2])}
+        return (totals[-1].item(), info) if backward else info
 
 
 def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
                            *, dead_fraction=.1, stats=None):
     """Copy once, mutate privately across gates, materialize once."""
-    from . import SparsePauliOp, _gate_data
+    from . import SparsePauliOp
+    from .gradient import SparsePauliGradientOp
     from ..circuit_ir import (PauliRotation, SkippedOperation,
                               SingleQubitClifford, TwoQubitClifford)
     operations = tuple(operations)
@@ -366,6 +408,8 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
         if stats is not None:
             stats.update(rebuilds=0, compactions=0, growths=0)
         return state
+    if not isinstance(state, SparsePauliOp) or isinstance(state, SparsePauliGradientOp):
+        raise TypeError("Forward evolution requires a SparsePauliOp")
     result = state.copy()
     result._storage.dead_fraction = dead_fraction
     for op in reversed(operations):

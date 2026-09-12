@@ -211,8 +211,10 @@ for operation in operations:
 ```
 
 `copy()` makes independent storage, including SPGO adjoints. `apply_in_place`
-currently supports forward SPO evolution and returns
-`(self, live_count, None, diagnostics)`; pass `diagnostics=False` to omit reductions.
+supports forward SPO or backward SPGO evolution and returns
+`(self, live_count, angle_gradient_or_None, diagnostics)`; pass
+`diagnostics=False` to omit truncation reductions (SPGO angle gradients are
+still computed).
 Cliffords transform keys exactly and rebuild the index; rotations retain the
 index with incremental insertion and occasional growth/compaction.
 
@@ -225,9 +227,13 @@ avoid this export. `compact()` explicitly releases dead rows/spare capacity;
 Basis/OSE terminal initializers share primal keys and coefficients and allocate
 the adjoint channel; they do not consume the caller's SPO. `to_spo()` retains its
 compact-view contract. Shared/exposed tensors are protected from subsequent
-in-place operations by detaching first. Backward still uses the
-[original rotation kernel](kernels.py); persistent backward evolution and its
-memory/performance validation are the next integration stage. See the
+in-place operations by detaching first. By default, public `backpropagate` and
+`backpropagate_noise_analysis` copy the SPGO once and retain persistent storage
+across the backward gate loop, compacting on return. Both now accept
+`in_place=True` for Triton, mutating the supplied SPGO and retaining storage
+on return. NumPy/JAX raise `NotImplementedError` for this mode. Direct diagnostic backward
+rotations use the same update with a private single-gate copy. The original
+`operations._rotation` remains available internally as a validation reference. See the
 [integration plan and validation](../../docs/triton_persistent_integration.md).
 
 "No performance degradation" refers to the updated state-only path compared
@@ -414,3 +420,20 @@ the same working state. The default remains input-preserving. NumPy and JAX
 raise `NotImplementedError` when this option is requested. Shared/exposed
 buffers may still detach; an execution error can leave earlier gates applied.
 Saving strings explicitly materializes the state for serialization.
+
+Backward support is the union of nonzero primal and adjoint channels. Its cutoff
+is inclusive and depends on primal magnitude; gradient-only rows survive only
+at cutoff zero. A binding cap ranks live rows by primal magnitude, excluding
+dead slots even when live adjoints have zero primal coefficients. Equal-magnitude
+top-k ties remain unspecified. Each pair owner computes its angle-gradient
+contribution from the incoming state before updating either channel. Clifford
+backward evolution applies the exact inverse to both channels. Noise
+susceptibility reads the resulting storage directly after each gate.
+
+Terminal initialization shares primal buffers but marks them shared. Therefore,
+`backpropagate(..., in_place=True)` still detaches on the first mutation of a
+freshly initialized SPGO to preserve the originating SPO. This sharing flag is
+conservative: merely deleting the SPO does not currently make the SPGO's buffers
+exclusive. To avoid retaining unnecessary forward capacity across this boundary,
+call `spo.compact()` before `init_gradient_spo`; this does not remove the protective
+backward copy. An explicit consuming initializer is not implemented.
