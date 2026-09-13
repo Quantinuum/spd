@@ -1,0 +1,15 @@
+{
+  "small": {
+    "num_terms": 880,
+    "keys_equal": true,
+    "max_coefficient_error": 0.0
+  },
+  "fixed": {
+    "local_cupauliprop_counts_match_published": true,
+    "triton_counts_match_published": true,
+    "local_cupauliprop_max_expectation_error": 0.0,
+    "triton_max_expectation_error": 5.551115123125783e-16
+  },
+  "scaling_all_counts_match": true,
+  "scaling_max_expectation_error": 3.3306690738754696e-16
+}

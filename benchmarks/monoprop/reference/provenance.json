@@ -1,0 +1,20 @@
+{
+  "retrieved_utc": "2026-09-13",
+  "revision": "5ca9a35faf0dad5590a364757f862d4b528e3c54",
+  "website": "https://docs.monoprop.algorithmiq.tech/benchmarks",
+  "image_url": "https://docs.monoprop.algorithmiq.tech/benchmarks/pauli_scaling_runtime.png",
+  "source_repository": "https://github.com/Algorithmiq/monoprop",
+  "source_data_directory": "packages/bench-third-party/pauli_prop",
+  "image_source_path": "docs/public/benchmarks/pauli_scaling_runtime.png",
+  "image_retrieval": "Documentation image endpoint returned HTTP 403; retrieved source image from pinned GitHub revision.",
+  "files_sha256": {
+    "scaling_gpu.jsonl": "07dd93e5962d2c99dfea380536f3e43dce910c23287b83b0f2fd624e062d15e6",
+    "results_gpu.json": "ab99c0623c414711c7cedb3da18d09c474c4e10ee0f1445bf9611f8efafb5731",
+    "scaling_cpu.jsonl": "bb93410e6ad9e248026015f3404056241e787722058964049790f436b165fd72",
+    "results.json": "9824b5ffd9f3ffd68da32f5bd4abae8e7e9e521af7b7de8505e706fe21bfcaee",
+    "settings.json": "027015d5094da559a66736f6fcc0b48a54255fc34c5cf3a915be4a9a5bde758f",
+    "pauli_scaling_runtime.png": "0a5bf273bc1a1d7b36d9f2cb539cfcdd866b921b40b1f77da010155aef579c11",
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "NOTICE": "ea6242f69643fe9f521e1e4528b4540a021619535ef2b8236136e22f90bead8c"
+  }
+}

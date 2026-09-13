@@ -1,0 +1,35 @@
+{
+  "recorded_utc": "2026-09-13T17:03:11.552290+00:00",
+  "platform": "Linux-6.8.0-1067-gcp-x86_64-with-glibc2.39",
+  "python": "3.12.11",
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           46 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  12\nOn-line CPU(s) list:                     0-11\nVendor ID:                               GenuineIntel\nModel name:                              Intel(R) Xeon(R) CPU @ 2.20GHz\nCPU family:                              6\nModel:                                   85\nThread(s) per core:                      2\nCore(s) per socket:                      6\nSocket(s):                               1\nStepping:                                7\nBogoMIPS:                                4400.42\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm mpx avx512f avx512dq rdseed adx smap clflushopt clwb avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves arat avx512_vnni md_clear arch_capabilities\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               192 KiB (6 instances)\nL1i cache:                               192 KiB (6 instances)\nL2 cache:                                6 MiB (6 instances)\nL3 cache:                                38.5 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-11\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Mitigation; Aligned branch/return thunks\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Vulnerable: Clear CPU buffers attempted, no microcode; SMT Host state unknown\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; Enhanced IBRS\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Vulnerable: Clear CPU buffers attempted, no microcode; SMT Host state unknown\nVulnerability Vmscape:                   Not affected",
+  "gpu": "name, memory.total [MiB], driver_version, clocks.max.sm [MHz], clocks.max.memory [MHz], power.limit [W]\nNVIDIA A100-SXM4-80GB, 81920 MiB, 580.173.02, 1410 MHz, 1593 MHz, 400.00 W",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "git_head": "f0430966958d88b422b5f9bb669f579503c37fbd",
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "74f67e71a06a76ac27da5cee45e93966faa87116619dfafaaca6aa4abb58f224",
+    "spd/triton_backend/__init__.py": "092340b6ef42a56455cea6831d35f53c8122ea6f0672963438e00fc4d45e20d5",
+    "spd/triton_backend/kernels.py": "1c058ff7e3ca6c0021189a7fa6a288823c242d83fe51ab4c39aaa457198bac4e",
+    "benchmarks/monoprop/run_benchmark.py": "bcd27ad7ef99814ed774268824adaefd9f1a9c5fc1a4fa6d66fd83f088dcdcb8"
+  },
+  "timing_gpu_exclusive": "No GPU processes at initial nvidia-smi inspection; all benchmark launches sequential.",
+  "allocator": "Triton expandable_segments:True by backend default; cuPauliProp default CuPy pool, memory_limit=80%",
+  "plotting": {
+    "matplotlib": "3.11.2",
+    "isolation": "/tmp/spd-monoprop-plot",
+    "reason": "Preinstalled Matplotlib binary incompatible with NumPy 2; benchmark environment unchanged"
+  }
+}

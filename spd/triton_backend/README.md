@@ -1,356 +1,159 @@
-# Native GPU sparse Pauli dynamics
+# Triton GPU backend
 
-[Milestone 5 closing report](MILESTONE5.md): end-to-end TFI gradients,
-cuPauliProp/MonoProp forward comparisons, and measured peak memory. Production
-semantics and the fast API are unchanged.
+Triton is SPD's recommended NVIDIA GPU backend. It supports forward evolution,
+per-gate diagnostics/history, coefficient adjoints and angle gradients, exact
+Clifford gates, terminal losses, and the common algebra/analysis APIs. Persistent
+storage is owned by each SPO/SPGO and retained across gates.
 
-The next implementation milestones and chosen reference semantics are recorded
-in [the compatibility contract](COMPATIBILITY.md).
+## Installation and selection
 
-Forward and backward gate evolution of real sparse Pauli observables on NVIDIA GPUs. PyTorch owns
-GPU tensors and supplies allocation, reductions, and optional top-k; Triton
-compiles the gate kernels in [kernels.py](kernels.py) and on-demand algebra/analysis
-kernels in [auxiliary_kernels.py](auxiliary_kernels.py). Python dispatches
-rotations but never loops over the observable's coefficients.
+Run from the repository root on Linux with a supported NVIDIA GPU and driver:
 
 ```sh
 pip install -e '.[triton,pytket]'
-python examples/benchmark_2d_obc_xx_z_stepwise.py --backend triton
 ```
+
+The `triton` extra installs `torch>=2.8` and `triton>=3.4`; `pytket` is optional
+for built-in OpenQASM/IR workflows. Execution requires CUDA-enabled PyTorch and
+an available NVIDIA GPU. This backend cannot execute on CPU.
+
+`spd.create_spo(...)` selects Triton automatically when PyTorch, Triton, and
+NVIDIA CUDA are available; otherwise it selects NumPy. Plain `import spd` does
+not probe CUDA or import either GPU backend. Explicit `backend_name="triton"`
+or a configured adapter selects this backend without CPU fallback. Existing
+states determine the backend of subsequent evolution and gradient calls.
+JAX remains available explicitly for legacy workflows.
 
 ```python
-from spd.triton_backend import create_op, evolve_step
-from spd.circuit_ir import PauliRotation
+import spd
+from spd.circuit_ir import CircuitIR, PauliRotation
 
-state = create_op({"ZI": 1.0}, precision="double")
-operations = [PauliRotation("XXPhase", "XX", -0.08)]
-state = evolve_step(state, operations, trunc_val=2**-18)
-print(state.get_expectation_value("Z"))
-keys, coefficients = state.to_host()
+initial = spd.create_spo({"ZI": 1.0}, backend_name="triton", precision="double")
+circuit = CircuitIR(2, (PauliRotation("XXPhase", "XX", -0.08),))
+final, forward_info = spd.evolve(initial, circuit, 1e-8, 1024, progress=False)
+energy = final.get_expectation_value("Z")
+terminal = spd.init_gradient_spo(final, basis="Z")
+adjoint, gate_gradients, backward_info = spd.backpropagate(
+    terminal, circuit, 1e-8, 1024, progress=False)
+keys, coefficients = final.to_host()
 ```
 
-## CUDA allocator default
+## Storage and gate execution
 
-Importing the Triton backend enables PyTorch's `expandable_segments:True` when
-neither `PYTORCH_CUDA_ALLOC_CONF` nor `PYTORCH_ALLOC_CONF` is set. This process-wide
-setting also applies when PyTorch was initialized earlier; it does not itself
-initialize CUDA. Plain `import spd` does not change the allocator. Any explicit
-allocator environment configuration takes precedence, without modification.
+For q qubits, each row contains `2 * ceil(q / 32)` packed words: X masks followed
+by Z masks, with qubit zero in the most significant bit. CUDA tensors store
+int32 words interpreted as uint32 bits, real float32/float64 coefficients, and
+optional adjoints. `create_op` combines keys made identical by identity padding.
+All-ones words are valid keys. Explicit tensor constructors require unique keys.
 
-To turn it off, start a fresh process with:
+[Persistent storage](persistent.py) maintains row buffers and a hash index that
+compares every packed word. Rotations look up XOR partners, update each pair,
+and append missing partners. Hash collisions cannot merge different Paulis.
+The index is reused across rotations with incremental insertion; capacity growth
+and occasional compaction rebuild it. Dead slots are excluded from live counts,
+observations, and diagnostics. Binding caps select by primal magnitude on GPU.
+Exact Cliffords transform keys/signs in one pass and rebuild the changed index.
 
-```sh
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False \
-  python examples/benchmark_2d_obc_xx_z_stepwise.py --backend triton
-```
+For `O' = exp(+i theta G/2) O exp(-i theta G/2)`, define `i G P = s_P Q` for
+an anticommuting pair. The update is:
 
-Use the same prefix for other scripts, or set the environment variable before
-importing the backend in a fresh notebook kernel. Applications configuring the
-allocator programmatically should also set this environment variable to opt out
-of SPD's default. Initialization uses PyTorch's private allocator-settings helper,
-validated with PyTorch 2.8; this is a compatibility point to check on upgrades.
-
-On the measured H100 runs this reduced peak reservation from 78.3 to 2.82 GiB
-at 14 steps and from 78.5 to 65.85 GiB at 23 steps, without a detectable slowdown.
-See the [allocator investigation](../../benchmarks/ALLOCATOR_RETENTION.md) for
-measurements and the remaining live-memory requirements. Kernels, numerical
-semantics and the fast API are unchanged.
-
-## Representation and pair update
-
-For q qubits, a row contains W = 2 ceil(q/32) packed words: X masks followed by
-Z masks, with qubit zero in the most significant bit. I/X/Y/Z correspond to
-(x,z) = (0,0)/(1,0)/(1,1)/(0,1). Tensors store the words as int32; their bits
-are interpreted as uint32. A separate array holds float32 or float64 coefficients.
-`create_op` combines keys made identical by identity padding; subsequent
-rotations preserve uniqueness. All-ones Pauli words are valid keys.
-
-For O = sum_P c_P P and a generator G, evolution is
-`O' = exp(+i theta G/2) O exp(-i theta G/2)`. Commuting rows are unchanged before
-truncation. Every anticommuting row has exactly one possible partner:
-
-```
-Q_key = P_key XOR G_key
-```
-
-The XOR gives the key, not its phase. Population counts of the packed masks
-compute commutation parity and the sign s_P defined by `i G P = s_P Q`.
-Then, with a missing partner treated as coefficient zero:
-
-```
+```text
 c'_P = cos(theta) c_P - s_P sin(theta) c_Q
 c'_Q = cos(theta) c_Q + s_P sin(theta) c_P
 ```
 
-For example, `X Z = -i Y`, so rotating Z by X gives `cos(theta) Z + sin(theta) Y`.
-This closed pair structure removes the need for a general duplicate-summing
-algorithm: distinct input rows cannot create the same missing partner.
+Missing partners have coefficient zero. No floating-point coefficient atomics
+or per-gate global key sorting are needed. Gate metadata is cached; kernels
+specialize on packed width and precision rather than angle or live row count.
+There is still host synchronization for row counts and reductions; execution is
+not a fully GPU-resident circuit loop. Input row counts must remain below 2^30.
 
-## What happens for each rotation
+`evolve_step` and public `spd.evolve` process circuit operations in reverse order
+for Heisenberg evolution. Public backward execution traverses the corresponding
+reverse evolution. Direct `apply_in_place` calls execute the single operation
+given, so callers control their ordering.
 
-1. **Build the index.** Allocate a power-of-two table with at least 2N slots
-   (load factor at most 1/2), filled with -1. `build_index` inserts input row
-   indices using integer atomic compare-and-swap and linear probing. The table
-   stores indices, not coefficients. The build completes before lookups begin.
-2. **Find and update partners.** `rotate` handles 128 input rows per program.
-   Each anticommuting row probes for its XOR partner, checking *every packed
-   word* before accepting a match. Hash collisions cannot merge different
-   Paulis. Each existing row computes its own updated coefficient; it emits
-   a second row only if its partner was absent.
-3. **Threshold and compact in the same kernel.** Apply `abs(c') > trunc_val`
-   after combining the pair's contributions. A block prefix sum assigns local
-   output positions; one integer atomic addition reserves that block's output
-   range. There are no floating-point coefficient atomics. Row order can vary
-   with scheduling, while the mathematical mapping remains unchanged.
-4. **Read the count.** Copy one scalar to the CPU and expose the live output
-   prefix. Output buffers have capacity 2N; slicing retains that backing
-   allocation, but the next launch scans only the live rows. If the size cap
-   binds, PyTorch top-k selects the largest magnitudes on the GPU.
+## Functional and in-place APIs
 
-The common path has expected O(NW) work and O(NW) temporary storage, assuming
-short hash probes. Adversarial collisions can make probing much worse. A binding
-size cap adds top-k work. There is still one host synchronization per rotation;
-this is not a fully GPU-resident circuit loop. Inputs are preserved. Key-buffer
-addresses use 64-bit arithmetic; input row counts must be below 2^30.
-
-Gate masks and trigonometric scalars are cached. Kernels specialize on word
-width and precision, rather than the live row count or angle. Circuit operations
-run in reverse order for Heisenberg evolution. Lazy backend imports prevent
-unused JAX initialization from reserving memory in a native-only process.
-
-## Why the measured speedup is large
-
-Both implementations execute on the GPU. The important change is the work done
-per gate. The existing JAX `stack_sort_merge` concatenates candidates, lexsorts
-packed keys, performs segmented sums, and sorts coefficient magnitudes even
-when the size cap is inactive. Its wrapper also uses padded rows, several host
-synchronizations, and discarded-norm diagnostics.
-
-The native path replaces those global sorts and merges with expected-linear
-partner lookup and combines update/filter/compaction into one kernel. It scans
-live rows and transfers one count. It currently omits per-gate discarded-norm
-reporting, which is additional work done by the reference. These are reasons
-supported by source inspection; we have not profiled or ablated their individual
-contributions, so no percentage of the speedup is attributed to a single cause.
-Avoiding shape recompilation improves first-run time, but does **not** explain
-our warmed timing comparison: both paths warm each input before measurement.
-
-On the H100, default benchmark step 14 took 0.681 s versus 83.153 s for JAX
-(122×); the native run completed all 23 steps, ending with 221.9 million rows.
-This measures these implementations on this workload, not an inherent limit of
-JAX. The same algorithm could be exposed through a JAX custom GPU kernel.
-[Full measurements and limitations](../../benchmarks/README.md).
-
-## Test coverage and current scope
-
-Triton implements the common public NumPy/JAX functionality in the
-[compatibility inventory](COMPATIBILITY.md), with its documented numerical and
-storage differences. Functional coverage includes shared reference tests and
-independent GPU stress tests; this is not a claim of identical branch coverage.
-
-| Area | Triton validation |
+| Entry point | Result |
 |---|---|
-| Pauli signs/rotations | Shared NumPy/JAX rotation examples; independent dense 3-qubit matrix conjugation for all 64 generators |
-| Packing and precision | float32/float64; randomized 3/33/65/121-qubit evolution; identity padding |
-| Sparse storage | Existing/missing partners; forced hash collision chains; block boundaries; duplicate-output checks; input preservation |
-| Truncation | Combined contributions before cutoff, equality, cancellation, empty output, top-k and ties |
-| Physical invariants | Norm conservation and rotation/inverse recovery without truncation |
-| Measurements | X/Z expectations and aliases, norm, host conversion |
-| Circuit evolution | Reverse order; multi-step coefficient comparison with both JAX algorithms |
-| Large workload | 23 native default steps; exact counts and expectation/norm agreement through 14 reference steps |
-| Backward gates | Coefficients, adjoints, parameter gradients, gradient-only support, threshold/cap diagnostics; NumPy/JAX and dense finite differences |
-| Clifford gates | H/S/Sdg/X/Y/Z/CX/CY/CZ, both directions and precisions; dense matrices and cross-word placements |
-| Terminal losses / public runner | Basis/OSE adjoints, regularization, energy/OSE/parameter gradients, progress control, IR/pytket and serialization |
-| Algebra / analysis | L2 losses, arithmetic and dot, translation, weights, complex Pauli products, and noise susceptibility |
+| `conjugate_pauli_rotation` | State-only forward rotation |
+| `evolve_step` | State-only sequence using persistent storage |
+| `conjugate_pauli_rot_forward` | `(state, live_count, diagnostics)` |
+| `conjugate_pauli_rot_backward` | `(state, live_count, angle_gradient, diagnostics)` |
+| `spd.evolve` | Final SPO and diagnostic history/totals |
+| `spd.backpropagate` | Final SPGO, gate gradients, and diagnostic history/totals |
+| `spd.backpropagate_noise_analysis` | Backward execution with circuit-aligned noise analysis |
 
-Forward-only baseline validation on the H100: **679 repository tests passed**,
-including **122 Triton/import-focused cases**. CUDA Compute Sanitizer memcheck
-reported **0 errors** on the 8 collision/compaction stress cases.
-[Suite log](../../benchmarks/results/validation_expanded.txt) ·
-[Memory-check log](../../benchmarks/results/cuda_memcheck.txt).
+Functional gate APIs preserve their inputs. Public forward/backward loops copy
+once, apply gates on that private storage, and compact on return. State-only
+specializations omit truncation diagnostic reductions. Public `progress=False`
+skips printing and reporting-only norm/OSE reductions, but retains truncation
+history. The original standalone per-gate kernels remain available as benchmark
+references; they do not describe storage lifetime in the public circuit loops.
 
-The earlier 79-test result included existing backend regression tests; it was
-not 79 Triton-specific tests. Test results are functional evidence, not a Triton
-instruction/branch coverage percentage. Full coefficients were compared on the
-small conformance problems, not on the 221.9-million-row final state.
-
-Run from the repository root:
-
-```sh
-python -m pytest tests/test_triton_backend.py tests/test_triton_invariants.py tests/test_triton_jax_conformance.py tests/test_backend_imports.py -q
-```
-
-The strict forward cutoff matches JAX; NumPy retains equality. Equal-magnitude
-cap ties and output order are unspecified. Cross-framework bitwise equality is
-not promised. Unsupported circuit operations fail explicitly.
-
-## SPGO and diagnostic APIs (milestone 2)
-
-All four entry points below are exported from `spd.triton_backend`:
-
-| Path | Function and implementation | Returns |
-|---|---|---|
-| Fast forward rotation | `conjugate_pauli_rotation` in [__init__.py](__init__.py) | State only |
-| Fast sequence | `evolve_step` in [__init__.py](__init__.py); uses [persistent storage](persistent.py) | State only |
-| Forward with diagnostics | `conjugate_pauli_rot_forward` in [operations.py](operations.py) | `(state, live_count, diagnostics)` |
-| Backward with diagnostics | `conjugate_pauli_rot_backward` in [operations.py](operations.py) | `(state, live_count, angle_gradient, diagnostics)` |
-
-Forward diagnostics use the [persistent pair-update kernel](persistent.py), with
-compile-time diagnostic reductions. SPO and SPGO own a storage object containing
-keys, coefficients, optional adjoints, and a reusable index. Public `spd.evolve`
-copies its input once, calls `apply_in_place` throughout the gate loop, and
-compacts on return. History/progress reductions read storage directly and exclude
-dead slots. No separate forward session is needed.
-
-For an explicit forward loop over normalized IR operations in execution order:
+For explicit mutation:
 
 ```python
-work = spo.copy()
-for operation in operations:
-    work.apply_in_place(operation, trunc_val=1e-5, max_num_str=100000)
+work = initial.copy()
+work, info = spd.evolve(work, circuit, 1e-8, 1024, progress=False, in_place=True)
+# Further circuits can reuse work's capacity and index.
 ```
 
-`copy()` makes independent storage, including SPGO adjoints. `apply_in_place`
-supports forward SPO or backward SPGO evolution and returns
-`(self, live_count, angle_gradient_or_None, diagnostics)`; pass
-`diagnostics=False` to omit truncation reductions (SPGO angle gradients are
-still computed).
-Cliffords transform keys exactly and rebuild the index; rotations retain the
-index with incremental insertion and occasional growth/compaction.
+`evolve`, `backpropagate`, and `backpropagate_noise_analysis` accept
+`in_place=True` for Triton only. They mutate the supplied object and retain
+storage on return. NumPy/JAX raise `NotImplementedError`. Execution errors can
+leave earlier gates applied.
 
-Legacy `xz_array`, `c_array`, and `grad_c_array` remain compact tensor views.
-Access can compact storage and requires a protective copy on the next in-place
-mutation because callers can retain or edit these tensors. Scalar observations
-avoid this export. `compact()` explicitly releases dead rows/spare capacity;
-`to_host()` and serialization also materialize the logical state.
+`copy()` creates independent SPO/SPGO storage. `apply_in_place(operation,
+trunc_val, max_num_str)` returns `(self, live_count, angle_gradient_or_None,
+diagnostics)`; `diagnostics=False` omits truncation reductions while retaining
+SPGO angle gradients. `compact()` explicitly materializes compact storage.
 
-Basis/OSE terminal initializers share primal keys and coefficients and allocate
-the adjoint channel; they do not consume the caller's SPO. `to_spo()` retains its
-compact-view contract. Shared/exposed tensors are protected from subsequent
-in-place operations by detaching first. By default, public `backpropagate` and
-`backpropagate_noise_analysis` copy the SPGO once and retain persistent storage
-across the backward gate loop, compacting on return. Both now accept
-`in_place=True` for Triton, mutating the supplied SPGO and retaining storage
-on return. NumPy/JAX raise `NotImplementedError` for this mode. Direct diagnostic backward
-rotations use the same update with a private single-gate copy. The original
-`operations._rotation` remains available internally as a validation reference. See the
-[integration plan and validation](../../docs/triton_persistent_integration.md).
+Access to `xz_array`, `c_array`, or `grad_c_array` exports compact writable tensor
+views, invalidates the reusable index, and protects those aliases on the next
+mutation by detaching storage. Host conversion and serialization materialize
+arrays as needed. Scalar observations and noise-history reductions read storage
+directly. Avoid exporting arrays inside a gate loop if reuse matters.
 
-"No performance degradation" refers to the updated state-only path compared
-with the original state-only path. Diagnostics still add measurable overhead:
-about 12.5% at one million input rows and 2% at ten million in the measured
-workload. Keep the two paths separate and compare equivalent diagnostic settings;
-see [measurement details and limitations](MILESTONE2.md).
+Terminal gradient initialization can share primal buffers with its source SPO.
+First mutation of the SPGO detaches them to preserve the SPO, even with
+`in_place=True`; merely deleting the SPO does not clear that sharing flag.
+`to_spo()` can likewise share primal buffers with alias protection. An explicit
+consuming ownership-transfer initializer is a
+[deferred variational-pipeline TODO](../../docs/triton_variational_pipeline_todo.md).
+Compacting before initialization can release spare forward capacity, but does
+not remove the protective backward copy.
 
-`SparsePauliGradientOp` adds a contiguous adjoint array to the same packed keys
-and primal coefficients. `create_gradient_op({"ZI": (1., .2)})` constructs one;
-`to_spo()` exposes its primal state and `to_host()` returns `(keys, c, g)`.
-Direct array construction assumes unique keys, as does the fast SPO path.
+## Numerical semantics
 
-```python
-from spd import triton_backend as gpu
+- Forward rotations keep `abs(c) > cutoff`; backward uses `abs(c) >= cutoff` on
+  meaningful `(c, g)` support. Gradient-only rows survive at cutoff zero and can
+  grow through backward rotations.
+- Caps rank by primal magnitude; the same selected rows apply to keys,
+  coefficients, and adjoints. Direct gate APIs enforce exact caps. Public runner
+  caps round upward to a power of two, matching JAX (1000 becomes 1024).
+- Exact Cliffords H/S/Sdg/X/Y/Z/CX/CY/CZ apply no rotation cutoff or cap.
+  Backward applies inverse Cliffords and transforms both channels.
+- Backward rotates primal and adjoint by `-theta` and computes the angle gradient
+  from the pre-update pairs. It implements SPD's truncated backward algorithm;
+  it does not differentiate hard selection or recover discarded forward support.
+- Diagnostics report discarded counts, L1 norm, and L2 norm, with float64
+  reductions even for single-precision states. Cap losses are summed directly.
+- Row order and equal-magnitude cap ties are unspecified. NumPy retains forward
+  cutoff equality; Triton/JAX use a strict forward cutoff. Cross-backend bitwise
+  equality is not promised.
 
-state = gpu.create_op({"ZI": 1.})
-state, count, info = gpu.conjugate_pauli_rot_forward(state, "XX", .2, 1e-8, 1000)
-adjoint = gpu.create_gradient_op({"ZI": (1., .2), "YX": (.1, -.3)})
-adjoint, count, dtheta, info = gpu.conjugate_pauli_rot_backward(
-    adjoint, "XX", .2, 1e-8, 1000)
-adjoint = gpu.conjugate_CX_backward(adjoint, 0, 1)
-```
+The public adapter defaults to single precision; direct backend construction
+initially defaults to double. Existing states retain their precision.
+Public construction pads qubit width to packed words, not the row count.
 
-Backward rotation shares the hash lookup and rotates both `c` and `g` by
-`-theta`. Before rotating, each existing anticommuting pair contributes
-`s_P * (c_P*g_Q - c_Q*g_P)` to the angle gradient, counted only when the
-partner index is larger. Triton reduces block partials; PyTorch reduces them
-into the returned scalar. Missing partners have zero primal and adjoint.
-This implements SPD's truncated backward algorithm, including its lost support;
-it does not differentiate hard selection or recover discarded forward rows.
+Terminal losses support basis expectation, OSE regularization, and L2 difference.
+Basis adjoints include explicitly stored zero-primal rows. OSE supports positive
+finite alpha; zero-norm entropy is zero, while its undefined gradient raises
+`ValueError`. L2 support rules are described below.
 
-Backward keeps meaningful `(c,g)` rows with `abs(c) >= cutoff`, including
-zero-primal/nonzero-adjoint rows at cutoff zero. Forward keeps `abs(c) > cutoff`.
-Both apply an optional exact top-k cap by primal magnitude. Compaction and top-k
-apply the same indices to keys, primal, and adjoint arrays.
-
-Diagnostic calls return `num_str_truncated`, `truncated_l1_norm`, and
-`truncated_l2_norm`. Block reductions count discarded nonzero primal terms once;
-cap losses are summed directly, avoiding subtraction of nearly equal norms.
-These reductions use float64 even for single-precision states. They require
-additional work and host readback. The existing `conjugate_pauli_rotation` and
-`evolve_step` state-only APIs retain their fast specialization: compile-time
-flags remove adjoint and diagnostic instructions. Benchmark these APIs separately.
-
-Clifford gates transform packed masks and signs in one pass, without hashing
-or sorting. Backward applies the inverse gate and the same sign to both arrays.
-CY is also a single fused pass. Gate calls preserve input arrays.
-
-`set_precision` controls subsequent construction (initial default: double).
-Existing states retain their dtype. Packing is 32-bit. Standard rotations accept
-Pauli strings or packed generators.
-
-See [milestone 2 validation and performance](MILESTONE2.md). The earlier forward
-122× result must not be assumed for backward evolution.
-
-
-## Public execution and the TFI example (milestone 3)
-
-```python
-import spd
-from spd.ansatz import tfi_2d_hva
-
-backend = spd.BackendAdapter.from_name("triton", precision="double")
-ansatz = tfi_2d_hva([.13, -.21], system_size_x=2, system_size_y=2)
-initial = spd.create_spo({"ZZII": -1., "XIII": -3.1}, backend=backend)
-final, forward_info = spd.evolve(
-    initial, ansatz.circuit, 1e-8, 1000, backend=backend, progress=False)
-terminal = spd.init_gradient_spo(
-    final, basis="+", lambda_ose=.1, alpha=2., backend=backend)
-_, gate_gradients, backward_info = spd.backpropagate(
-    terminal, ansatz.circuit, 1e-8, 1000, backend=backend, progress=False)
-parameter_gradients = ansatz.parameter_gradients(gate_gradients)
-cost = final.get_expectation_value("+") + .1 * final.get_OSE(alpha=2.)
-```
-
-The public runner uses the diagnostic gate APIs and returns per-gate history
-and total discarded norms. `progress=False` skips per-gate norm/OSE reductions
-and printing; it does not disable truncation diagnostics. The runner retains
-`progress=True` as its default for existing callers. The TFI example defaults
-to quiet gate execution and offers `--progress` to enable those reductions.
-
-Public caps round upward to a power of two, matching JAX (1000 becomes 1024).
-Direct gate APIs still enforce exact caps. Public construction pads qubit width
-to 32-bit words; it does not pad the row count. Passing `system_size` permits
-empty observables. Adapter precision defaults to single; the TFI example uses
-double. Backend inference for Triton states does not import JAX or copy GPU
-coefficient arrays to the host.
-
-Basis adjoints are one for strings contributing to the selected X/Z expectation
-and zero otherwise, including explicitly stored zero-primal rows. OSE uses
-`p = c**2 / sum(c**2)` and the reference `1e-12` epsilon convention. Its adjoint
-is `2*c/sum(c**2) * (dOSE/dp - sum(p*dOSE/dp))`; regularization adds this to the
-basis adjoint without changing primal coefficients. All array work stays on GPU
-in [losses.py](losses.py). Positive finite alpha is supported; zero-norm entropy
-reports zero, while requesting its undefined OSE gradient raises `ValueError`.
-
-From the repository root, run the unified example in dimension 2:
-
-```sh
-python examples/gradient/run_tfi_gs.py 2 2 0 --linear-system-size 2 --method eval_only --backend triton --trunc-val 0 --max-num-str 4096 --lambda-ose .1 --alpha 2
-python examples/gradient/run_tfi_gs.py 2 2 2 --linear-system-size 2 --method adam --backend triton --trunc-val 0 --max-num-str 4096 --lambda-ose .1 --alpha 2
-```
-
-Evaluation, Adam, L-BFGS and basinhopping retain the example's output files.
-Run directories include the backend name; metadata records requested/effective
-caps and `native_hash` for Triton's algorithm. `--algorithm` applies only to JAX.
-The storage estimate describes live arrays at the cap, not peak memory.
-The Triton Adam path restricts JAX/Optax to CPU with double precision before
-optimizer initialization, leaving GPU allocation to PyTorch/Triton.
-
-[Milestone 3 validation and performance](MILESTONE3.md) records reference checks,
-independent derivatives and measured costs. Milestone 4 adds the common algebra/
-analysis APIs below; broader performance comparisons are milestone 5.
-
-
-## Algebra and analysis (milestone 4)
+## Algebra and analysis
 
 These operations run on demand and add no work to the fast rotation path.
 
@@ -367,7 +170,7 @@ These operations run on demand and add no work to the fast rotation path.
 | Circuit-aligned noise gradients | Public `spd.backpropagate_noise_analysis(..., progress=False)` |
 | Readable state | `str(state)`, `repr(state)` |
 
-Sparse alignment uses the existing hash-table builder and a new exact-key lookup
+Sparse alignment uses the existing hash-table builder and an exact-key lookup
 kernel in [auxiliary_kernels.py](auxiliary_kernels.py). A match gives the other
 operand's row index; absent rows get zero coefficients. Addition emits each left
 row with its combined value, then unmatched right rows. Matching writes are
@@ -376,7 +179,7 @@ PyTorch compacts the resulting arrays. Dot multiplies matched coefficients and
 reduces them. Inputs must have matching packed widths, device and precision;
 explicit constructors/factories continue to require unique packed keys.
 
-**Approved arithmetic rule:** addition removes only exact zero sums, matching
+**Arithmetic semantics:** addition removes only exact zero sums, matching
 JAX. SPGO retains rows with either nonzero primal or nonzero adjoint. This differs
 from NumPy's near-zero addition rule. Scalar multiplication follows the existing
 reference near-zero scalar rule (`abs(scalar) <= 1e-8` after precision conversion),
@@ -410,30 +213,56 @@ existing operation-aligned output, skipped-operation zeros and gate ordering.
 truncation diagnostics. OpenQASM IR, pytket rebase and serialization work through
 the shared runner.
 
-[Milestone 4 validation and costs](MILESTONE4.md) records tests and measurements.
-JAX-specific sorting APIs, PyTrees, donation and internal kernel helpers are not
-part of the common backend contract.
+## CUDA allocator and memory
 
-Public `spd.evolve(..., in_place=True)` mutates the supplied Triton SPO and
-retains its capacity/index on return, permitting consecutive circuit calls on
-the same working state. The default remains input-preserving. NumPy and JAX
-raise `NotImplementedError` when this option is requested. Shared/exposed
-buffers may still detach; an execution error can leave earlier gates applied.
-Saving strings explicitly materializes the state for serialization.
+Importing `spd.triton_backend` enables PyTorch's `expandable_segments:True` when
+neither `PYTORCH_CUDA_ALLOC_CONF` nor `PYTORCH_ALLOC_CONF` is set. This process-wide
+setting uses PyTorch's private allocator-settings helper, validated with PyTorch
+2.8, and does not itself initialize CUDA. Explicit environment configuration
+wins. To opt out, start a fresh process with:
 
-Backward support is the union of nonzero primal and adjoint channels. Its cutoff
-is inclusive and depends on primal magnitude; gradient-only rows survive only
-at cutoff zero. A binding cap ranks live rows by primal magnitude, excluding
-dead slots even when live adjoints have zero primal coefficients. Equal-magnitude
-top-k ties remain unspecified. Each pair owner computes its angle-gradient
-contribution from the incoming state before updating either channel. Clifford
-backward evolution applies the exact inverse to both channels. Noise
-susceptibility reads the resulting storage directly after each gate.
+```sh
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False python your_script.py
+```
 
-Terminal initialization shares primal buffers but marks them shared. Therefore,
-`backpropagate(..., in_place=True)` still detaches on the first mutation of a
-freshly initialized SPGO to preserve the originating SPO. This sharing flag is
-conservative: merely deleting the SPO does not currently make the SPGO's buffers
-exclusive. To avoid retaining unnecessary forward capacity across this boundary,
-call `spo.compact()` before `init_gradient_spo`; this does not remove the protective
-backward copy. An explicit consuming initializer is not implemented.
+Live tensors, buffer capacity, hash indices, temporary workspace, and allocator
+reservation are different memory costs. In-place execution avoids the initial
+working copy when storage is exclusive; it does not eliminate growth/compaction
+workspace or shared-buffer detachment. Allocator reservation can exceed live
+allocation substantially.
+
+## Validation and performance
+
+The completed persistent integration passed **1,203 tests with 1 expected JAX
+failure** on the H100 GPU validation node. Coverage includes mixed rotations and
+Cliffords, wide keys, binding caps, cutoff boundaries, gradient-only growth,
+immutable inputs, aliasing, history, noise analysis, and independent NumPy/JAX
+and dense-gradient comparisons. These results precede the automatic backend
+selection change; CPU checks of selection do not replace GPU kernel validation.
+
+The [acceptance report](../../docs/triton_persistent_acceptance.md) records
+correctness, runtime, and allocated/reserved memory separately for forward,
+diagnostics, and backward, with reproducible benchmark scripts and
+[durable results](../../benchmarks/results/persistent_integration_stage4.json).
+For example, TFI 11x11 at 23 steps measured 10.246 s state-only and 10.831 s with
+diagnostics; historical main diagnostics measured 74.713 s. These are workload-
+and environment-specific samples, not a universal speedup. Backward measurements
+use smaller TFI support and the same-terminal original per-gate reference.
+
+Full arrays match on conformance cases; the final 221.9-million-row TFI check
+compares counts and scalars, not every coefficient. Equal-magnitude top-k ties
+can lead to different capped AFH histories. See the report for these limits and
+the reserved-memory investigation.
+
+Run from the repository root on a GPU node:
+
+```sh
+python -m pytest tests -q
+python benchmarks/benchmark_persistent_integration.py --diagnostics
+python benchmarks/benchmark_persistent_backward.py
+```
+
+See the [compatibility inventory](COMPATIBILITY.md) for the common backend
+contract. JAX-specific sorting APIs, PyTrees, and donation are not public Triton
+features. Optional arithmetic/index/layout/padding experiments and multi-GPU
+execution are outside this integration.

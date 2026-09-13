@@ -1,8 +1,46 @@
 # spd
 
-Sparse-Pauli dynamics for static quantum circuits.
+State-of-the-art GPU code for sparse-Pauli dynamics (SPD), with a NumPy CPU backend and a legacy JAX backend.
 
 SPD takes a circuit, evolves a sparse Pauli operator (SPO), computes expectation values, and can backpropagate a sparse Pauli gradient operator (SPGO) through the same circuit.
+
+## Installation
+
+For CPU execution with NumPy:
+
+```bash
+pip install -e .
+```
+
+For NVIDIA GPU execution, **Triton is the recommended backend**. It requires
+Linux, a supported NVIDIA GPU and driver, and CUDA-enabled PyTorch:
+
+```bash
+pip install -e '.[triton]'
+```
+
+The `triton` extra installs PyTorch and Triton; Triton execution is GPU-only.
+See the [Triton backend guide](./spd/triton_backend/README.md) for capabilities,
+persistent storage, and validation results.
+
+Add `pytket` to run the Python circuit examples:
+
+```bash
+pip install -e '.[pytket]'         # CPU
+pip install -e '.[triton,pytket]'  # NVIDIA GPU
+```
+
+JAX remains available as a legacy backend for existing workflows. To use it on
+an NVIDIA GPU, install its CUDA dependencies and select `backend_name="jax"`
+explicitly:
+
+```bash
+pip install 'jax[cuda12]'
+```
+
+Without an explicit backend, `spd.create_spo` selects Triton when its dependencies
+and NVIDIA CUDA are available, otherwise NumPy. Existing states keep their backend
+through forward and backward execution.
 
 ## What Is In This Repo
 
@@ -21,28 +59,6 @@ Recommended examples:
 
 - [`examples/run_simple_circuit_1.py`](./examples/run_simple_circuit_1.py): smallest forward workflow, including truncation info
 - [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py): 1D/2D/3D variational TFI optimization
-- [`examples/run_with_backend_adapter.py`](./examples/run_with_backend_adapter.py): reusable configured backend
-
-## Installation
-
-Base install:
-
-```bash
-pip install -e .
-```
-
-If you want to run the `pytket` examples:
-
-```bash
-pip install -e .[pytket]
-```
-
-If you want to run this on the GPU with JAX,
-you need to first install
-```bash
-pip install "jax[cuda12]"
-```
-
 
 ## Current Scope
 
@@ -50,11 +66,30 @@ pip install "jax[cuda12]"
   - built-in OpenQASM 2
   - `pytket`
 - Backends:
-  - NumPy
-  - JAX
+  - Triton: recommended NVIDIA GPU backend, including forward, diagnostics, gradients, and analysis
+  - NumPy: default CPU backend
+  - JAX: legacy CPU/GPU backend
 - Circuit model:
   - static circuits
   - no mid-circuit measurement or feedforward
+
+## GPU benchmark
+
+On the published 2D Ising scaling workload, SPD Triton measured **8.3–15.9×
+faster than the published cuPauliProp GPU results** across 36–324 qubits.
+Triton used one A100-SXM4-80GB; the published GPU reference identifies an
+A100-SXM-64GB. The figure compares three-trial Triton medians with digitized
+published curves; Triton compilation is excluded.
+
+![Triton compared with the published MonoProp scaling benchmark](./benchmarks/monoprop/pauli_scaling_comparison.png)
+
+In the separate 12×12 fixed-observable test, the final step took **0.834 s** for
+Triton versus **11.287 s** for cuPauliProp on the same local GPU. All 28 term
+counts match the published GPU run, with expectation differences below 6e-16.
+These are forward-plus-expectation timings, without gradient or truncation-history
+calculation. MonoProp uses a different truncation rule and is faster at the
+largest scaling sizes; the comparison does not establish a universal speedup.
+See the [benchmark setup, tables, memory, and reproducible data](./benchmarks/monoprop/README.md).
 
 ## Main Workflow
 
@@ -106,8 +141,8 @@ This is the core workflow used in [`examples/gradient/run_tfi_gs.py`](./examples
 ```python
 import spd
 
-backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="double")
-backend.module.set_algorithm("stack_sort_merge")
+backend = spd.BackendAdapter.from_name("triton", precision="double")
+# Use "numpy" above to run this example on CPU.
 
 initial_spo = spd.create_spo(ham_dict, backend=backend)
 final_spo, forward_info = spd.evolve(
@@ -203,18 +238,25 @@ spo_2 = spd.create_spo([0, 2], system_size=3)
 
 ## Backends
 
-If you do nothing, SPD uses the NumPy backend.
-
-If you want a reusable configured backend:
+`spd.create_spo(...)` automatically uses Triton on an available NVIDIA CUDA GPU
+when the optional dependencies are installed, and NumPy otherwise. Explicit
+selection overrides this choice:
 
 ```python
-import spd
-
-backend = spd.BackendAdapter.from_name("jax", packbit=32, precision="single")
-backend.module.set_algorithm("stack_sort_merge")
+cpu_spo = spd.create_spo({"Z": 1.0}, backend_name="numpy")
+gpu_spo = spd.create_spo({"Z": 1.0}, backend_name="triton")  # requires CUDA
 ```
 
-Then pass `backend=backend` to `create_spo`, `evolve`, `init_gradient_spo`, and `backpropagate`.
+For a reusable configuration, use
+`spd.BackendAdapter.from_name("triton", precision="double")` and pass
+`backend=backend` to the workflow helpers. JAX is available with `"jax"`.
+Explicit Triton requests raise an error when CUDA is unavailable.
+
+`evolve`, `init_gradient_spo`, and `backpropagate` infer the backend from their
+input state. Forward and backward evolution preserve their inputs by default.
+Triton also supports `in_place=True` in `evolve`, `backpropagate`, and
+`backpropagate_noise_analysis` to retain mutable storage across circuit calls;
+NumPy and JAX raise `NotImplementedError` for this option.
 
 ## OpenQASM Note
 
@@ -244,17 +286,3 @@ pytest tests
 
 - The examples above use `pytket` when they build circuits in Python.
 - The backward example assumes `ham_dict`, `circ`, `basis`, `trunc_val`, and `max_num_str` already exist, just like in [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py).
-
-
-### Native NVIDIA GPU forward evolution
-
-An optional PyTorch/Triton implementation of sparse Pauli rotations is available
-in [`spd.triton_backend`](spd/triton_backend/README.md). It replaces per-gate sorting
-with a GPU hash index and fused rotation/compaction. Install with
-`pip install -e '.[triton,pytket]'`, then run
-`python examples/benchmark_2d_obc_xx_z_stepwise.py --backend triton`.
-This path supports forward Pauli rotations; the existing backends provide the
-full Clifford and gradient APIs.
-
-See [measured H100 benchmark results](benchmarks/README.md) for the full default
-23-step native run and the large-state comparison against JAX.

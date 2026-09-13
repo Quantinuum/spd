@@ -83,9 +83,27 @@ def _make_backend(backend_name, *, packbit=_PACKBIT, precision="single"):
     return BackendAdapter.from_name(backend_name, packbit=packbit, precision=precision)
 
 
+def _default_backend_name():
+    """Prefer the optional NVIDIA GPU backend; use NumPy on CPU."""
+    try:
+        import torch
+    except ImportError:
+        return "numpy"
+    if torch.version.cuda is None or not torch.cuda.is_available():
+        return "numpy"
+    try:
+        import triton  # noqa: F401 -- verify the optional runtime is importable
+    except ImportError:
+        return "numpy"
+    return "triton"
+
+
 def _resolve_backend_for_creation(backend_name, backend, *, precision="single"):
     if backend is None:
-        return _make_backend(backend_name, packbit=_PACKBIT, precision=precision)
+        return _make_backend(
+            _default_backend_name() if backend_name is None else backend_name,
+            packbit=_PACKBIT, precision=precision,
+        )
     if not isinstance(backend, BackendAdapter):
         raise TypeError("backend must be a BackendAdapter when provided.")
     return backend
@@ -103,7 +121,7 @@ def _infer_backend_name_and_precision(state):
     if triton_module is not None and isinstance(state, triton_module.SparsePauliOp):
         return "triton", state.precision
 
-    from . import jax_backend, numpy_backend
+    from . import numpy_backend
 
     if isinstance(state, numpy_backend.SparsePauliOp):
         if len(state) == 0:
@@ -116,6 +134,8 @@ def _infer_backend_name_and_precision(state):
             return "numpy", numpy_backend.utils.get_precision()
         coeff, _ = next(iter(state.values()))
         return "numpy", _precision_from_dtype(np.asarray(coeff).dtype)
+
+    from . import jax_backend
 
     if isinstance(state, jax_backend.SparsePauliOp):
         return "jax", _precision_from_dtype(np.asarray(state.c_array).dtype)
@@ -311,11 +331,16 @@ def create_spo(
     data,
     *,
     system_size=None,
-    backend_name="numpy",
+    backend_name=None,
     precision="single",
     backend=None,
 ):
-    """Construct a backend-specific SparsePauliOp from simple user-facing data."""
+    """Construct a backend-specific SparsePauliOp from simple user-facing data.
+
+    With backend_name=None, prefer Triton when its optional runtime and NVIDIA
+    CUDA are available, otherwise use NumPy. An explicit name or adapter takes
+    precedence. Subsequent evolution infers the backend from the state.
+    """
     backend = _resolve_backend_for_creation(
         backend_name,
         backend,

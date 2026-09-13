@@ -15,6 +15,12 @@ import importlib.metadata
 import json
 from pathlib import Path
 import time
+import sys
+
+# Historical drivers share the original example circuit builder.
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "examples"))
 
 import numpy as np
 

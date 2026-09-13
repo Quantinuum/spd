@@ -1,0 +1,24 @@
+{
+  "image": "pauli_scaling_runtime.png",
+  "axis": "categorical x; log10 y",
+  "y_at_10s": 634.5,
+  "y_at_100s": 273.0,
+  "colors": {
+    "monoprop": [
+      0,
+      114,
+      178
+    ],
+    "cuPauliProp (GPU)": [
+      204,
+      121,
+      167
+    ],
+    "PauliPropagation.jl": [
+      230,
+      159,
+      0
+    ]
+  },
+  "max_absolute_error_percent": 0.4505398939725458
+}

@@ -1,0 +1,302 @@
+{
+  "metadata": {
+    "backend": "triton",
+    "n": 10,
+    "num_qubits": 100,
+    "steps": 28,
+    "observable": [
+      54,
+      55
+    ],
+    "hx": 1.0,
+    "hz": 1.0,
+    "j": 1.5,
+    "dt": 0.05,
+    "cutoff": 1e-06,
+    "precision": "float64",
+    "weight_cutoff": null,
+    "term_cap": null,
+    "timing": "synchronized propagation plus Z expectation and count; tiny disposable compile first; no full-workload warm-up",
+    "host": "cs-01m2dt5k2xjjd49dca01mjzzxv-szl9",
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "versions": {
+      "torch": "2.8.0+cu128",
+      "triton": "3.4.0",
+      "cupy-cuda12x": "14.2.0",
+      "cuquantum-python-cu12": "26.6.0"
+    },
+    "gpu": "NVIDIA A100-SXM4-80GB, 81920 MiB, 580.173.02",
+    "spd_revision": "f0430966958d88b422b5f9bb669f579503c37fbd",
+    "allocator_environment": {},
+    "warmup_seconds": 5.16823563700018
+  },
+  "rows": [
+    {
+      "step": 1,
+      "runtime_s": 0.04685305999987577,
+      "num_terms": 120,
+      "expectation": 0.997502082639013,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 408576,
+      "device_reserved_peak_bytes": 2097152
+    },
+    {
+      "step": 2,
+      "runtime_s": 0.04678115299998353,
+      "num_terms": 430,
+      "expectation": 0.9903354444404697,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 464896,
+      "device_reserved_peak_bytes": 2097152
+    },
+    {
+      "step": 3,
+      "runtime_s": 0.04640889999996034,
+      "num_terms": 832,
+      "expectation": 0.9794361767419918,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 535552,
+      "device_reserved_peak_bytes": 2097152
+    },
+    {
+      "step": 4,
+      "runtime_s": 0.04687663700019584,
+      "num_terms": 1767,
+      "expectation": 0.966180964916409,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 736256,
+      "device_reserved_peak_bytes": 2097152
+    },
+    {
+      "step": 5,
+      "runtime_s": 0.06777246799993009,
+      "num_terms": 3507,
+      "expectation": 0.9522199951963056,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 1067520,
+      "device_reserved_peak_bytes": 2097152
+    },
+    {
+      "step": 6,
+      "runtime_s": 0.052197237999962454,
+      "num_terms": 6473,
+      "expectation": 0.9392112109454671,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 1476608,
+      "device_reserved_peak_bytes": 2097152
+    },
+    {
+      "step": 7,
+      "runtime_s": 0.05681074899985106,
+      "num_terms": 11917,
+      "expectation": 0.9286632604783215,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 2517504,
+      "device_reserved_peak_bytes": 4194304
+    },
+    {
+      "step": 8,
+      "runtime_s": 0.06540762600002381,
+      "num_terms": 20994,
+      "expectation": 0.9217215256512793,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 4557312,
+      "device_reserved_peak_bytes": 25165824
+    },
+    {
+      "step": 9,
+      "runtime_s": 0.05302908499993464,
+      "num_terms": 37014,
+      "expectation": 0.9192581484746448,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 6606848,
+      "device_reserved_peak_bytes": 25165824
+    },
+    {
+      "step": 10,
+      "runtime_s": 0.048258564000207116,
+      "num_terms": 62988,
+      "expectation": 0.9213746737631543,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 12554240,
+      "device_reserved_peak_bytes": 25165824
+    },
+    {
+      "step": 11,
+      "runtime_s": 0.049679106999974465,
+      "num_terms": 104792,
+      "expectation": 0.9275425977834757,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 19854848,
+      "device_reserved_peak_bytes": 46137344
+    },
+    {
+      "step": 12,
+      "runtime_s": 0.052458113999819034,
+      "num_terms": 169831,
+      "expectation": 0.9368015191461309,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 31720960,
+      "device_reserved_peak_bytes": 46137344
+    },
+    {
+      "step": 13,
+      "runtime_s": 0.05385529199998018,
+      "num_terms": 270421,
+      "expectation": 0.9479588999675564,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 46985216,
+      "device_reserved_peak_bytes": 67108864
+    },
+    {
+      "step": 14,
+      "runtime_s": 0.06043187700015551,
+      "num_terms": 413557,
+      "expectation": 0.9598081982016681,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 75030016,
+      "device_reserved_peak_bytes": 109051904
+    },
+    {
+      "step": 15,
+      "runtime_s": 0.06631933400012713,
+      "num_terms": 633038,
+      "expectation": 0.9713680820709732,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 120684032,
+      "device_reserved_peak_bytes": 150994944
+    },
+    {
+      "step": 16,
+      "runtime_s": 0.07393917400008831,
+      "num_terms": 931078,
+      "expectation": 0.9817650358671423,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 178912256,
+      "device_reserved_peak_bytes": 213909504
+    },
+    {
+      "step": 17,
+      "runtime_s": 0.08446769100009988,
+      "num_terms": 1358158,
+      "expectation": 0.9897054028966074,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 286669824,
+      "device_reserved_peak_bytes": 381681664
+    },
+    {
+      "step": 18,
+      "runtime_s": 0.0906980500001282,
+      "num_terms": 1949817,
+      "expectation": 0.99409048772392,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 349851648,
+      "device_reserved_peak_bytes": 507510784
+    },
+    {
+      "step": 19,
+      "runtime_s": 0.10758630899999844,
+      "num_terms": 2765529,
+      "expectation": 0.9943977931687208,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 561104384,
+      "device_reserved_peak_bytes": 696254464
+    },
+    {
+      "step": 20,
+      "runtime_s": 0.12889433400005146,
+      "num_terms": 3923084,
+      "expectation": 0.9904596291446116,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 717741056,
+      "device_reserved_peak_bytes": 1052770304
+    },
+    {
+      "step": 21,
+      "runtime_s": 0.15003866100005325,
+      "num_terms": 5519036,
+      "expectation": 0.9826796351074454,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 1150610432,
+      "device_reserved_peak_bytes": 1241513984
+    },
+    {
+      "step": 22,
+      "runtime_s": 0.18665945699990516,
+      "num_terms": 7733822,
+      "expectation": 0.9723865251278683,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 1408877568,
+      "device_reserved_peak_bytes": 1744830464
+    },
+    {
+      "step": 23,
+      "runtime_s": 0.23916108399998848,
+      "num_terms": 10810355,
+      "expectation": 0.9606336700465793,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 2233533952,
+      "device_reserved_peak_bytes": 2730491904
+    },
+    {
+      "step": 24,
+      "runtime_s": 0.3159339329999966,
+      "num_terms": 15006955,
+      "expectation": 0.9489737589759597,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 2978498048,
+      "device_reserved_peak_bytes": 3212836864
+    },
+    {
+      "step": 25,
+      "runtime_s": 0.419186123000145,
+      "num_terms": 20638294,
+      "expectation": 0.938645730808246,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 4248259584,
+      "device_reserved_peak_bytes": 5456789504
+    },
+    {
+      "step": 26,
+      "runtime_s": 0.5555955390000236,
+      "num_terms": 28120012,
+      "expectation": 0.9306891666101946,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 5605516800,
+      "device_reserved_peak_bytes": 8623489024
+    },
+    {
+      "step": 27,
+      "runtime_s": 0.7415081839999402,
+      "num_terms": 37997120,
+      "expectation": 0.9260966137304866,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 7952066048,
+      "device_reserved_peak_bytes": 9714008064
+    },
+    {
+      "step": 28,
+      "runtime_s": 0.9694910059999984,
+      "num_terms": 50738776,
+      "expectation": 0.9255012676284622,
+      "host_lifetime_peak_rss_bytes": 797896704,
+      "device_allocated_peak_bytes": 10452320768,
+      "device_reserved_peak_bytes": 11140071424
+    }
+  ],
+  "total_runtime_s": 4.876298749000398,
+  "total_runtime_excl_first_s": 4.829445689000522
+}

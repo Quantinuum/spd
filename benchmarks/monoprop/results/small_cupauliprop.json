@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "backend": "cupauliprop",
+    "n": 3,
+    "num_qubits": 9,
+    "steps": 4,
+    "observable": [
+      3,
+      4
+    ],
+    "hx": 1.0,
+    "hz": 1.0,
+    "j": 1.5,
+    "dt": 0.05,
+    "cutoff": 1e-06,
+    "precision": "float64",
+    "weight_cutoff": null,
+    "term_cap": null,
+    "timing": "synchronized propagation plus Z expectation and count; tiny disposable compile first; no full-workload warm-up",
+    "host": "cs-01m2dt5k2xjjd49dca01mjzzxv-szl9",
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "versions": {
+      "torch": "2.8.0+cu128",
+      "triton": "3.4.0",
+      "cupy-cuda12x": "14.2.0",
+      "cuquantum-python-cu12": "26.6.0"
+    },
+    "gpu": "NVIDIA A100-SXM4-80GB, 81920 MiB, 580.173.02",
+    "spd_revision": "f0430966958d88b422b5f9bb669f579503c37fbd",
+    "allocator_environment": {},
+    "warmup_seconds": 3.1663293300000532
+  },
+  "rows": [
+    {
+      "step": 1,
+      "runtime_s": 0.016008318999979565,
+      "num_terms": 87,
+      "expectation": 0.997502082639013,
+      "host_lifetime_peak_rss_bytes": 800780288,
+      "device_allocated_peak_bytes": 16896,
+      "device_reserved_peak_bytes": 33280
+    },
+    {
+      "step": 2,
+      "runtime_s": 0.017674908999993022,
+      "num_terms": 261,
+      "expectation": 0.9902779598372055,
+      "host_lifetime_peak_rss_bytes": 800911360,
+      "device_allocated_peak_bytes": 47616,
+      "device_reserved_peak_bytes": 224256
+    },
+    {
+      "step": 3,
+      "runtime_s": 0.017741523000040615,
+      "num_terms": 456,
+      "expectation": 0.9791036666968957,
+      "host_lifetime_peak_rss_bytes": 800911360,
+      "device_allocated_peak_bytes": 87040,
+      "device_reserved_peak_bytes": 684032
+    },
+    {
+      "step": 4,
+      "runtime_s": 0.018196419999981117,
+      "num_terms": 880,
+      "expectation": 0.9651424296279498,
+      "host_lifetime_peak_rss_bytes": 800911360,
+      "device_allocated_peak_bytes": 163840,
+      "device_reserved_peak_bytes": 1880064
+    }
+  ],
+  "total_runtime_s": 0.06962117099999432,
+  "total_runtime_excl_first_s": 0.053612852000014755
+}
