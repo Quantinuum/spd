@@ -303,9 +303,12 @@ class _Storage:
         self.compactions += 1
         self.owned = True
         self.pruned = True
-        self.table = None
-        self.table_size = 0
-        if not final:
+        if final:
+            self.table = None
+            self.table_size = 0
+        else:
+            # Preserve replacement order: freeing the old index before allocating
+            # its successor inflated allocator reservation on growing TFI support.
             self._rebuild()
 
     def apply_clifford(self, operation):

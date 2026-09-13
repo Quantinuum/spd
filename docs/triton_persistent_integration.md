@@ -28,7 +28,7 @@ integration branch as a backup. No merge into main is authorized.
    caps, gradient-only support growth, exact inverse Cliffords and pre-rotation
    angle gradients. Integrate ordinary and noise-analysis backward loops;
    validate terminal basis/OSE/L2 initializers and supported analysis methods.
-4. **Complete correctness/performance acceptance.** Run the existing relevant
+4. **Complete correctness/performance acceptance (complete and approved).** Run the existing relevant
    conformance suites plus representative TFI/AFH energy-and-gradient workloads.
    Compare keys, coefficients, adjoints, gate/parameter gradients and diagnostics.
    Report runtime and peak allocated/reserved memory separately for state-only
@@ -525,3 +525,13 @@ views; it cannot silently consume the current public input.
 The consuming variational-pipeline feasibility result and deferred TODO are
 preserved in [triton_variational_pipeline_todo.md](triton_variational_pipeline_todo.md).
 This follow-up is outside stage 4 acceptance.
+
+
+## Stage 4 acceptance
+
+The final correctness suite, allocator investigation/fix and separate performance
+results are in [triton_persistent_acceptance.md](triton_persistent_acceptance.md).
+The stage 2 TFI reservation discrepancy has been reproduced and resolved by
+restoring the original hash-table replacement lifetime; the earlier open
+investigation notes above are retained as stage history. Stage 4 is complete, validated,
+and approved by the user.

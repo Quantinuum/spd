@@ -1,0 +1,530 @@
+{
+  "head_before_fix": "b7c63f89b951edbf059129da1d3dfa8d0b21ef28",
+  "environment": {
+    "device": "NVIDIA H100 80GB HBM3",
+    "torch": "2.8.0+cu128",
+    "triton": "3.4.0",
+    "precision": "float64"
+  },
+  "tests": {
+    "after_fix": "120 persistent forward/backward/diagnostic/ownership tests passed in 7.08 s",
+    "initial_full_suite": "1203 passed, 1 xfailed in 258.29 s; before allocator lifetime fix",
+    "final_full_suite": "1203 passed, 1 xfailed in 251.32 s; includes allocator lifetime fix"
+  },
+  "allocator": {
+    "stage1-trace": {
+      "before_release": {
+        "allocated": 8876685824,
+        "reserved": 70428655616,
+        "peak_allocated": 50914631168,
+        "peak_reserved": 70428655616,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 13939900416,
+        "driver_total": 85017493504
+      },
+      "after_release": {
+        "allocated": 8876685824,
+        "reserved": 8894021632,
+        "peak_allocated": 50914631168,
+        "peak_reserved": 70428655616,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 75474534400,
+        "driver_total": 85017493504
+      },
+      "end_blocks": {
+        "inactive": {
+          "count": 6,
+          "bytes": 61551969792,
+          "largest": 35507990016
+        },
+        "active_allocated": {
+          "count": 1370,
+          "bytes": 8876685824,
+          "largest": 7100788224
+        }
+      },
+      "comparison_to_stage1": {
+        "counts_match": true,
+        "max_energy_error": 0.0,
+        "max_norm2_error": 0.0
+      },
+      "traced": true
+    },
+    "current": {
+      "before_release": {
+        "allocated": 8876686336,
+        "reserved": 79530295296,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 79530295296,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 4838260736,
+        "driver_total": 85017493504
+      },
+      "after_release": {
+        "allocated": 8876686336,
+        "reserved": 8914993152,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 79530295296,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 75453562880,
+        "driver_total": 85017493504
+      },
+      "end_blocks": {
+        "inactive": {
+          "count": 5,
+          "bytes": 70653608960,
+          "largest": 49312194560
+        },
+        "active_allocated": {
+          "count": 1371,
+          "bytes": 8876686336,
+          "largest": 7100788224
+        }
+      },
+      "comparison_to_stage1": {
+        "counts_match": true,
+        "max_energy_error": 2.220446049250313e-16,
+        "max_norm2_error": 2.220446049250313e-16
+      },
+      "traced": true
+    },
+    "table-lifetime-trace": {
+      "before_release": {
+        "allocated": 8876686336,
+        "reserved": 70428655616,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 70428655616,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 13939900416,
+        "driver_total": 85017493504
+      },
+      "after_release": {
+        "allocated": 8876686336,
+        "reserved": 8894021632,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 70428655616,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 75474534400,
+        "driver_total": 85017493504
+      },
+      "end_blocks": {
+        "inactive": {
+          "count": 6,
+          "bytes": 61551969280,
+          "largest": 35507990016
+        },
+        "active_allocated": {
+          "count": 1371,
+          "bytes": 8876686336,
+          "largest": 7100788224
+        }
+      },
+      "comparison_to_stage1": {
+        "counts_match": true,
+        "max_energy_error": 2.220446049250313e-16,
+        "max_norm2_error": 2.220446049250313e-16
+      },
+      "traced": true
+    },
+    "final-state": {
+      "before_release": {
+        "allocated": 8876686336,
+        "reserved": 70428655616,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 70428655616,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 13939900416,
+        "driver_total": 85017493504
+      },
+      "after_release": {
+        "allocated": 8876686336,
+        "reserved": 8894021632,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 70428655616,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 75474534400,
+        "driver_total": 85017493504
+      },
+      "end_blocks": {
+        "inactive": {
+          "count": 6,
+          "bytes": 61551969280,
+          "largest": 35507990016
+        },
+        "active_allocated": {
+          "count": 1371,
+          "bytes": 8876686336,
+          "largest": 7100788224
+        }
+      },
+      "comparison_to_stage1": {
+        "counts_match": true,
+        "max_energy_error": 2.220446049250313e-16,
+        "max_norm2_error": 2.220446049250313e-16
+      },
+      "traced": false
+    },
+    "final-diagnostics": {
+      "before_release": {
+        "allocated": 8876686336,
+        "reserved": 63529025536,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 63529025536,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 20839530496,
+        "driver_total": 85017493504
+      },
+      "after_release": {
+        "allocated": 8876686336,
+        "reserved": 8894021632,
+        "peak_allocated": 50914631680,
+        "peak_reserved": 63529025536,
+        "inactive_split": 0,
+        "allocation_retries": 0,
+        "ooms": 0,
+        "driver_free": 75474534400,
+        "driver_total": 85017493504
+      },
+      "end_blocks": {
+        "active_allocated": {
+          "count": 1371,
+          "bytes": 8876686336,
+          "largest": 7100788224
+        },
+        "inactive": {
+          "count": 6,
+          "bytes": 54652339200,
+          "largest": 43037227008
+        }
+      },
+      "comparison_to_stage1": {
+        "counts_match": true,
+        "max_energy_error": 2.220446049250313e-16,
+        "max_norm2_error": 4.440892098500626e-16
+      },
+      "traced": false
+    }
+  },
+  "forward": {
+    "final-state": {
+      "seconds": 10.24626773700004,
+      "peak_allocated_bytes": 50914631680,
+      "peak_reserved_bytes": 70428655616,
+      "terms": 221899620,
+      "energy": 0.846651058594837,
+      "norm2": 0.9747791666015758,
+      "correctness": {
+        "counts_match": true,
+        "max_energy_error": 2.220446049250313e-16,
+        "max_norm2_error": 2.220446049250313e-16
+      }
+    },
+    "final-diagnostics": {
+      "seconds": 10.831362488999844,
+      "peak_allocated_bytes": 50914631680,
+      "peak_reserved_bytes": 63529025536,
+      "terms": 221899620,
+      "energy": 0.846651058594837,
+      "norm2": 0.974779166601576,
+      "correctness": {
+        "counts_match": true,
+        "max_energy_error": 2.220446049250313e-16,
+        "max_norm2_error": 4.440892098500626e-16
+      }
+    },
+    "afh-uncapped-state": {
+      "seconds": 0.8871275429999059,
+      "peak_allocated_bytes": 1094670848,
+      "peak_reserved_bytes": 1623195648,
+      "peak_extra_allocated_bytes": 1090475520,
+      "terms": 2265180,
+      "energy": 0.003119175846280518,
+      "norm2": 2.559136467881403,
+      "cutoff": 0.0003,
+      "cap": null
+    },
+    "afh-uncapped-diagnostics": {
+      "seconds": 1.1081403480000063,
+      "peak_allocated_bytes": 1094670848,
+      "peak_reserved_bytes": 1623195648,
+      "peak_extra_allocated_bytes": 1090475520,
+      "terms": 2265180,
+      "energy": 0.0031191758462805162,
+      "norm2": 2.5591364678814035,
+      "cutoff": 0.0003,
+      "cap": null
+    },
+    "afh-capped-state": {
+      "seconds": 14.822087941000063,
+      "peak_allocated_bytes": 7340987904,
+      "peak_reserved_bytes": 8543797248,
+      "peak_extra_allocated_bytes": 7336792576,
+      "terms": 20000000,
+      "energy": 0.026241965766978848,
+      "norm2": 3.1025729784854637,
+      "cutoff": 1e-05,
+      "cap": 20000000
+    },
+    "afh-capped-diagnostics": {
+      "seconds": 16.92797557500012,
+      "peak_allocated_bytes": 7551771136,
+      "peak_reserved_bytes": 9110028288,
+      "peak_extra_allocated_bytes": 7547575808,
+      "terms": 20000000,
+      "energy": 0.026241965766978834,
+      "norm2": 3.1025729784854637,
+      "cutoff": 1e-05,
+      "cap": 20000000
+    }
+  },
+  "backward": {
+    "afh-backward": {
+      "case": "afh",
+      "phase": "backward",
+      "steps": 1,
+      "cutoff": 0.0003,
+      "cap": null,
+      "torch": "2.8.0+cu128",
+      "triton": "3.4.0",
+      "device": "NVIDIA H100 80GB HBM3",
+      "timing": "one measured pass per path; tiny compilation; observations excluded",
+      "terminal_terms": 2265180,
+      "energy": 0.0031191758462805197,
+      "correctness": {
+        "same_keys": true,
+        "coefficient": 0.0,
+        "adjoint": 0.0,
+        "angle": 8.326672684688674e-17,
+        "history": {
+          "num_str_truncated": 0.0,
+          "truncated_l1_norm": 1.4210854715202004e-14,
+          "truncated_l2_norm": 1.3877787807814457e-17
+        }
+      },
+      "reference": {
+        "seconds": 1.941800374999957,
+        "peak_allocated_bytes": 845969920,
+        "peak_reserved_bytes": 1033895936,
+        "peak_extra_allocated_bytes": 678680064,
+        "terms": 384943
+      },
+      "persistent": {
+        "seconds": 1.1283894099999543,
+        "peak_allocated_bytes": 968318976,
+        "peak_reserved_bytes": 1012924416,
+        "peak_extra_allocated_bytes": 801029120,
+        "terms": 384943
+      }
+    },
+    "tfi-backward": {
+      "case": "tfi",
+      "phase": "backward",
+      "steps": 10,
+      "cutoff": 3.814697265625e-06,
+      "cap": null,
+      "torch": "2.8.0+cu128",
+      "triton": "3.4.0",
+      "device": "NVIDIA H100 80GB HBM3",
+      "timing": "one measured pass per path; tiny compilation; observations excluded",
+      "terminal_terms": 994285,
+      "energy": 0.8139538929652543,
+      "correctness": {
+        "same_keys": true,
+        "coefficient": 0.0,
+        "adjoint": 0.0,
+        "angle": 1.3877787807814457e-16,
+        "history": {
+          "num_str_truncated": 0.0,
+          "truncated_l1_norm": 2.7755575615628914e-17,
+          "truncated_l2_norm": 1.0842021724855044e-19
+        }
+      },
+      "reference": {
+        "seconds": 0.8094898580000063,
+        "peak_allocated_bytes": 247969792,
+        "peak_reserved_bytes": 274726912,
+        "peak_extra_allocated_bytes": 199542784,
+        "terms": 89945
+      },
+      "persistent": {
+        "seconds": 0.5069422199999281,
+        "peak_allocated_bytes": 279971840,
+        "peak_reserved_bytes": 318767104,
+        "peak_extra_allocated_bytes": 231544832,
+        "terms": 89945
+      }
+    }
+  },
+  "small": {
+    "small-forward": {
+      "tfi_1d_8_3layers": {
+        "operations": 65,
+        "correctness": {
+          "same_keys": true,
+          "max_coefficient_error": 0.0,
+          "energy_error": 8.881784197001252e-16
+        },
+        "reference": {
+          "seconds": 0.006269432000067354,
+          "peak_allocated_bytes": 109056,
+          "peak_reserved_bytes": 2097152,
+          "peak_extra_allocated_bytes": 16896,
+          "terms": 200,
+          "energy": -7.226307077616229
+        },
+        "persistent": {
+          "seconds": 0.005187707999994018,
+          "peak_allocated_bytes": 111104,
+          "peak_reserved_bytes": 2097152,
+          "peak_extra_allocated_bytes": 18944,
+          "terms": 200,
+          "energy": -7.226307077616228
+        },
+        "diagnostic_forward": {
+          "max_coefficient_error": 0.0,
+          "energy_error": 0.0,
+          "history_matches": true,
+          "reference": {
+            "seconds": 0.008533112000009169,
+            "peak_allocated_bytes": 110080,
+            "peak_reserved_bytes": 2097152,
+            "peak_extra_allocated_bytes": 17920,
+            "terms": 200,
+            "energy": -7.226307077616228
+          },
+          "persistent": {
+            "seconds": 0.007261486000061268,
+            "peak_allocated_bytes": 111104,
+            "peak_reserved_bytes": 2097152,
+            "peak_extra_allocated_bytes": 18944,
+            "terms": 200,
+            "energy": -7.226307077616228
+          }
+        }
+      },
+      "afh_1d_8_3layers": {
+        "operations": 120,
+        "correctness": {
+          "same_keys": true,
+          "max_coefficient_error": 0.0,
+          "energy_error": 1.6653345369377348e-16
+        },
+        "reference": {
+          "seconds": 0.016294944000037503,
+          "peak_allocated_bytes": 2615808,
+          "peak_reserved_bytes": 4194304,
+          "peak_extra_allocated_bytes": 2348544,
+          "terms": 32586,
+          "energy": -0.31904646148216675
+        },
+        "persistent": {
+          "seconds": 0.015357069999936357,
+          "peak_allocated_bytes": 2856448,
+          "peak_reserved_bytes": 4194304,
+          "peak_extra_allocated_bytes": 2589184,
+          "terms": 32586,
+          "energy": -0.3190464614821666
+        },
+        "diagnostic_forward": {
+          "max_coefficient_error": 0.0,
+          "energy_error": 0.0,
+          "history_matches": true,
+          "reference": {
+            "seconds": 0.020687767000026724,
+            "peak_allocated_bytes": 2624512,
+            "peak_reserved_bytes": 4194304,
+            "peak_extra_allocated_bytes": 2357248,
+            "terms": 32586,
+            "energy": -0.31904646148216687
+          },
+          "persistent": {
+            "seconds": 0.01650844000005236,
+            "peak_allocated_bytes": 2856448,
+            "peak_reserved_bytes": 4194304,
+            "peak_extra_allocated_bytes": 2589184,
+            "terms": 32586,
+            "energy": -0.31904646148216687
+          }
+        }
+      }
+    },
+    "small-backward": {
+      "tfi_1d_8_3layers": {
+        "operations": 65,
+        "terminal_terms": 136,
+        "energy": -9.363606615366079,
+        "correctness": {
+          "same_keys": true,
+          "max_coefficient_error": 0.0,
+          "max_adjoint_error": 0.0,
+          "max_angle_error": 2.7755575615628914e-17,
+          "history_matches": true
+        },
+        "reference": {
+          "seconds": 0.00984060899997985,
+          "peak_allocated_bytes": 119296,
+          "peak_reserved_bytes": 2097152,
+          "peak_extra_allocated_bytes": 18944,
+          "terms": 16
+        },
+        "persistent": {
+          "seconds": 0.010558359000015116,
+          "peak_allocated_bytes": 119808,
+          "peak_reserved_bytes": 2097152,
+          "peak_extra_allocated_bytes": 19456,
+          "terms": 16
+        }
+      },
+      "afh_1d_8_3layers": {
+        "operations": 120,
+        "terminal_terms": 32603,
+        "energy": -0.1159180451900308,
+        "correctness": {
+          "same_keys": true,
+          "max_coefficient_error": 0.0,
+          "max_adjoint_error": 0.0,
+          "max_angle_error": 8.881784197001252e-16,
+          "history_matches": true
+        },
+        "reference": {
+          "seconds": 0.02527232099998855,
+          "peak_allocated_bytes": 4450304,
+          "peak_reserved_bytes": 6291456,
+          "peak_extra_allocated_bytes": 3400192,
+          "terms": 24
+        },
+        "persistent": {
+          "seconds": 0.016854221000016878,
+          "peak_allocated_bytes": 5096960,
+          "peak_reserved_bytes": 6291456,
+          "peak_extra_allocated_bytes": 4046848,
+          "terms": 24
+        }
+      }
+    }
+  },
+  "source_sha256": {
+    "spd/triton_backend/persistent.py": "74f67e71a06a76ac27da5cee45e93966faa87116619dfafaaca6aa4abb58f224",
+    "benchmarks/trace_persistent_allocator.py": "32eb8b7a26f3e678e670a81abb9fc7e66345e53cfed9af4b5a30415a5890aaab",
+    "benchmarks/benchmark_persistent_large.py": "1aea1123fd9253b563ec3fd8aa800bdeeade9dd99fb4cc80aacb000a68f7f048"
+  },
+  "raw_directory": "/tmp/spd-stage4"
+}
