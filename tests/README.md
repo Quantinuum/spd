@@ -40,6 +40,7 @@ scope differences, and proposed SPGO extension.
 
 ## Test Categories
 
+- [`test_pruning.py`](test_pruning.py): automatic light-cone pruning, complete-skip semantics, backend equivalence, forward-owned backward records, gradient indexing, frontends and stepwise/in-place ownership
 - [`test_pauli_product.py`](test_pauli_product.py): low-level Pauli multiplication checks
 - [`test_rotation.py`](test_rotation.py): rotation-kernel behavior on known cases
 - [`test_clifford.py`](test_clifford.py): one- and two-qubit Clifford transformations

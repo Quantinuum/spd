@@ -9,6 +9,7 @@ This package is organized around sparse-Pauli state objects and backend-specific
 - [`jax_backend/`](jax_backend/): JAX realization and kernels
 - [`triton_backend/`](triton_backend/): native GPU gates and basis/OSE gradient workflows; see its README for remaining parity work
 - [`circuit_ir.py`](circuit_ir.py): backend-agnostic execution IR for supported circuit operations
+- [`pruning.py`](pruning.py): per-call light-cone plans, observable support, and original-index mapping
 - [`openqasm_frontend.py`](openqasm_frontend.py): built-in OpenQASM 2 parser into the internal IR
 - [`pytket_frontend.py`](pytket_frontend.py): parser from `pytket` circuits into the internal IR
 - [`backend_adapter.py`](backend_adapter.py): backend-facing execution adapter used by the runner
@@ -91,3 +92,24 @@ downstream analysis.
 
 See [`../examples/tfi_noise_susceptibility.py`](../examples/tfi_noise_susceptibility.py)
 for an RX/RZZ TFI example.
+
+## Light-cone pruning
+
+`evolve(..., pruning="light-cone")` builds an internal geometric plan after
+normalization and before backend dispatch. `get_operation_qubits` supplies gate
+supports, and packed nonzero primal rows supply the input support. No support
+cache or frontend representation change is required. Triton uses
+[`triton_backend/support.py`](triton_backend/support.py) to reduce nonzero support
+and validate coefficients on-device, transferring only the mask and validity flag.
+One call over the whole circuit scans only the initial state.
+Repeated stepwise calls rescan the growing state on GPU but can produce tighter
+cones from truncated support. Compare the saved gate work against scan overhead.
+
+Only retained gates reach the backend. The runner restores full diagnostic and
+rotation-gradient indexing. A private forward record travels through the public
+`init_gradient_spo` call; backward uses it without recomputing a cone. Returned
+adjoints describe the reduced circuit and may differ from unpruned adjoints.
+The record is for an unmodified result and its matching circuit, including angles.
+Triton copies and pickles preserve it; subsequent gate mutation clears it.
+Noise analysis rejects pruned forward records. See the root README for usage and
+the deliberate truncation/cap semantics of completely omitted rotations.

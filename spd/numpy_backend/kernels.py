@@ -53,7 +53,7 @@ def create_op(pauli_dict):
 
 def init_gradient_from_basis_expectation(spo, basis='0'):
     gradient_spo = SparsePauliGradientOp()
-    N = len(next(iter(spo))) // 2
+    N = len(next(iter(spo))) // 2 if spo else 0
     if basis in ['0', 'Z']:
         for P, P_val in spo.items():
             xz_array = np.array(P)

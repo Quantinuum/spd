@@ -14,6 +14,7 @@ import numpy as np
 import psutil
 
 from .backend_adapter import BackendAdapter
+from .pruning import _validate_method, _plan_forward, _finish_record
 from .circuit_ir import (
     CircuitIR,
     PauliRotation,
@@ -371,14 +372,23 @@ def evolve(
     backend=None,
     progress=True,
     in_place=False,
+    pruning=None,
 ):
     """Propagate an SPO forward; progress=False skips reporting reductions.
+
+    pruning="light-cone" builds a cone from this input SPO once per call.
+    One complete-circuit call scans only the initial SPO. Repeated calls scan
+    each evolving SPO but can find tighter cones after truncation. Triton reduces
+    support on GPU and transfers only the compact mask to the host.
+    Omitted gates perform no truncation/capping; history retains original slots.
+    The result carries its forward record through init_gradient_spo to backward.
 
     Truncation diagnostics/history are returned regardless of progress.
     in_place=True is supported only for Triton: mutate the supplied SPO and
     retain its storage across calls. Shared tensor buffers detach before mutation.
     An error after execution starts can leave earlier gates applied.
     """
+    _validate_method(pruning)
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spo, backend, state_name="spo")
     if not backend.is_spo_instance(spo):
@@ -397,6 +407,13 @@ def evolve(
         else normalized_circuit
     )
 
+    plan = None
+    if pruning is not None:
+        plan = _plan_forward(spo, operations,
+                             normalized_circuit.system_size if isinstance(normalized_circuit, CircuitIR) else None,
+                             backend.name, trunc_val)
+        operations = plan.retained_operations
+
     if backend.name == "triton":
         loop_state = spo if in_place or all(isinstance(op, SkippedOperation) for op in operations) else spo.copy()
         apply_forward = lambda state, operation: state.apply_in_place(operation, trunc_val, max_num_str)
@@ -411,6 +428,10 @@ def evolve(
     )
     if backend.name == "triton" and not in_place and final_spo is not spo:
         final_spo = final_spo.compact()
+
+    if plan is not None:
+        info = plan.align_info(info, reverse=True)
+    final_spo = _finish_record(final_spo, spo, plan, backend.name, in_place=in_place)
 
     if save_strings:
         _save_state_pickle(final_spo, "strings", trunc_val)
@@ -438,7 +459,7 @@ def init_gradient_spo(
         raise TypeError(
             f"target_spo must be a {backend.name} SparsePauliOp when backend='{backend.name}'."
         )
-    return backend.init_gradient_spo(
+    result = backend.init_gradient_spo(
         final_spo,
         loss_type=loss_type,
         basis=basis,
@@ -446,6 +467,9 @@ def init_gradient_spo(
         lambda_ose=lambda_ose,
         alpha=alpha,
     )
+
+    result._pruning_record = getattr(final_spo, "_pruning_record", None)
+    return result
 
 
 def backpropagate(
@@ -461,6 +485,10 @@ def backpropagate(
     in_place=False,
 ):
     """Propagate an SPGO backward; progress=False skips reporting reductions.
+
+    Automatically follows the record carried from a pruned forward call by
+    init_gradient_spo. The circuit must match that forward call, including angles.
+    Omitted rotation gradients are zero in their original slots.
 
     Angle gradients and truncation diagnostics are always returned.
     in_place=True mutates the Triton SPGO and retains storage across calls.
@@ -483,6 +511,12 @@ def backpropagate(
         if isinstance(normalized_circuit, CircuitIR)
         else normalized_circuit
     )
+    plan = getattr(spgo, "_pruning_record", None)
+    if plan is not None:
+        plan.check_circuit(operations, normalized_circuit.system_size if isinstance(normalized_circuit, CircuitIR) else None)
+        if not math.isfinite(trunc_val) or trunc_val < 0:
+            raise ValueError("trunc_val must be finite and nonnegative.")
+        operations = plan.retained_operations
     grads = []
 
     if backend.name == "triton":
@@ -511,6 +545,11 @@ def backpropagate(
     if backend.name == "triton" and not in_place and final_spgo is not spgo:
         final_spgo.compact()
 
+    if plan is not None:
+        info = plan.align_info(info, reverse=False)
+        grads = plan.align_gradients(grads)
+    final_spgo = _finish_record(final_spgo, spgo, None, backend.name, in_place=in_place)
+
     if save_strings:
         _save_state_pickle(final_spgo, "grad_strings", trunc_val)
 
@@ -534,6 +573,8 @@ def backpropagate_noise_analysis(
     in_place=True is Triton-only and retains mutable storage across calls.
     Shared buffers detach first; errors may leave earlier gates applied.
     """
+    if getattr(spgo, "_pruning_record", None) is not None:
+        raise NotImplementedError("Noise analysis of a pruned forward execution is not supported.")
     total_start_time = time.time()
     backend = _resolve_backend_from_state(spgo, backend, state_name="spgo")
     if not backend.is_spgo_instance(spgo):

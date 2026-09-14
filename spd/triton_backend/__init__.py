@@ -85,7 +85,9 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
         """Return an independent mutable copy, including any adjoint channel."""
         from .persistent import _Storage
         with torch.cuda.device(self._storage.device):
-            return type(self)._from_storage(_Storage(self, self._storage.dead_fraction))
+            result = type(self)._from_storage(_Storage(self, self._storage.dead_fraction))
+            result._pruning_record = getattr(self, "_pruning_record", None)
+            return result
 
     def _mutable_storage(self):
         if not self._storage.owned:
@@ -104,6 +106,7 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
         cap = _validate_rotation(self, theta, cutoff, cap, backward)
         with torch.cuda.device(self._storage.device):
             gate, params = _prepare_gate(self, generator, float(theta), float(cutoff))
+            self._pruning_record = None
             if not self._storage.n:
                 return self, 0, 0. if backward else None, _zero_info() if diagnostics else None
             storage = self._mutable_storage()
@@ -126,6 +129,7 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
             return self._rotate_in_place(operation.pauli.rstrip("I"), operation.theta,
                                          trunc_val, max_num_str, diagnostics=diagnostics)
         if isinstance(operation, (SingleQubitClifford, TwoQubitClifford)):
+            self._pruning_record = None
             with torch.cuda.device(self._storage.device):
                 self._mutable_storage().apply_clifford(operation)
             return self, self.get_size(), None, _zero_info() if diagnostics else None
@@ -149,12 +153,15 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
         state = {"xz_array": keys, "c_array": c, "num_qubits": self.num_qubits}
         if g is not None:
             state["grad_c_array"] = g
+        if getattr(self, "_pruning_record", None) is not None:
+            state["_pruning_record"] = self._pruning_record
         return state
 
     def __setstate__(self, state):
         # Also accepts pickles written before storage became an owned object.
         from .persistent import _Storage
         self.num_qubits = state["num_qubits"]
+        self._pruning_record = state.get("_pruning_record")
         self._storage = _Storage.wrap(state["xz_array"], state["c_array"],
                                       self.num_qubits, state.get("grad_c_array"))
 
@@ -251,14 +258,21 @@ def conjugate_pauli_rotation(spo, pauli, theta, trunc_val=0., max_num_str=None):
         return SparsePauliOp(out_keys, out_coeff, spo.num_qubits)
 
 
-def evolve_step(spo, operations, trunc_val=0., max_num_str=None):
-    """Apply circuit operations in reverse (Heisenberg) order."""
-    from .persistent import evolve_step_persistent
+def evolve_step(spo, operations, trunc_val=0., max_num_str=None, *, pruning=None):
+    """Apply circuit operations in reverse order, optionally pruning a light cone.
 
-    operations = tuple(operations)
-    if all(isinstance(op, SkippedOperation) for op in operations):
-        return spo
-    return evolve_step_persistent(spo, operations, trunc_val, max_num_str)
+    Accepts a CircuitIR or operation sequence. Each call derives support from
+    its input SPO; the returned state carries the plan for public backward use.
+    """
+    from .persistent import evolve_step_persistent
+    from ..circuit_ir import CircuitIR
+    if not isinstance(operations, CircuitIR):
+        operations = tuple(operations)
+        if pruning is None and getattr(spo, "_pruning_record", None) is None and all(
+            isinstance(op, SkippedOperation) for op in operations
+        ):
+            return spo
+    return evolve_step_persistent(spo, operations, trunc_val, max_num_str, pruning=pruning)
 
 # Import after the state-only API so gradient/standard operations can reuse it.
 from .gradient import SparsePauliGradientOp, create_gradient_op

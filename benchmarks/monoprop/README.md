@@ -162,3 +162,27 @@ The broader historical milestone comparison scripts are not part of this run.
 The Studio's preinstalled Matplotlib was incompatible with NumPy 2. Plotting used
 Matplotlib 3.11.2 in `/tmp/spd-monoprop-plot` via `PYTHONPATH`, leaving the GPU
 benchmark environment unchanged.
+
+## Light-cone pruning follow-up
+
+The earlier **per-step** experiment rebuilt a pruning plan at each of the 28
+steps of the exact fixed 12×12 workload. It compared execution with and without
+light-cone pruning on the workspace's NVIDIA L4. All final keys and coefficients
+were bitwise identical in a complete run-pair comparison. Across three fresh
+trials per mode, pruning reduced gate applications by 71.4%, but total runtime
+improved only 2.3%; the last step was 5.5% slower because the current planner
+copies and scans the growing Pauli state on the CPU. These are fresh L4 timings,
+not comparisons against the saved A100 runtimes above. See the
+[pruning report and per-step data](../light_cone/monoprop_fixed_12x12/README.md).
+
+For the intended usage—construct all 28 layers and call public `evolve` once
+from the initial observable—see the corrected
+[whole-circuit comparison](../light_cone/monoprop_full_12x12/README.md).
+The per-step timings above do not measure that API usage.
+
+
+The subsequent [GPU support-reduction experiment](../light_cone/monoprop_gpu_support_12x12/README.md)
+replaces full-state CPU transfer with an on-device support scan. Fresh per-step
+runs measured 17.472 s unpruned versus 8.046 s pruned (2.17×), with total planning
+247 ms instead of the historical 9.265 s. These use the original diagnostics-free
+benchmark loop; see the report for methodology and full coefficient validation.

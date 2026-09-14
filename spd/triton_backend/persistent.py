@@ -388,13 +388,17 @@ class _Storage:
 
 
 def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
-                           *, dead_fraction=.1, stats=None):
+                           *, dead_fraction=.1, stats=None, pruning=None):
     """Copy once, mutate privately across gates, materialize once."""
     from . import SparsePauliOp
     from .gradient import SparsePauliGradientOp
     from ..circuit_ir import (PauliRotation, SkippedOperation,
                               SingleQubitClifford, TwoQubitClifford)
-    operations = tuple(operations)
+    from ..circuit_ir import CircuitIR
+    from ..pruning import _validate_method, _plan_forward, _finish_record
+    _validate_method(pruning)
+    system_size = operations.system_size if isinstance(operations, CircuitIR) else None
+    operations = tuple(operations.operations if isinstance(operations, CircuitIR) else operations)
     if not math.isfinite(trunc_val) or trunc_val < 0:
         raise ValueError('trunc_val must be finite and nonnegative')
     if not 0 < dead_fraction < 1:
@@ -407,10 +411,16 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
             raise NotImplementedError(f'Unsupported persistent operation: {op}')
         if isinstance(op, PauliRotation) and not math.isfinite(op.theta):
             raise ValueError('theta must be finite')
+    plan = None
+    if pruning is not None:
+        if not isinstance(state, SparsePauliOp) or isinstance(state, SparsePauliGradientOp):
+            raise TypeError("Forward evolution requires a SparsePauliOp")
+        plan = _plan_forward(state, operations, system_size, "triton", trunc_val)
+        operations = plan.retained_operations
     if all(isinstance(op, SkippedOperation) for op in operations):
         if stats is not None:
             stats.update(rebuilds=0, compactions=0, growths=0)
-        return state
+        return _finish_record(state, state, plan, "triton")
     if not isinstance(state, SparsePauliOp) or isinstance(state, SparsePauliGradientOp):
         raise TypeError("Forward evolution requires a SparsePauliOp")
     result = state.copy()
@@ -422,4 +432,4 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
         storage = result._storage
         stats.update(rebuilds=storage.rebuilds, compactions=storage.compactions,
                      growths=storage.growths)
-    return result
+    return _finish_record(result, state, plan, "triton")
