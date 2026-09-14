@@ -14,6 +14,7 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 
 - [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `spd.create_spo(...)`, `evolve(...)`, `get_expectation_value(...)`, and truncation info
 - [`gradient/run_tfi_gs.py`](gradient/run_tfi_gs.py): 1D/2D/3D TFI optimization with `VariationalCircuit`
+- [`gradient/run_afh_gs.py`](gradient/run_afh_gs.py): 1D/2D/3D AFH optimization with signed staggered parameters
 - [`run_with_backend_adapter.py`](run_with_backend_adapter.py): small example with a reusable configured backend
 - [`tfi_noise_susceptibility.py`](tfi_noise_susceptibility.py): operation-aligned one- and two-qubit depolarizing susceptibilities for a short TFI Trotter circuit
 - [`run_simple_circuit_2.py`](run_simple_circuit_2.py): runs a stored sample circuit from [`simple_test_circuit.pkl`](simple_test_circuit.pkl)
@@ -28,15 +29,15 @@ These are still intentionally kept because they are useful for inspection, compa
 - [`benchmark_jax_memory_donation.py`](benchmark_jax_memory_donation.py): large-SPO JAX memory benchmark for forward/backward paths and experimental buffer-donation wrappers
 - [`open_qasm/compare_frontends.py`](open_qasm/compare_frontends.py): advanced comparison example for the built-in OpenQASM frontend and the `pytket` import path
 
-## Gradient / TFI Work
+## Variational Ground-State Work
 
 [`gradient/`](gradient/) contains the larger TFI and AFH workflows. The unified
-TFI runner uses the stable ansatz generators from `spd.ansatz` and reduces gate
+TFI and AFH runners use stable generators from `spd.ansatz` and reduce gate
 gradients with `VariationalCircuit.parameter_gradients(...)`.
 
 The first positional argument selects the spatial dimension. Periodic lattice
-dimensions must be even. If `--linear-system-size` is omitted, the runner uses
-`number_of_parameters + 2`.
+dimensions must be even. The TFI runner defaults to
+`number_of_parameters + 2` sites along each dimension.
 
 ```bash
 python examples/gradient/run_tfi_gs.py 1 6 100 --method lbfgs --g 3.1
@@ -46,6 +47,20 @@ python examples/gradient/run_tfi_gs.py 3 6 100 --linear-system-size 6
 python examples/gradient/run_tfi_gs.py 2 6 100 --algorithm search_update_merge
 python examples/gradient/run_tfi_gs.py 1 6 100 --init-params-path previous/final_params.txt
 ```
+
+The AFH runner takes the dimension, number of four-parameter layers, and
+iteration count. It defaults to `6 * num_layers + 2` sites along each
+dimension:
+
+```bash
+python examples/gradient/run_afh_gs.py 1 2 100 --method lbfgs
+python examples/gradient/run_afh_gs.py 2 2 100 --linear-system-size 8
+python examples/gradient/run_afh_gs.py 3 1 100 --linear-system-size 4
+python examples/gradient/run_afh_gs.py 2 2 0 --method eval_only --backend triton
+```
+
+Each AFH layer contains shared XX, YY, ZZ, and staggered Rz parameters. All
+periodic AFH dimensions must be even.
 
 If `--init-params-path` is omitted, parameters are initialized randomly. If it is provided, the script initializes from that file. `lambda_ose` is constant within one training run and is stored in `metadata.json`. To decrease it, start a new run from the previous `final_params.txt` with a smaller `--lambda-ose`.
 

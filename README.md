@@ -59,6 +59,7 @@ Recommended examples:
 
 - [`examples/run_simple_circuit_1.py`](./examples/run_simple_circuit_1.py): smallest forward workflow, including truncation info
 - [`examples/gradient/run_tfi_gs.py`](./examples/gradient/run_tfi_gs.py): 1D/2D/3D variational TFI optimization
+- [`examples/gradient/run_afh_gs.py`](./examples/gradient/run_afh_gs.py): 1D/2D/3D variational AFH optimization
 
 ## Current Scope
 
@@ -233,6 +234,13 @@ scheduled as disjoint brickwork layers separated by barriers. Odd periodic
 dimensions are rejected because they cannot be split into two disjoint
 even/odd bond coverings. See `examples/variational_tfi.py` for a complete
 forward and backward calculation.
+
+Periodic antiferromagnetic Heisenberg generators are available as `afh_1d_hva`,
+`afh_2d_hva`, and `afh_3d_hva`. Each layer uses shared XX, YY, ZZ, and
+staggered Rz parameters. The staggered signs are recorded in
+`gate_parameter_factors`, so `parameter_gradients(...)` applies them during
+gradient reduction. These generators prepare the Neel product state and also
+require even periodic dimensions.
 
 
 ## L2 Gradient Support

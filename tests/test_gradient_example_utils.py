@@ -10,7 +10,9 @@ GRADIENT_DIR = Path(__file__).resolve().parents[1] / "examples" / "gradient"
 sys.path.insert(0, str(GRADIENT_DIR))
 
 import run_tfi_gs
+import run_afh_gs
 import run_utils
+import heisenberg_setup
 
 
 def test_memory_estimate_matches_large_64_qubit_note():
@@ -89,3 +91,34 @@ def test_unified_tfi_setup_builds_3d_ansatz_and_local_hamiltonian():
         ansatz.parameter_gradients(np.ones(32)),
         np.array([24.0, 8.0]) * np.pi,
     )
+
+
+def test_unified_afh_setup_builds_3d_ansatz_and_local_hamiltonian():
+    ansatz = run_afh_gs.make_afh_ansatz(
+        np.array([0.1, 0.2, 0.3, 0.4]),
+        dimension=3,
+        linear_system_size=2,
+    )
+    hamiltonian = run_afh_gs.make_local_afh_hamiltonian(
+        dimension=3,
+        linear_system_size=2,
+    )
+
+    assert ansatz.circuit.n_qubits == 8
+    assert len(hamiltonian) == 9
+    np.testing.assert_allclose(
+        ansatz.parameter_gradients(np.ones(80)),
+        np.array([24.0, 24.0, 24.0, 0.0]) * np.pi,
+        atol=1e-12,
+    )
+
+
+def test_afh_benchmark_compatibility_helpers_use_variational_ansatz():
+    circuit = heisenberg_setup.gen_1d_AFH_ansatz_circuit(
+        np.array([0.1, 0.2, 0.3, 0.4]),
+        system_size=4,
+    )
+    hamiltonian = heisenberg_setup.gen_1d_Hamiltonian_dict(4, full=False)
+
+    assert circuit.n_qubits == 4
+    assert hamiltonian == {"XXII": 1.0, "YYII": 1.0, "ZZII": 1.0}
