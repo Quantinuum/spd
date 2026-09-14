@@ -206,6 +206,7 @@ def main():
             max_num_str=max_num_str,
             backend=backend,
             progress=args.progress,
+            pruning='light-cone-barrier'
         )
         energy_error = forward_info["total_truncated_l2_norm"]
         ose = final_spo.get_OSE(alpha=args.alpha)

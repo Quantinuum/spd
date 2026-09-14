@@ -105,6 +105,14 @@ One call over the whole circuit scans only the initial state.
 Repeated stepwise calls rescan the growing state on GPU but can produce tighter
 cones from truncated support. Compare the saved gate work against scan overhead.
 
+`pruning="light-cone-barrier"` validates the entire circuit before execution,
+then interleaves planning and propagation for nonempty barrier-delimited blocks.
+The runner supplies the latest state to the schedule, including on functional
+NumPy/JAX backends. Triton retains its storage between blocks. The final record
+combines retained original indices, and existing backward execution replays it.
+Without barriers, this is a single plan. Both public `evolve` and Triton's direct
+`evolve_step` support the mode.
+
 Only retained gates reach the backend. The runner restores full diagnostic and
 rotation-gradient indexing. A private forward record travels through the public
 `init_gradient_spo` call; backward uses it without recomputing a cone. Returned

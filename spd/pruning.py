@@ -1,6 +1,6 @@
 """Internal circuit pruning plans. Currently only exact light-cone pruning.
 
-The public entry point is evolve(..., pruning="light-cone"). Plans describe
+The public entry point is evolve(..., pruning=...). Plans describe
 one forward execution, not a user-managed cache. No angle-based pruning occurs.
 """
 
@@ -17,8 +17,8 @@ from .circuit_ir import (
 
 
 def _validate_method(pruning):
-    if pruning is not None and (not isinstance(pruning, str) or pruning != "light-cone"):
-        raise ValueError('pruning must be None or "light-cone".')
+    if pruning is not None and (not isinstance(pruning, str) or pruning not in ("light-cone", "light-cone-barrier")):
+        raise ValueError('pruning must be None, "light-cone", or "light-cone-barrier".')
 
 
 def _support(state, backend_name):
@@ -90,6 +90,7 @@ class _LightConePlan:
     operations: tuple
     system_size: int | None
     retained_indices: tuple
+    method: str = "light-cone"
 
     @property
     def retained_operations(self):
@@ -110,7 +111,7 @@ class _LightConePlan:
             history[key] = [next(values) if i in kept else 0 for i in order]
         info["history"] = history
         info["num_steps_tracked"] = len(order)
-        info["pruning"] = {"method": "light-cone", "num_gates_total": len(order),
+        info["pruning"] = {"method": self.method, "num_gates_total": len(order),
                            "num_gates_retained": len(kept), "num_gates_pruned": len(order) - len(kept)}
         return info
 
@@ -121,7 +122,7 @@ class _LightConePlan:
                 for i, op in enumerate(self.operations) if isinstance(op, PauliRotation)]
 
 
-def _plan_forward(state, operations, system_size, backend_name, trunc_val):
+def _validated_support(state, operations, system_size, backend_name, trunc_val):
     if not math.isfinite(trunc_val) or trunc_val < 0:
         raise ValueError("trunc_val must be finite and nonnegative.")
     if backend_name == "triton" and state._storage.grad is not None:
@@ -135,15 +136,69 @@ def _plan_forward(state, operations, system_size, backend_name, trunc_val):
         raise ValueError("Input observable acts outside the physical circuit.")
     if system_size is not None and storage_size and system_size > storage_size:
         raise ValueError("Physical circuit exceeds the input state's packed width or physical size.")
-    operations = tuple(operations)
     _validate_operations(operations, system_size, storage_size, backend_name)
+    return support
+
+
+def _retained_indices(operations, support, start=0, stop=None):
     retained = []
-    for i in range(len(operations) - 1, -1, -1):
+    stop = len(operations) if stop is None else stop
+    for i in range(stop - 1, start - 1, -1):
         qubits = get_operation_qubits(operations[i])
         if not support.isdisjoint(qubits):
             retained.append(i)
             support.update(qubits)
-    return _LightConePlan(operations, system_size, tuple(reversed(retained)))
+    return tuple(reversed(retained))
+
+
+def _plan_forward(state, operations, system_size, backend_name, trunc_val):
+    operations = tuple(operations)
+    support = _validated_support(state, operations, system_size, backend_name, trunc_val)
+    return _LightConePlan(operations, system_size, _retained_indices(operations, support))
+
+
+class _BarrierPruning:
+    """One forward traversal, planning each block from its current primal state.
+
+    Validate the full circuit before execution. Empty blocks and other skipped
+    operations do not trigger scans. Original indices form one backward record.
+    """
+
+    def __init__(self, state, operations, system_size, backend_name, trunc_val):
+        self.operations = tuple(operations)
+        self.system_size = system_size
+        self.backend_name = backend_name
+        self.initial_support = _validated_support(
+            state, self.operations, system_size, backend_name, trunc_val,
+        )
+        self.blocks = []
+        start = 0
+        has_gate = False
+        for i, op in enumerate(self.operations):
+            if isinstance(op, SkippedOperation) and op.gate_name in ("barrier", "OpType.Barrier"):
+                if has_gate:
+                    self.blocks.append((start, i))
+                start, has_gate = i + 1, False
+            elif not isinstance(op, SkippedOperation):
+                has_gate = True
+        if has_gate:
+            self.blocks.append((start, len(self.operations)))
+        self.retained = []
+
+    def iter_operations(self, get_state):
+        # The callback observes the runner's latest state on functional backends
+        # as well as Triton's persistent in-place storage.
+        for block_index, (start, stop) in enumerate(reversed(self.blocks)):
+            support = (self.initial_support.copy() if block_index == 0 else
+                       _support(get_state(), self.backend_name)[0])
+            indices = _retained_indices(self.operations, support, start, stop)
+            self.retained.extend(reversed(indices))
+            for i in reversed(indices):
+                yield i, self.operations[i]
+
+    def record(self):
+        return _LightConePlan(self.operations, self.system_size,
+                              tuple(reversed(self.retained)), "light-cone-barrier")
 
 
 def _finish_record(result, source, record, backend_name, *, in_place=False):

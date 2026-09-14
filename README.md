@@ -136,75 +136,24 @@ print("tracked truncation steps:", info["num_steps_tracked"])
 
 ## Light-cone pruning
 
-For local observables, opt into geometric light-cone pruning:
+For local observables, use `pruning="light-cone"` to plan once or
+`pruning="light-cone-barrier"` to refresh support between circuit barriers:
 
 ```python
 final_spo, info = spd.evolve(
     initial_spo, circ, trunc_val, max_num_str,
-    pruning="light-cone",
-)
-print(info["pruning"])  # total, retained, and pruned gate counts
-
-initial_spgo = spd.init_gradient_spo(final_spo, basis="0")
-final_spgo, gate_grads, backward_info = spd.backpropagate(
-    initial_spgo, circ, trunc_val, max_num_str,
+    pruning="light-cone-barrier", progress=False,
 )
 ```
 
-Planning happens once per forward call, from the actual input SPO. Gates outside
-its reverse causal cone are completely skipped. Fixed-depth nearest-neighbor
-brickwork circuits and local observables are the main use case. Physical qubit
-numbering and packed storage widths stay unchanged. `pruning=None` is the default;
-`"light-cone"` is currently the only supported method.
+The default is no pruning. Without barriers, both modes use one plan. The result
+carries one combined record through `init_gradient_spo`, so `backpropagate` uses
+the full original circuit and replays exactly the retained forward gates.
+Skipped gates perform no truncation or capping. Both modes work across all three
+backends and in Triton's `evolve_step`.
 
-For a fixed multi-step evolution, a single whole-circuit call scans only the
-initial observable. For example, with a `CircuitIR` layer:
-
-```python
-from spd.circuit_ir import CircuitIR
-
-full_circuit = CircuitIR(layer.system_size, layer.operations * 28)
-final_spo, info = spd.evolve(
-    initial_spo, full_circuit, trunc_val, max_num_str,
-    pruning="light-cone", progress=False,
-)
-```
-
-Calling `evolve` separately for each step rebuilds the plan from each evolving
-SPO. On Triton, support is reduced on the GPU and only the packed support mask
-and a validity flag are copied to the host. The scan still grows with the input
-term count; it avoids transferring the full state.
-Use separate calls when intermediate results are needed, or when rebuilding
-cones from truncated states saves enough gate work to justify the scans. Measure
-which approach helps the workload. A whole-circuit cone can retain more gates than
-per-step cones seeded from truncated states; cheap planning alone does not
-promise a speedup for a deep circuit whose cone fills the system. The
-[12×12 per-step benchmark](benchmarks/light_cone/monoprop_gpu_support_12x12/README.md)
-measured 2.17× speedup with GPU support reduction; whole-circuit pruning retained
-more late gates on that workload.
-
-The forward result carries its internal plan through `init_gradient_spo`.
-Backward automatically follows that plan and requires the same circuit, including
-angles. Omitted rotation gradients are zero in their original slots, so
-`VariationalCircuit.parameter_gradients` still works. The returned SPGO is the
-backward result for the **reduced circuit**; its adjoint coefficients need not
-match an unpruned run. With truncation/caps, forward and backward use the retained
-operations' numerical policy. History keeps the original executable-gate slots,
-with zero truncation entries for omitted gates.
-
-Skipping is exact at the circuit-algebra level, but skipped rotations do not
-apply a cutoff or term cap. An initially sub-threshold coefficient can therefore
-survive if every gate is pruned. There is no initial cleanup pass. When all gates
-are pruned, the mathematical operator is unchanged.
-
-Use the unmodified forward result with the public gradient initializer. The
-record describes one forward call, not arbitrary subsequent algebra or manual
-array edits. Another `evolve` call replaces the record and derives a new cone
-from its input; this handles growing support during stepwise evolution. Triton's
-`evolve_step(..., pruning="light-cone")` also supports the feature, accepting a
-`CircuitIR` or an operation sequence. Use the same circuit representation in the
-matching backward call. Pruned noise analysis is not yet supported and raises
-`NotImplementedError`.
+See [pruning behavior and usage](docs/pruning.md) and the
+[benchmark note](benchmarks/light_cone/README.md).
 
 ## Forward + Backward Example
 

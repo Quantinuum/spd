@@ -395,7 +395,7 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
     from ..circuit_ir import (PauliRotation, SkippedOperation,
                               SingleQubitClifford, TwoQubitClifford)
     from ..circuit_ir import CircuitIR
-    from ..pruning import _validate_method, _plan_forward, _finish_record
+    from ..pruning import _validate_method, _plan_forward, _finish_record, _BarrierPruning
     _validate_method(pruning)
     system_size = operations.system_size if isinstance(operations, CircuitIR) else None
     operations = tuple(operations.operations if isinstance(operations, CircuitIR) else operations)
@@ -412,21 +412,29 @@ def evolve_step_persistent(state, operations, trunc_val=0., max_num_str=None,
         if isinstance(op, PauliRotation) and not math.isfinite(op.theta):
             raise ValueError('theta must be finite')
     plan = None
+    schedule = None
     if pruning is not None:
         if not isinstance(state, SparsePauliOp) or isinstance(state, SparsePauliGradientOp):
             raise TypeError("Forward evolution requires a SparsePauliOp")
-        plan = _plan_forward(state, operations, system_size, "triton", trunc_val)
-        operations = plan.retained_operations
+        if pruning == "light-cone-barrier":
+            schedule = _BarrierPruning(state, operations, system_size, "triton", trunc_val)
+        else:
+            plan = _plan_forward(state, operations, system_size, "triton", trunc_val)
+            operations = plan.retained_operations
     if all(isinstance(op, SkippedOperation) for op in operations):
         if stats is not None:
             stats.update(rebuilds=0, compactions=0, growths=0)
-        return _finish_record(state, state, plan, "triton")
+        return _finish_record(state, state, schedule.record() if schedule else plan, "triton")
     if not isinstance(state, SparsePauliOp) or isinstance(state, SparsePauliGradientOp):
         raise TypeError("Forward evolution requires a SparsePauliOp")
     result = state.copy()
     result._storage.dead_fraction = dead_fraction
-    for op in reversed(operations):
+    execution = (reversed(operations) if schedule is None else
+                 (op for _, op in schedule.iter_operations(lambda: result)))
+    for op in execution:
         result.apply_in_place(op, trunc_val, max_num_str, diagnostics=False)
+    if schedule is not None:
+        plan = schedule.record()
     result.compact()
     if stats is not None:
         storage = result._storage

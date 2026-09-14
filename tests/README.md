@@ -135,3 +135,9 @@ histograms, complex multiword phases, rebase, and abstract/export checks.
 
 Validation: **1,077 passed, 1 expected failure**; new GPU memory checks:
 **77 passed, 0 errors**. See the [milestone report](../spd/triton_backend/MILESTONE4.md).
+
+
+`test_barrier_pruning.py` covers barrier refresh across NumPy, JAX and Triton:
+explicit block references, binding caps and thresholds, original history and
+gradient slots, combined backward replay, frontend barriers, shared-parameter
+finite differences, validation before in-place mutation, and copy/pickle records.

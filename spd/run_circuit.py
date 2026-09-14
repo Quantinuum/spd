@@ -14,7 +14,7 @@ import numpy as np
 import psutil
 
 from .backend_adapter import BackendAdapter
-from .pruning import _validate_method, _plan_forward, _finish_record
+from .pruning import _validate_method, _plan_forward, _finish_record, _BarrierPruning
 from .circuit_ir import (
     CircuitIR,
     PauliRotation,
@@ -257,7 +257,8 @@ def _print_progress(
     )
 
 
-def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progress=True):
+def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progress=True,
+                        pruning_schedule=None):
     """Run operations with shared timing, size, weight, and progress reporting."""
     total_num_gate = len(operations)
     initial_weight = state.get_norm_square() if progress else None
@@ -265,7 +266,10 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progre
     last_stats = None
     history = _init_history()
 
-    for command_idx, operation in enumerate(operations):
+    execution = (enumerate(operations) if pruning_schedule is None else
+                 ((total_num_gate - 1 - i, op)
+                  for i, op in pruning_schedule.iter_operations(lambda: state)))
+    for command_idx, operation in execution:
         t0 = time.time()
         state, num_string, extra, step_info = apply_fn(state, operation)
         if step_info is not None:
@@ -311,7 +315,7 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progre
             last_stats["weight_left"],
             last_stats["current_row_size"],
             last_stats["ose"],
-            last_stats["command_idx"],
+            last_stats["command_idx"] if pruning_schedule is None else total_num_gate - 1,
             total_num_gate,
             last_stats["step_time"],
             total_start_time,
@@ -377,6 +381,9 @@ def evolve(
     """Propagate an SPO forward; progress=False skips reporting reductions.
 
     pruning="light-cone" builds a cone from this input SPO once per call.
+    pruning="light-cone-barrier" refreshes from the current SPO before each
+    nonempty barrier-delimited block, in reverse circuit order. With no barriers
+    it uses one plan. All blocks share one forward record for backward.
     One complete-circuit call scans only the initial SPO. Repeated calls scan
     each evolving SPO but can find tighter cones after truncation. Triton reduces
     support on GPU and transfers only the compact mask to the host.
@@ -408,10 +415,12 @@ def evolve(
     )
 
     plan = None
-    if pruning is not None:
-        plan = _plan_forward(spo, operations,
-                             normalized_circuit.system_size if isinstance(normalized_circuit, CircuitIR) else None,
-                             backend.name, trunc_val)
+    schedule = None
+    system_size = normalized_circuit.system_size if isinstance(normalized_circuit, CircuitIR) else None
+    if pruning == "light-cone-barrier":
+        schedule = _BarrierPruning(spo, operations, system_size, backend.name, trunc_val)
+    elif pruning is not None:
+        plan = _plan_forward(spo, operations, system_size, backend.name, trunc_val)
         operations = plan.retained_operations
 
     if backend.name == "triton":
@@ -425,10 +434,13 @@ def evolve(
 
     final_spo, _, _, info = _run_operation_loop(
         operations[::-1], loop_state, apply_forward, total_start_time, progress=progress,
+        pruning_schedule=schedule,
     )
     if backend.name == "triton" and not in_place and final_spo is not spo:
         final_spo = final_spo.compact()
 
+    if schedule is not None:
+        plan = schedule.record()
     if plan is not None:
         info = plan.align_info(info, reverse=True)
     final_spo = _finish_record(final_spo, spo, plan, backend.name, in_place=in_place)

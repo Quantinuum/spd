@@ -263,6 +263,8 @@ def evolve_step(spo, operations, trunc_val=0., max_num_str=None, *, pruning=None
 
     Accepts a CircuitIR or operation sequence. Each call derives support from
     its input SPO; the returned state carries the plan for public backward use.
+    pruning="light-cone-barrier" refreshes support between barrier-delimited
+    blocks without intermediate copies or materialization, retaining one record.
     """
     from .persistent import evolve_step_persistent
     from ..circuit_ir import CircuitIR
