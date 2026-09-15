@@ -91,8 +91,8 @@ if __name__ == "__main__":
     system_size = 40
     operations = tfi_trotter_circuit(
         system_size,
-        total_time=1.0,
-        num_steps=2,
+        total_time=2.0,
+        num_steps=10,
         coupling=1.0,
         field=0.7,
         )
@@ -135,5 +135,35 @@ if __name__ == "__main__":
         print(noise_name)
         for index, susceptibility in enumerate(susceptibilities):
             if susceptibility != 0:
-                print(index, float(susceptibility))
+                print("gate idx:", index, "susceptibility:", float(susceptibility))
         print("total:", float(sum(susceptibilities)))
+
+
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+    single_qubit_noises_susceptibilities = np.array(noise_grads['one_qubit_depolarizing']).reshape(-1, system_size)[0::2, :]
+    two_qubit_noises_susceptibilities = np.array(noise_grads['two_qubit_depolarizing']).reshape(-1, system_size)[1::2, :]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].imshow(single_qubit_noises_susceptibilities, cmap='viridis', aspect='auto')
+    axes[0].set_xlabel("Qubit index")
+    axes[0].set_ylabel("time step")
+    axes[0].set_title("Single-qubit depolarizing noise susceptibility")
+    axes[1].plot(np.sum(two_qubit_noises_susceptibilities, axis=1))
+    plt.xlabel("time step")
+    plt.ylabel("Total two-qubit depolarizing noise susceptibility (spatial sum)")
+    plt.title("Total two-qubit depolarizing noise susceptibility per time slice")
+    plt.show()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].imshow(two_qubit_noises_susceptibilities, cmap='viridis', aspect='auto')
+    axes[0].set_xlabel("Qubit index")
+    axes[0].set_ylabel("time step")
+    axes[0].set_title("Two-qubit depolarizing noise susceptibility")
+    axes[1].plot(np.sum(two_qubit_noises_susceptibilities, axis=1))
+    plt.xlabel("time step")
+    plt.ylabel("Total two-qubit depolarizing noise susceptibility (spatial sum)")
+    plt.title("Total two-qubit depolarizing noise susceptibility per time slice")
+    plt.show()
+
