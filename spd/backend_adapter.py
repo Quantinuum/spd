@@ -166,6 +166,18 @@ class BackendAdapter:
                 "Choose backend_name='numpy' explicitly; execution never falls back to another backend."
             )
 
+    def create_checkpoint_backend(self, state):
+        """Capture backend size/transfer helpers once, without retaining state."""
+        factory = getattr(self.module, "create_checkpoint_backend", None)
+        if factory is not None:
+            return factory(state)
+        if self.name == "numpy":
+            from .checkpoints import CheckpointBackend
+            return CheckpointBackend(size=self.module.checkpoint_size)
+        raise NotImplementedError(
+            f"Backend '{self.name}' must implement create_checkpoint_backend for channel snapshots."
+        )
+
     def reindex_spo(self, spo, num_qubits, columns):
         self.require_channel_support()
         return self.module.reindex_spo(spo, num_qubits, columns)

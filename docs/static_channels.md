@@ -42,7 +42,7 @@ CircuitIR → run_circuit → BackendAdapter → selected backend kernels
 | Backend capability checks and dispatch | `spd/backend_adapter.py` |
 | NumPy channel transformations and coefficient-gradient transposes | `spd/numpy_backend/kernels.py` |
 | SPO active-index metadata and validation | `spd/core/sparse_pauli.py` |
-| Disk snapshot storage and temporary-file cleanup | `spd/checkpoints.py` |
+| Snapshot storage in host memory/disk and cleanup | `spd/checkpoints.py` |
 
 The runner uses the common operation loop for unitary and channel operations.
 Backend kernels receive current column positions and logical widths. The runner
@@ -153,15 +153,84 @@ per-gate forward cache. Discard requires no complete-SPO checkpoint. Grouping
 reduces disk writes and intermediate allocations; width and truncation histories
 retain per-instruction entries, while progress displays a group as one step.
 
-Each evaluation owns an isolated temporary directory. Pass
-`checkpoint_directory=path` to `evolve` to choose its parent directory. A tape
-is one-shot and backward requires the same circuit, angles, backend, precision,
-cutoff, and term cap. Forward errors and an entered backward pass clean up owned
-files. Keep the forward result or initialized gradient operator alive until
-backward completes. For expectation-only execution, call
-`spd.close_channel_checkpoints(final)` for immediate cleanup; unreferenced tapes
-also have temporary-directory cleanup. Live tapes are not portable serialized
-executions, and `save_strings=True` is unsupported for this path.
+### Native-object retention and memory budgets
+
+```python
+evolve(
+    observable, circuit, 0., 10000,
+    checkpoint_memory_budget_bytes=4 * 1024**3,          # CPU RAM: 4 GiB
+    checkpoint_device_memory_budget_bytes=1024**3,      # Each GPU: 1 GiB
+)
+```
+
+Budgets are per evaluation. CPU-origin snapshots stay as native objects in CPU
+RAM. Device-origin snapshots stay as native device objects in VRAM. Saving an
+in-budget snapshot retains a reference without serialization, copying, or device
+transfer. NumPy uses only the CPU budget.
+
+```text
+CPU origin:                  CPU object → serialize to disk
+GPU origin: device object → CPU object → serialize to disk
+```
+
+Each memory tier evicts its oldest arrival when space is needed. Device eviction
+converts the complete snapshot to a CPU representation; CPU eviction serializes
+that representation directly to disk. A snapshot larger than a tier's budget
+bypasses that tier without evicting its smaller resident snapshots. Zero disables
+retention in the selected tier; an exact fit remains resident. Inspection does
+not change eviction order.
+
+The CPU budget counts estimated resident object storage, including NumPy SPO
+dictionaries, keys, scalar coefficients, and metadata. Shared objects are counted
+once within a snapshot and conservatively counted again across snapshots.
+Device budgets count retained allocations independently for each device. These
+are retention limits, not total process/device memory limits: live operators,
+restored snapshots, transfer/serialization buffers, and allocator reservations
+are outside the budgets. Concurrent evaluations have independent budgets.
+
+Snapshots are read-only while retained. The NumPy execution path constructs a
+new operator at contractions and does not mutate saved coefficients or metadata
+in subsequent forward/backward operations. Code using the internal store must
+respect the same ownership contract; retaining a reference does not protect it
+from arbitrary external mutation.
+
+Disk storage uses an isolated temporary directory created only on the first
+spill. `checkpoint_directory=path` chooses its parent. Backward uses `take(key)`
+to consume just the required snapshot, removing its cache entry and any disk
+file. Native snapshots are used directly; host or disk snapshots are restored to
+the original device as necessary. Consumed objects are never promoted back into
+the cache. Internal `load(key)` supports non-consuming, read-only inspection.
+
+A tape is one-shot and backward requires the same circuit, angles, backend,
+precision, cutoff, and term cap. Budgets do not affect this matching requirement.
+Forward, transfer, serialization, and restoration errors clean up owned storage;
+an entered backward pass also closes its tape on completion or failure. Keep
+the forward result or initialized gradient operator alive until backward ends.
+For expectation-only execution, call `spd.close_channel_checkpoints(final)` for
+immediate cleanup. Abandoned tapes release references and have temporary-directory
+cleanup. Live tapes are not portable serialized executions; `save_strings=True`
+is unsupported.
+
+### Backend size and transfer helpers
+
+`CheckpointStore` owns retention, eviction, and disk serialization. A small
+`CheckpointBackend` bundle supplies backend-specific operations:
+
+- `size(state)`: estimate resident bytes for a native or host representation.
+- `device_of(state)`: return a device identifier, or `None` for CPU.
+- `to_host(state)`: transfer a complete device snapshot into host storage.
+- `from_host(state, device)`: restore it to the original device.
+
+NumPy supplies `checkpoint_size`; its host conversions are identity operations.
+Future device backends export `create_checkpoint_backend(state)` to capture
+restoration context once per evaluation, without retaining the input snapshot.
+Transfers must preserve coefficients, Pauli rows, precision, and active-index
+metadata and finish before the original device reference is released. Helpers
+must not mutate inputs or retain hidden snapshot references.
+
+The generic device-tier policy is tested with a simulated backend. Actual
+JAX/Triton channel execution and their transfer helpers remain unimplemented.
+Disk encoding uses pickle on CPU representations only.
 
 ## Rotation parameters and units
 
@@ -223,7 +292,7 @@ From the repository root:
 
 ```sh
 python -m examples.functionality.static_channels
-JAX_PLATFORMS=cpu python -m pytest -q tests/test_static_channels.py tests/test_create_spo.py tests/test_circuit_ir.py tests/test_variational_circuit.py
+JAX_PLATFORMS=cpu python -m pytest -q tests/test_checkpoints.py tests/test_static_channels.py tests/test_create_spo.py tests/test_circuit_ir.py tests/test_variational_circuit.py
 JAX_PLATFORMS=cpu python -m pytest -q tests
 ```
 
@@ -240,5 +309,5 @@ expectation and derivative assertions verify the result.
 Focused tests compare against independent dense calculations and finite
 differences. They cover activity validation, output mappings, entanglement,
 shared parameters, cancellation, killed terms affecting earlier gradients,
-multiple disk checkpoints, barrier-separated contraction groups, packed-width
-boundaries, cleanup, and approximation behavior.
+memory/disk/mixed checkpoint storage, barrier-separated contraction groups,
+packed-width boundaries, native ownership, simulated device transfers, cleanup, and approximation behavior.

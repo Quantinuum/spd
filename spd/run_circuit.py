@@ -17,6 +17,8 @@ import numpy as np
 import psutil
 
 from .backend_adapter import BackendAdapter
+from .checkpoints import (CheckpointStore, DEFAULT_CHECKPOINT_MEMORY_BUDGET_BYTES,
+                          DEFAULT_CHECKPOINT_DEVICE_MEMORY_BUDGET_BYTES)
 from .pruning import _validate_method, _plan_forward, _finish_record, _BarrierPruning
 from .circuit_ir import (
     CircuitIR, CHANNEL_TYPES, CreateZero, ResetZero, Discard,
@@ -151,7 +153,7 @@ def _apply_channel_forward(state, operation, backend, checkpoints, trunc_val, ma
 
 def _apply_channel_backward(state, operation, backend, checkpoints, trunc_val, max_num_str):
     if isinstance(operation, _ContractionGroup):
-        original = checkpoints.load(operation.checkpoint_key)
+        original = checkpoints.take(operation.checkpoint_key)
         active = original.qubit_indices
         columns, removed = _contraction_columns(operation, active)
         result = backend.apply_zero_contractions_backward(state, original, columns, removed)
@@ -168,7 +170,7 @@ def _apply_channel_backward(state, operation, backend, checkpoints, trunc_val, m
 
 
 def close_channel_checkpoints(state):
-    """Release an evaluation's disk checkpoints when backward is not needed."""
+    """Release an evaluation's checkpoints when backward is not needed."""
     checkpoints = getattr(state, "_channel_checkpoints", None)
     if checkpoints is not None:
         checkpoints.close()
@@ -555,14 +557,20 @@ def evolve(
     in_place=False,
     pruning=None,
     checkpoint_directory=None,
+    checkpoint_memory_budget_bytes=DEFAULT_CHECKPOINT_MEMORY_BUDGET_BYTES,
+    checkpoint_device_memory_budget_bytes=DEFAULT_CHECKPOINT_DEVICE_MEMORY_BUDGET_BYTES,
 ):
     """Propagate an observable in reverse circuit order.
 
     All operations dispatch to the selected backend. Unsupported channel
     backends fail before execution, without CPU fallback. Independent creation/
     reset operations separated only by barriers share one complete checkpoint.
-    Execution owns its temporary directory (under checkpoint_directory, if set).
-    Backward consumes it; expectation-only callers use close_channel_checkpoints.
+    Execution retains native snapshots within checkpoint_memory_budget_bytes
+    (CPU, default 4 GiB) and checkpoint_device_memory_budget_bytes (per device,
+    default 1 GiB). Oldest snapshots move device -> host -> disk as needed;
+    serialization happens only on disk spill under checkpoint_directory. Zero
+    bypasses retention in that tier. Budgets exclude live states and buffers.
+    Backward consumes snapshots; expectation-only callers close them explicitly.
     Channels are exact; unitary segments retain existing SPD approximation rules.
     info["active_widths"] reports the initial width and each original reverse step.
 
@@ -622,12 +630,13 @@ def evolve(
     checkpoints = None
     active_widths = None
     if channel_circuit is not None:
-        from .checkpoints import CheckpointStore
         loop_state = _prepare_channel_observable(spo, channel_circuit, backend)
         operations = _group_contractions(channel_circuit.operations)
         checkpoints = CheckpointStore(
             _checkpoint_signature(channel_circuit, backend, trunc_val, max_num_str),
-            checkpoint_directory)
+            checkpoint_directory, memory_budget_bytes=checkpoint_memory_budget_bytes,
+            device_memory_budget_bytes=checkpoint_device_memory_budget_bytes,
+            backend=backend.create_checkpoint_backend(loop_state))
         active_widths = [len(loop_state.qubit_indices)]
 
         def apply_forward(state, operation):

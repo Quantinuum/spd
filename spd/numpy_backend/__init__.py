@@ -79,3 +79,5 @@ __all__ = [
     "set_precision",
     "utils",
 ]
+
+from .sparse_pauli import checkpoint_size

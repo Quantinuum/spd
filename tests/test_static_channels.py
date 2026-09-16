@@ -166,8 +166,8 @@ def test_disk_round_trips_isolation_and_cleanup(tmp_path, monkeypatch):
     c = spd.CircuitIR(2, [spd.CreateZero(1), Rot('Ry', 'IY', .4), spd.ResetZero(0),
                          Rot('Rx', 'XI', .2), spd.ResetZero(1)])
     o = spd.create_spo({'ZZ': 1.}, backend_name='numpy', precision='double')
-    a, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path)
-    b, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path)
+    a, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
+    b, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
     ta, tb = a._channel_checkpoints, b._channel_checkpoints
     assert ta.directory != tb.directory
     assert len(list(ta.directory.glob('*.pickle'))) == 3
@@ -378,7 +378,8 @@ def test_unitary_truncation_remains_a_gradient_approximation():
     assert evaluate(c, {'ZI': 1.})[1][0] == pytest.approx(-np.sin(.01))
 
 
-def test_cleanup_on_execution_errors(tmp_path, monkeypatch):
+@pytest.mark.parametrize('budget', [0, 512 * 1024**2])
+def test_cleanup_on_execution_errors(tmp_path, monkeypatch, budget):
     c = spd.CircuitIR(1, [Rot('Ry', 'Y', .1), spd.ResetZero(0)])
     o = spd.create_spo({'Z': 1.}, backend_name='numpy')
     from spd.backend_adapter import BackendAdapter
@@ -387,9 +388,9 @@ def test_cleanup_on_execution_errors(tmp_path, monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(BackendAdapter, 'apply_forward', fail)
         with pytest.raises(RuntimeError, match='injected'):
-            spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path)
+            spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=budget)
     assert list(tmp_path.iterdir()) == []
-    f, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path)
+    f, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=budget)
     with monkeypatch.context() as patch:
         patch.setattr(BackendAdapter, 'apply_backward', fail)
         with pytest.raises(RuntimeError, match='injected'):
@@ -436,7 +437,7 @@ def test_barrier_separated_creations_use_one_complete_checkpoint(tmp_path, monke
                          *barriers, Rot('Ry', 'YI', angles[0]), Rot('Ry', 'IY', angles[1])])
     obs = {'II': 1., 'ZZ': -1., 'XI': .7, 'YX': .2, 'IX': -.3}
     o = spd.create_spo(obs, backend_name='numpy', precision='double')
-    f, info = spd.evolve(o, c, 0., 1000, progress=False, checkpoint_directory=tmp_path)
+    f, info = spd.evolve(o, c, 0., 1000, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
     tape = f._channel_checkpoints
     assert [p.name for p in tape.directory.glob('*.pickle')] == ['2.pickle']
     original = tape.load(2)
@@ -468,7 +469,7 @@ def test_grouping_stops_at_gates_and_repeated_indices(tmp_path):
     assert [len(op.contractions) for op in groups] == [2, 1, 1]
     assert [op.checkpoint_key for op in groups] == [0, 4, 6]
     obs = {'XIZ': 1., 'IZZ': .7, 'IYI': .3}
-    value, gradients, *_ = evaluate(c, obs, checkpoint_directory=tmp_path)
+    value, gradients, *_ = evaluate(c, obs, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
     assert value == pytest.approx(dense(c, obs), abs=1e-12)
     assert gradients.size == 0
     assert list(tmp_path.iterdir()) == []
@@ -477,7 +478,7 @@ def test_grouping_stops_at_gates_and_repeated_indices(tmp_path):
 def test_large_creation_batch_has_one_checkpoint(tmp_path, monkeypatch):
     c = spd.CircuitIR(33, [spd.CreateZero(i) for i in range(33)])
     o = spd.create_spo({'Z' * 33: 1.}, backend_name='numpy')
-    f, info = spd.evolve(o, c, 0., 100, progress=False, checkpoint_directory=tmp_path)
+    f, info = spd.evolve(o, c, 0., 100, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
     tape = f._channel_checkpoints
     assert len(list(tape.directory.glob('*.pickle'))) == 1
     assert len(next(iter(tape.load(0)))) == 4
@@ -505,7 +506,7 @@ def test_backend_channel_capability_preflight(all_backend, tmp_path, monkeypatch
     for channel in [spd.CreateZero(0), spd.ResetZero(0), spd.Discard(0)]:
         c = spd.CircuitIR(2, [One('OpType.H', 1), channel, One('OpType.H', 1)])
         with pytest.raises(NotImplementedError, match=f"backend '{name}'"):
-            spd.evolve(o, c, 0., 100, backend=adapter, checkpoint_directory=tmp_path)
+            spd.evolve(o, c, 0., 100, backend=adapter, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
         with pytest.raises(NotImplementedError, match=f"backend '{name}'"):
             spd.backpropagate(g, c, 0., 100, backend=adapter)
     assert list(tmp_path.iterdir()) == []
@@ -559,7 +560,7 @@ def test_mixed_creation_reset_group_with_shared_parameter(tmp_path):
     c = circuit(.41)
     obs = {'ZIZZ': .6, 'IIXI': 1., 'IIIY': .4, 'ZIII': .1}
     o = spd.create_spo(obs, backend_name='numpy', precision='double')
-    f, _ = spd.evolve(o, c, 0., 1000, progress=False, checkpoint_directory=tmp_path)
+    f, _ = spd.evolve(o, c, 0., 1000, progress=False, checkpoint_directory=tmp_path, checkpoint_memory_budget_bytes=0)
     tape = f._channel_checkpoints
     assert [p.name for p in tape.directory.glob('*.pickle')] == ['2.pickle']
     assert f.active_qubits == [0, 1]  # Resets retain their columns; creations do not.
@@ -571,3 +572,91 @@ def test_mixed_creation_reset_group_with_shared_parameter(tmp_path):
     assert variational.parameter_gradients(gradients)[0] == pytest.approx(reference, abs=1e-9)
     assert gradients[0] == pytest.approx(0., abs=1e-12)
     assert not tape.directory.exists()
+
+
+def test_checkpoint_storage_policies_match_dense_gradients(tmp_path, monkeypatch):
+    c = spd.CircuitIR(2, [spd.CreateZero(1), Rot('Ry', 'IY', .4), spd.ResetZero(0),
+                         Rot('Rx', 'XI', .2), spd.ResetZero(1), Rot('Ry', 'IY', .3)])
+    obs = {'ZZ': 1., 'XI': .2, 'IZ': -.3}
+    o = spd.create_spo(obs, backend_name='numpy', precision='double')
+    expected_gradient = finite_differences(c, obs)
+    released = []
+    take = CheckpointStore.take
+
+    def record_take(self, key):
+        result = take(self, key)
+        assert key not in self._snapshots
+        released.append(key)
+        return result
+
+    monkeypatch.setattr(CheckpointStore, 'take', record_take)
+    mixed_budget = None
+    for policy in ('memory', 'disk', 'mixed'):
+        budget = {'memory': 512 * 1024**2, 'disk': 0, 'mixed': mixed_budget}[policy]
+        f, _ = spd.evolve(o, c, 0, 100, progress=False, checkpoint_directory=tmp_path,
+                          checkpoint_memory_budget_bytes=budget)
+        tape = f._channel_checkpoints
+        if policy == 'memory':
+            assert tape.directory is None
+            assert len(tape._snapshots) == 3
+            mixed_budget = max(entry.size for entry in tape._snapshots.values())
+        elif policy == 'disk':
+            assert tape.memory_bytes == 0
+            assert len(list(tape.directory.iterdir())) == 3
+        else:
+            assert 0 < tape.memory_bytes <= budget
+            assert 0 < len(list(tape.directory.iterdir())) < 3
+        assert f.get_expectation_value() == pytest.approx(dense(c, obs), abs=1e-12)
+        _, gradients, _ = spd.backpropagate(spd.init_gradient_spo(f), c, 0, 100, progress=False)
+        np.testing.assert_allclose(gradients, expected_gradient, atol=1e-9)
+        assert released[-3:] == [0, 2, 4]
+        assert tape.closed and tape.memory_bytes == 0 and not tape._snapshots
+        assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize('budget', [0, 4 * 1024**3])
+def test_retained_snapshots_are_not_mutated(tmp_path, monkeypatch, budget):
+    c = spd.CircuitIR(3, [spd.CreateZero(2), Rot('Ry', 'IIY', .3),
+                         spd.ResetZero(0), spd.CreateZero(1), SkippedOperation('OpType.Barrier'),
+                         Rot('Ry', 'YII', .4), Two('OpType.CX', 0, 2), spd.ResetZero(2),
+                         Rot('Rx', 'IIX', .2)])
+    obs = {'ZZZ': 1., 'XYZ': .2, 'III': -.3}
+    saved = []
+    save = CheckpointStore.save
+
+    def record(self, key, state):
+        saved.append((state, dict(state), list(state.qubit_indices), state.system_size))
+        save(self, key, state)
+        if budget:
+            assert self._snapshots[key].value is state
+
+    monkeypatch.setattr(CheckpointStore, 'save', record)
+    value, gradients, *_ = evaluate(c, obs, checkpoint_directory=tmp_path,
+                                     checkpoint_memory_budget_bytes=budget)
+    assert len(saved) == 3  # Independent reset/creation share their boundary.
+    for state, coefficients, active, system_size in saved:
+        assert dict(state) == coefficients
+        assert state.qubit_indices == active and state.system_size == system_size
+    assert value == pytest.approx(dense(c, obs), abs=1e-12)
+    np.testing.assert_allclose(gradients, finite_differences(c, obs), atol=1e-9)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_backend_checkpoint_helpers_are_created_once(monkeypatch):
+    from spd.checkpoints import CheckpointBackend
+    from spd.numpy_backend.sparse_pauli import checkpoint_size
+    c = spd.CircuitIR(1, [spd.CreateZero(0), Rot('Ry', 'Y', .4)])
+    o = spd.create_spo({'Z': 1.}, backend_name='numpy', precision='double')
+    backend = spd.BackendAdapter.from_name('numpy', precision='double')
+    calls = []
+
+    def factory(state):
+        calls.append(tuple(state.qubit_indices))
+        return CheckpointBackend(checkpoint_size)
+
+    monkeypatch.setattr(backend.module, 'create_checkpoint_backend', factory, raising=False)
+    f, _ = spd.evolve(o, c, 0, 100, backend=backend, progress=False)
+    _, gradients, _ = spd.backpropagate(spd.init_gradient_spo(f), c, 0, 100,
+                                        backend=backend, progress=False)
+    assert calls == [(0,)]
+    np.testing.assert_allclose(gradients, [-np.sin(.4)], atol=1e-12)

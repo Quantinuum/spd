@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 
 from ..core import BaseSparsePauliGradientOp, BaseSparsePauliOp
@@ -239,3 +241,34 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
 
     def __rmul__(self, scalar):
         return self * scalar
+
+
+def checkpoint_size(state):
+    """Estimate retained Python/NumPy storage without serializing or copying.
+
+    Count shared objects once within this snapshot, including array backing
+    storage and SPO metadata. Shared objects across snapshots are conservatively
+    charged to each snapshot.
+    """
+    seen = set()
+
+    def size(obj):
+        if id(obj) in seen:
+            return 0
+        seen.add(id(obj))
+        total = sys.getsizeof(obj)
+        if isinstance(obj, np.ndarray):
+            # Owning arrays include their allocation in getsizeof; views do not.
+            if obj.base is not None:
+                total += size(obj.base)
+            if obj.dtype.hasobject:
+                total += sum(size(value) for value in obj.flat)
+        elif isinstance(obj, dict):
+            total += sum(size(key) + size(value) for key, value in obj.items())
+        elif isinstance(obj, (tuple, list)):
+            total += sum(size(value) for value in obj)
+        if hasattr(obj, '__dict__'):
+            total += size(vars(obj))
+        return total
+
+    return size(state)
