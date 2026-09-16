@@ -38,7 +38,7 @@ def build_index(keys, table, n, table_mask, W: tl.constexpr, B: tl.constexpr):
 def rotate(keys, coeff, table, gate, scalars, out_keys, out_coeff, count,
            n, table_mask, W: tl.constexpr, B: tl.constexpr,
            grad=None, out_grad=None, stats=None, BACKWARD: tl.constexpr = False,
-           DIAGNOSTICS: tl.constexpr = False):
+           DIAGNOSTICS: tl.constexpr = False, KEEP_ZERO: tl.constexpr = False):
     i = tl.program_id(0) * B + tl.arange(0, B)
     live = i < n
     h = tl.full((B,), 0x9e3779b9, tl.uint32)
@@ -97,6 +97,10 @@ def rotate(keys, coeff, table, gate, scalars, out_keys, out_coeff, count,
     else:
         keep_own = live & (tl.abs(own) > cutoff)
         keep_new = missing & (tl.abs(new) > cutoff)
+    if KEEP_ZERO:
+        # Channel pullbacks need coordinates even when their primal cancels.
+        keep_own |= live & (cutoff == 0) & (own == 0)
+        keep_new |= missing & (cutoff == 0) & (new == 0)
     if DIAGNOSTICS:
         removed_own = live & ~keep_own & (own != 0)
         removed_new = missing & ~keep_new & (new != 0)
@@ -182,3 +186,29 @@ def clifford(keys, coeff, out_keys, out_coeff, n, q, r,
     if GRADIENT:
         g = tl.load(grad + i, live, 0)
         tl.store(out_grad + i, tl.where(phase != 0, -g, g), live)
+
+
+@triton.jit
+def channel_columns(keys, output, keep, n, W: tl.constexpr, OUT_W: tl.constexpr,
+                    COLUMNS: tl.constexpr, CHECKED: tl.constexpr,
+                    IDENTITY: tl.constexpr, B: tl.constexpr):
+    """Repack a column map and test I/Z (or I-only) eligibility per row."""
+    row = tl.program_id(0) * B + tl.arange(0, B)
+    valid = row < n
+    eligible = valid
+    for q in tl.static_range(len(CHECKED)):
+        column = tl.constexpr(CHECKED[q])
+        x = tl.load(keys + row.to(tl.int64) * W + column // 32, valid, 0).to(tl.uint32)
+        eligible &= ((x >> (31 - column % 32)) & 1) == 0
+        if IDENTITY:
+            z = tl.load(keys + row.to(tl.int64) * W + W // 2 + column // 32, valid, 0).to(tl.uint32)
+            eligible &= ((z >> (31 - column % 32)) & 1) == 0
+    tl.store(keep + row, eligible, valid)
+    for half in tl.static_range(2):
+        for word in tl.static_range(OUT_W // 2):
+            packed = tl.full((B,), 0, tl.uint32)
+            for q in tl.static_range(len(COLUMNS)):
+                if q // 32 == word and COLUMNS[q] >= 0:
+                    value = tl.load(keys + row.to(tl.int64) * W + half * (W // 2) + COLUMNS[q] // 32, valid, 0).to(tl.uint32)
+                    packed |= ((value >> (31 - COLUMNS[q] % 32)) & 1) << (31 - q % 32)
+            tl.store(output + row.to(tl.int64) * OUT_W + half * (OUT_W // 2) + word, packed, valid)

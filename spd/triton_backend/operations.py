@@ -87,6 +87,7 @@ def _rotation(state, generator, theta, cutoff, cap, backward):
                          n, table_size - 1, width, 128,
                          grad=state.grad_c_array if backward else None,
                          out_grad=out_grad, stats=stats, BACKWARD=backward, DIAGNOSTICS=True,
+                         KEEP_ZERO=state.active_qubits is not None,
                          enable_fp_fusion=False)
         size = count.item()
         out_keys, out_coeff = out_keys[:size], out_coeff[:size]
@@ -119,6 +120,11 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
     Use conjugate_pauli_rotation for the existing state-only fast path.
     This direct API enforces an exact cap; runner cap rounding is separate.
     """
+    # Compact/channel execution retains zero coordinates for later pullbacks.
+    # Use the existing functional kernel, with no per-gate reconstruction tape.
+    if spo.active_qubits is not None:
+        result, size, _, info = _rotation(spo, xzk, theta, trunc_val, max_num_str, False)
+        return result, size, info
     _validate_rotation(spo, theta, trunc_val, max_num_str, False)
     _prepare_gate(spo, xzk, float(theta), float(trunc_val))
     if not spo.get_size():
@@ -130,6 +136,8 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str=None):
 
 def conjugate_pauli_rot_backward(spgo, xzk, theta, trunc_val, max_num_str=None):
     """Reverse both primal/adjoint arrays; return state, count, dL/dtheta, info."""
+    if spgo.active_qubits is not None:
+        return _rotation(spgo, xzk, theta, trunc_val, max_num_str, True)
     _validate_rotation(spgo, theta, trunc_val, max_num_str, True)
     _prepare_gate(spgo, xzk, float(theta), float(trunc_val))
     if not spgo.get_size():

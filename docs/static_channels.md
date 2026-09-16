@@ -1,9 +1,9 @@
 # Fixed-index static channels
 
 SPD supports `CreateZero(i)`, `ResetZero(i)`, and `Discard(i)` in `CircuitIR`.
-NumPy implements expectation evaluation and rotation gradients for these
-operations. JAX and Triton channel execution raises `NotImplementedError`.
-Select `backend_name="numpy"` explicitly when creating a channel observable.
+NumPy and Triton implement expectation evaluation and rotation gradients for
+these operations. JAX channel execution raises `NotImplementedError`. Select
+`backend_name="numpy"` or `backend_name="triton"` when creating a channel observable.
 
 ## Circuit semantics
 
@@ -41,6 +41,7 @@ CircuitIR → run_circuit → BackendAdapter → selected backend kernels
 | Execution order, index translation, contraction grouping, checkpoint lifetime | `spd/run_circuit.py` |
 | Backend capability checks and dispatch | `spd/backend_adapter.py` |
 | NumPy channel transformations and coefficient-gradient transposes | `spd/numpy_backend/kernels.py` |
+| GPU channel transformations and checkpoint transfers | `spd/triton_backend/channels.py`, `spd/triton_backend/kernels.py` |
 | SPO active-index metadata and validation | `spd/core/sparse_pauli.py` |
 | Snapshot storage in host memory/disk and cleanup | `spd/checkpoints.py` |
 
@@ -222,15 +223,25 @@ is unsupported.
 - `from_host(state, device)`: restore it to the original device.
 
 NumPy supplies `checkpoint_size`; its host conversions are identity operations.
-Future device backends export `create_checkpoint_backend(state)` to capture
+Device backends export `create_checkpoint_backend(state)` to capture
 restoration context once per evaluation, without retaining the input snapshot.
 Transfers must preserve coefficients, Pauli rows, precision, and active-index
 metadata and finish before the original device reference is released. Helpers
 must not mutate inputs or retain hidden snapshot references.
 
-The generic device-tier policy is tested with a simulated backend. Actual
-JAX/Triton channel execution and their transfer helpers remain unimplemented.
-Disk encoding uses pickle on CPU representations only.
+Triton repacks columns with a GPU kernel, merges contraction images on the GPU,
+and joins reduced adjoints to checkpoint rows with the existing GPU hash lookup.
+Zero coefficients remain stored at channel boundaries. Compact/channel rotations
+use the existing functional rotation kernel with zero-coordinate retention at
+cutoff zero, preserving exact-cancellation derivatives without per-gate caches. No channel computation
+falls back to the CPU. Device snapshot sizes include retained tensor allocations
+(including spare capacity and execution buffers), deduplicated within a snapshot.
+Eviction copies complete packed rows and coefficients into NumPy arrays without
+compacting or mutating the snapshot; restoration preserves its device, precision,
+and active-index metadata. Only these host representations are pickled on disk.
+
+The generic device-tier policy is tested with a simulated backend and actual
+Triton GPU transfers. JAX channel execution remains unimplemented.
 
 ## Rotation parameters and units
 

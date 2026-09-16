@@ -306,3 +306,14 @@ __all__ = _gate_exports + [
     'get_two_qubit_depolarizing_susceptibility', 'pauli_product_uint',
     'pauli_product_batched_second_uint',
 ]
+
+from .channels import (
+    reindex_spo, contract_zero_forward, contract_zero_backward,
+    insert_identity_forward, insert_identity_backward, create_checkpoint_backend,
+    checkpoint_size,
+)
+__all__ += [
+    'reindex_spo', 'contract_zero_forward', 'contract_zero_backward',
+    'insert_identity_forward', 'insert_identity_backward',
+    'create_checkpoint_backend', 'checkpoint_size',
+]

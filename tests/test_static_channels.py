@@ -10,9 +10,14 @@ from spd.circuit_ir import PauliRotation as Rot, SingleQubitClifford as One, Two
 from spd.checkpoints import CheckpointStore
 
 
-@pytest.fixture(params=["numpy"])
+@pytest.fixture(params=["numpy", "triton"])
 def channel_backend_name(request):
     """Backends implementing native channel kernels; no host fallback."""
+    if request.param == "triton":
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("triton")
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA required")
     return request.param
 
 I = np.eye(2)
@@ -349,7 +354,7 @@ def test_nonzero_angle_exact_cancellation_retains_derivative(channel_backend_nam
 
 
 @pytest.mark.parametrize('seed', range(6))
-def test_random_unitary_segments_against_density_matrix(seed):
+def test_random_unitary_segments_against_density_matrix(seed, channel_backend_name):
     rng = np.random.default_rng(seed)
     def rotation(active):
         p = ['I'] * 3
@@ -360,7 +365,7 @@ def test_random_unitary_segments_against_density_matrix(seed):
                          Two('OpType.CX', 0, 2), spd.ResetZero(0), rotation([0, 1, 2]),
                          spd.ResetZero(2), rotation([0, 1, 2]), spd.Discard(1)])
     obs = {'ZIZ': .2, 'XIY': .7, 'YIX': -.4, 'III': .1}
-    value, grads, *_ = evaluate(c, obs)
+    value, grads, *_ = evaluate(c, obs, channel_backend_name)
     assert value == pytest.approx(dense(c, obs), abs=1e-12)
     np.testing.assert_allclose(grads, finite_differences(c, obs), atol=1e-9)
 
@@ -492,7 +497,7 @@ def test_large_creation_batch_has_one_checkpoint(tmp_path, monkeypatch):
 def test_backend_channel_capability_preflight(all_backend, tmp_path, monkeypatch):
     name, module = all_backend
     adapter = spd.BackendAdapter.from_name(name, precision='double')
-    if name == 'numpy':
+    if name in ('numpy', 'triton'):
         adapter.require_channel_support()
         return
     o = spd.create_spo({'II': 1.}, backend=adapter)
