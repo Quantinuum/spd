@@ -5,6 +5,14 @@ from . import utils
 
 
 class SparsePauliOp(dict, BaseSparsePauliOp):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if args and isinstance(args[0], (BaseSparsePauliOp, BaseSparsePauliGradientOp)):
+            args[0]._copy_metadata_to(self)
+
+    def copy(self):
+        return self._copy_metadata_to(type(self)(self))
+
     def __setitem__(self, key, value):
         super().__setitem__(key, utils.as_real_scalar(value))
 
@@ -24,6 +32,7 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
         if not isinstance(other, SparsePauliOp):
             raise TypeError("other must be a NumPy SparsePauliOp.")
 
+        self._check_mapping(other)
         if len(self) <= len(other):
             return sum(coeff * other[key] for key, coeff in self.items() if key in other)
 
@@ -34,7 +43,7 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
 
     def get_expectation_value(self, basis: str = "0"):
         exp_val = 0
-        n_words = len(next(iter(self))) // 2
+        n_words = len(next(iter(self))) // 2 if self else 0
         if basis in ["0", "Z"]:
             for packed, coeff in self.items():
                 xz_array = np.asarray(packed)
@@ -94,6 +103,8 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
         return self.get_operator_stabilizer_entropy(alpha)
 
     def translate(self, x: int, system_size: int):
+        if self.active_qubits is not None:
+            raise NotImplementedError("Translation of compact operators is unsupported.")
         result = self.__class__()
         for packed, coeff in self.items():
             packed_array = np.asarray(packed)
@@ -113,7 +124,7 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
                 )
             )
             result[tuple(np.asarray(translated).tolist())] = coeff
-        return result
+        return self._copy_metadata_to(result)
 
     def __add__(self, other):
         if other == 0:
@@ -121,6 +132,7 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
         if not isinstance(other, SparsePauliOp):
             return NotImplemented
 
+        self._check_mapping(other)
         result = SparsePauliOp()
         for key, value in self.items():
             result[key] = value
@@ -130,7 +142,7 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
                 result.pop(key, None)
             else:
                 result[key] = new_value
-        return result
+        return self._copy_metadata_to(result)
 
     def __sub__(self, other):
         if not isinstance(other, SparsePauliOp):
@@ -141,16 +153,24 @@ class SparsePauliOp(dict, BaseSparsePauliOp):
         scalar = utils.as_real_scalar(scalar)
         result = SparsePauliOp()
         if np.isclose(scalar, 0.0):
-            return result
+            return self._copy_metadata_to(result)
         for key, value in self.items():
             result[key] = scalar * value
-        return result
+        return self._copy_metadata_to(result)
 
     def __rmul__(self, scalar):
         return self * scalar
 
 
 class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if args and isinstance(args[0], (BaseSparsePauliOp, BaseSparsePauliGradientOp)):
+            args[0]._copy_metadata_to(self)
+
+    def copy(self):
+        return self._copy_metadata_to(type(self)(self))
+
     def __setitem__(self, key, value):
         super().__setitem__(key, utils.as_real_pair(value))
 
@@ -178,7 +198,7 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
         result = SparsePauliOp()
         for key, value_grad in self.items():
             result[key] = value_grad[0]
-        return result
+        return self._copy_metadata_to(result)
 
     # alias for existing callers.
     def get_OSE(self, alpha: float = 1.) -> float:
@@ -190,6 +210,7 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
         if not isinstance(other, SparsePauliGradientOp):
             return NotImplemented
 
+        self._check_mapping(other)
         result = SparsePauliGradientOp()
         for key, value in self.items():
             result[key] = value
@@ -200,7 +221,7 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
                 result.pop(key, None)
             else:
                 result[key] = (coeff, grad)
-        return result
+        return self._copy_metadata_to(result)
 
     def __radd__(self, other):
         if other == 0:
@@ -211,10 +232,10 @@ class SparsePauliGradientOp(dict, BaseSparsePauliGradientOp):
         scalar = utils.as_real_scalar(scalar)
         result = SparsePauliGradientOp()
         if np.isclose(scalar, 0.0):
-            return result
+            return self._copy_metadata_to(result)
         for key, value in self.items():
             result[key] = (scalar * value[0], scalar * value[1])
-        return result
+        return self._copy_metadata_to(result)
 
     def __rmul__(self, scalar):
         return self * scalar

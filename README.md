@@ -72,6 +72,8 @@ Recommended examples:
   - JAX: legacy CPU/GPU backend
 - Circuit model:
   - static circuits
+  - fixed-index `CreateZero`, `ResetZero`, and `Discard`, with compact observable propagation and grouped checkpointed gradients in the NumPy backend (JAX/Triton raise `NotImplementedError`; no fallback)
+    ([channel guide](./docs/static_channels.md), [runnable examples](./examples/functionality/static_channels.py))
   - no mid-circuit measurement or feedforward
 
 ## GPU benchmark

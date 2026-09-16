@@ -16,6 +16,7 @@ def check_pair(a, b, *, gradient=False):
         raise TypeError("Operands must be matching Triton sparse Pauli states")
     if not gradient and (isinstance(a, SparsePauliGradientOp) or isinstance(b, SparsePauliGradientOp)):
         raise TypeError("This operation requires primal SPO operands")
+    a._check_mapping(b)
     if a.xz_array.shape[1] != b.xz_array.shape[1]:
         raise ValueError("Operands must have the same packed width")
     if a.c_array.device != b.c_array.device or a.c_array.dtype != b.c_array.dtype:
@@ -48,8 +49,8 @@ def aligned(values, indices):
 def make_like(state, keys, c, g=None, num_qubits=None):
     size = state.num_qubits if num_qubits is None else num_qubits
     if g is not None:
-        return SparsePauliGradientOp(keys, c, g, size)
-    return SparsePauliOp(keys, c, size)
+        return state._copy_metadata_to(SparsePauliGradientOp(keys, c, g, size))
+    return state._copy_metadata_to(SparsePauliOp(keys, c, size))
 
 
 def add(a, b):
