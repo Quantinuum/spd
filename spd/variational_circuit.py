@@ -1,4 +1,4 @@
-"""A pytket circuit together with its variational-parameter metadata."""
+"""A static circuit together with its variational-parameter metadata."""
 
 from dataclasses import dataclass
 import math
@@ -8,11 +8,12 @@ import numpy as np
 
 @dataclass
 class VariationalCircuit:
-    """Map pytket rotation-gate gradients back to optimizer parameters.
+    """Map rotation-gate gradients back to optimizer parameters.
 
-    The metadata follows the parameterized rotation commands in
-    ``circuit.get_commands()`` order. Repeated indices denote shared
-    parameters. Use index ``-1`` for fixed rotations.
+    Metadata follows rotations in pytket command order or CircuitIR operation
+    order. Repeated indices denote shared parameters; -1 means fixed. Factors
+    are derivatives of pytket half-turn angles or IR radian angles with respect
+    to parameters. Each rotation may depend on only one optimizer parameter.
     """
 
     circuit: object
@@ -21,12 +22,12 @@ class VariationalCircuit:
     gate_parameter_factors: np.ndarray = None
 
     def __post_init__(self):
-        from pytket.circuit import Circuit
-
-        from .pytket_frontend import _ROTATION_DISPATCH
-
-        if not isinstance(self.circuit, Circuit):
-            raise TypeError("circuit must be a pytket Circuit.")
+        from .circuit_ir import CircuitIR, PauliRotation
+        if not isinstance(self.circuit, CircuitIR):
+            from pytket.circuit import Circuit
+            from .pytket_frontend import _ROTATION_DISPATCH
+            if not isinstance(self.circuit, Circuit):
+                raise TypeError("circuit must be a pytket Circuit or CircuitIR.")
 
         indices = np.asarray(self.gate_parameter_indices, dtype=int)
         if indices.ndim != 1:
@@ -49,10 +50,11 @@ class VariationalCircuit:
                 "gate parameter indices must be -1 or valid indices into parameter_shape."
             )
 
-        num_rotation_gates = sum(
-            command.op.type in _ROTATION_DISPATCH
-            for command in self.circuit.get_commands()
-        )
+        if isinstance(self.circuit, CircuitIR):
+            num_rotation_gates = sum(isinstance(op, PauliRotation) for op in self.circuit.operations)
+        else:
+            num_rotation_gates = sum(command.op.type in _ROTATION_DISPATCH
+                                     for command in self.circuit.get_commands())
         if indices.size != num_rotation_gates:
             raise ValueError(
                 f"Expected metadata for {num_rotation_gates} rotation gates, "
@@ -77,9 +79,11 @@ class VariationalCircuit:
             dtype=np.result_type(gate_gradients.dtype, np.float64),
         )
         active = self.gate_parameter_indices >= 0
+        from .circuit_ir import CircuitIR
+        angle_scale = 1.0 if isinstance(self.circuit, CircuitIR) else math.pi
         np.add.at(
             result,
             self.gate_parameter_indices[active],
-            math.pi * self.gate_parameter_factors[active] * gate_gradients[active],
+            angle_scale * self.gate_parameter_factors[active] * gate_gradients[active],
         )
         return result.reshape(self.parameter_shape)

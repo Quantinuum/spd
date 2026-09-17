@@ -43,9 +43,13 @@ def create_measurement_op(measurement_dict, padded_system_size):
 
     return spo
 
-def create_op(pauli_dict):
+def create_op(pauli_dict, *, num_qubits=None):
     spo = SparsePauliOp()
     for key, val in pauli_dict.items():
+        if num_qubits is not None:
+            if len(key) > num_qubits:
+                raise ValueError("Pauli string exceeds num_qubits.")
+            key = key.ljust(num_qubits, "I")
         xz = utils.pauli_str_to_uint(key)
         spo[tuple(xz)] = val
 
@@ -252,6 +256,10 @@ def check_anticommute_uint(xz1, xz2):
     Returns 1 if anticommute, 0 if commute.
     """
     N = xz1.shape[0] // 2
+    if N == 0:
+        # The scalar Pauli commutes with everything. Empty tuple keys become
+        # float arrays in callers; do not apply integer bit operations to them.
+        return 0
     # population count of bitwise AND
     term1 = np.bitwise_count(xz1[:N] & xz2[N:]).astype(np.int32).sum()
     term2 = np.bitwise_count(xz1[N:] & xz2[:N]).astype(np.int32).sum()
@@ -945,3 +953,94 @@ def conjugate_Z_backward(spgo, qubit):
         new_spgo[tuple(xz)] = (phase * value[0], phase * value[1])
 
     return new_spgo
+
+
+# Static channels act on column positions, just like the unitary kernels.
+# Original circuit indices and checkpoint lifetime belong to the runner.
+def _channel_terms(spo, num_qubits):
+    """Decode packed rows, checking logical width and identity-only padding."""
+    padded = utils._PACKBIT * ((num_qubits + utils._PACKBIT - 1) // utils._PACKBIT)
+    for key, value in spo.items():
+        if len(key) * utils._PACKBIT != 2 * padded:
+            raise ValueError("Stored Pauli width disagrees with active_qubits.")
+        pauli = utils.uint_to_pauli_str(np.asarray(key, dtype=np.dtype(f"uint{utils._PACKBIT}")), padded)
+        if any(axis != "I" for axis in pauli[num_qubits:]):
+            raise ValueError("Nonidentity Pauli outside the active column width.")
+        yield pauli[:num_qubits], value
+
+
+def _channel_spo(terms, *, gradient=False):
+    result = SparsePauliGradientOp() if gradient else SparsePauliOp()
+    for pauli, value in terms.items():
+        result[tuple(utils.pauli_str_to_uint(pauli))] = value
+    return result
+
+
+def reindex_spo(spo, num_qubits, columns):
+    """Reorder columns; omitted columns must be identity in every stored row."""
+    columns = tuple(columns)
+    if len(set(columns)) != len(columns) or any(q < 0 or q >= num_qubits for q in columns):
+        raise ValueError("Invalid SPO column selection.")
+    omitted = set(range(num_qubits)) - set(columns)
+    terms = {}
+    for pauli, coeff in _channel_terms(spo, num_qubits):
+        if any(pauli[q] != "I" for q in omitted):
+            raise ValueError("Nonidentity observable on discarded outputs.")
+        key = "".join(pauli[q] for q in columns)
+        terms[key] = terms.get(key, 0.) + coeff
+    if not terms:
+        terms["I" * len(columns)] = 0.
+    return _channel_spo(terms)
+
+
+def _zero_contraction_image(pauli, columns, remove_columns):
+    """Return the reduced row and whether it contributes to <0|O|0>."""
+    contributes = all(pauli[q] in "IZ" for q in columns)
+    reduced = "".join("I" if q in columns else axis
+                      for q, axis in enumerate(pauli) if q not in remove_columns)
+    return reduced, contributes
+
+
+def contract_zero_forward(spo, num_qubits, columns, remove_columns):
+    """Apply independent zero-state adjoints, with no truncation/normalization.
+
+    All columns are contracted. Creation removes its column; reset leaves I.
+    Retain zero coordinates, including images of killed X/Y terms: coefficient
+    cancellation does not imply cancellation of derivatives.
+    """
+    columns, remove_columns = set(columns), set(remove_columns)
+    terms = {}
+    for pauli, coeff in _channel_terms(spo, num_qubits):
+        key, contributes = _zero_contraction_image(pauli, columns, remove_columns)
+        terms[key] = terms.get(key, 0.) + (coeff if contributes else 0.)
+    return _channel_spo(terms)
+
+
+def contract_zero_backward(spgo, checkpoint, num_qubits, columns, remove_columns):
+    """Restore the complete primal and transpose the composite contraction.
+
+    A row contributes iff every contracted axis is I/Z. Such rows receive the
+    matching reduced adjoint; any X/Y axis gives zero. Restore all checkpoint
+    rows (including zeros and killed terms), not an exponentially expanded basis.
+    """
+    columns, remove_columns = set(columns), set(remove_columns)
+    downstream = dict(_channel_terms(spgo, num_qubits - len(remove_columns)))
+    lifted = {}
+    for pauli, coeff in _channel_terms(checkpoint, num_qubits):
+        key, contributes = _zero_contraction_image(pauli, columns, remove_columns)
+        grad = downstream.get(key, (0., 0.))[1] if contributes else 0.
+        lifted[pauli] = (coeff, grad)
+    return _channel_spo(lifted, gradient=True)
+
+
+def insert_identity_forward(spo, num_qubits, column):
+    """Observable adjoint of state-side discard: insert I, with no factor two."""
+    return _channel_spo({p[:column] + "I" + p[column:]: value
+                         for p, value in _channel_terms(spo, num_qubits)})
+
+
+def insert_identity_backward(spgo, num_qubits, column):
+    """Transpose identity insertion and reconstruct the reduced primal."""
+    return _channel_spo({p[:column] + p[column + 1:]: value
+                         for p, value in _channel_terms(spgo, num_qubits) if p[column] == "I"},
+                        gradient=True)

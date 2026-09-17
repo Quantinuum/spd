@@ -6,8 +6,9 @@ from .backend_adapter import BackendAdapter
 from .run_circuit import create_spo
 from .run_circuit import evolve
 from .run_circuit import init_gradient_spo
-from .circuit_ir import CircuitIR
+from .circuit_ir import CircuitIR, CreateZero, ResetZero, Discard
 from .variational_circuit import VariationalCircuit
+from .run_circuit import close_channel_checkpoints
 
 
 def __getattr__(name):
@@ -23,5 +24,5 @@ def __getattr__(name):
 __all__ = [
     "jax_backend", "numpy_backend", "run_circuit", "backpropagate",
     "backpropagate_noise_analysis", "BackendAdapter", "create_spo", "evolve",
-    "init_gradient_spo", "CircuitIR", "VariationalCircuit",
+    "close_channel_checkpoints", "init_gradient_spo", "CircuitIR", "VariationalCircuit", "CreateZero", "ResetZero", "Discard",
 ]

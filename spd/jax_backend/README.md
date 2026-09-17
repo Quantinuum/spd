@@ -67,3 +67,20 @@ operator is represented at the `max_num_str` boundary. The
 conservatively clear that metadata when sorted output is not guaranteed.
 
 The custom classes in `sparse_pauli.py` are registered as JAX pytrees so they can continue to flow through `jit`-compiled kernels while exposing a clearer object interface.
+
+## Static channels
+
+`CreateZero`, `ResetZero`, and `Discard` support expectation evaluation and
+rotation gradients on JAX CPU and accelerator arrays. Channel transforms and
+coefficient-gradient transposes are implemented in `channels.py`; they do not
+fall back to NumPy computation. Compact execution uses functional inverse
+rotation reconstruction, retaining zero coordinates at cutoff zero and avoiding
+buffer donation so native checkpoints remain valid. This path is independent
+of the ordinary rotation algorithm setting and uses no per-gate cache.
+
+Snapshots retain native objects within the default 4 GiB CPU and 1 GiB
+per-device budgets. Device eviction creates host NumPy arrays; CPU-origin
+snapshots convert only when spilled to disk. Restoration preserves device,
+precision, and active-index metadata. See [static channels](../../docs/static_channels.md)
+for the full contract and [benchmark design](../../docs/static_channel_benchmarks.md)
+for proposed performance measurements.

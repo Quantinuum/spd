@@ -25,6 +25,8 @@ def weight_maps(state, *, include_mass=True):
 
 
 def translate_state(state, shift, system_size):
+    if state.active_qubits is not None:
+        raise NotImplementedError("Translation of compact operators is unsupported.")
     from .algebra import make_like
     shift, system_size = operator.index(shift), operator.index(system_size)
     if not 1 <= system_size <= state.xz_array.shape[1]//2*32:

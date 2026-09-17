@@ -83,23 +83,28 @@ def create_measurement_op(measurement_dict, padded_system_size,):
     spo = SparsePauliOp(jnp.asarray(xz_list), utils.as_real_array(c_list))
     return spo
 
-def create_op(pauli_dict):
-    xz_list = []
-    c_list = []
+def create_op(pauli_dict, *, num_qubits=None):
+    if not pauli_dict:
+        if num_qubits is None:
+            raise ValueError("num_qubits is required for an empty observable.")
+        words = (num_qubits + utils._PACKBIT - 1) // utils._PACKBIT
+        return SparsePauliOp(jnp.zeros((0, 2 * words), dtype=jnp.dtype(f"uint{utils._PACKBIT}")),
+                             utils.as_real_array([]), lexsorted=True)
+    xz_list, c_list = [], []
     for key, val in pauli_dict.items():
-        xz = utils.pauli_str_to_uint(key)
-        xz_list.append(xz)
+        if num_qubits is not None:
+            if len(key) > num_qubits:
+                raise ValueError("Pauli string exceeds num_qubits.")
+            key = key.ljust(num_qubits, "I")
+        xz_list.append(utils.pauli_str_to_uint(key))
         c_list.append(val)
+    xz_array = jnp.asarray(xz_list)
+    c_array = utils.as_real_array(c_list)
+    if xz_array.shape[1]:
+        indices = jnp.lexsort(xz_array.T[::-1])
+        xz_array, c_array = xz_array[indices], c_array[indices]
+    return SparsePauliOp(xz_array, c_array, lexsorted=True)
 
-    # sort by xz
-    sorted_indices = jnp.lexsort(jnp.asarray(xz_list).T[::-1])
-    xz_array = jnp.asarray(xz_list)[sorted_indices]
-    c_array = utils.as_real_array(c_list)[sorted_indices]
-
-    spo = SparsePauliOp(xz_array, c_array, lexsorted=True)
-
-    # spo = SparsePauliOp(jnp.asarray(xz_list), utils.as_real_array(c_list))
-    return spo
 
 def init_gradient_from_basis_expectation(spo, basis='0'):
     xz_array = spo.xz_array
@@ -302,6 +307,9 @@ def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
 # ---------------------------------------------------------------------- #
 
 def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):
+    if spo.active_qubits is not None:
+        from .channels import compact_rotation
+        return compact_rotation(spo, xzk, theta, trunc_val, max_num_str)
     return _load_algorithm_module().forward_step(
         spo,
         xzk,
@@ -313,6 +321,9 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):
 
 
 def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str):
+    if spo_val_grad.active_qubits is not None:
+        from .channels import compact_rotation
+        return compact_rotation(spo_val_grad, xzk, theta, trunc_val, max_num_str, backward=True)
     return _load_algorithm_module().backward_step(
         spo_val_grad,
         xzk,

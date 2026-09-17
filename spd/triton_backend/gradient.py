@@ -29,13 +29,13 @@ class SparsePauliGradientOp(SparsePauliOp, BaseSparsePauliGradientOp):
         if g.shape != c.shape or g.dtype != c.dtype:
             raise ValueError("Primal and adjoint shapes and dtypes must match")
         keys = torch.as_tensor(xz_array, device=device)
-        if keys.ndim != 2 or keys.shape[0] != len(c) or keys.shape[1] == 0 or keys.shape[1] % 2:
+        if keys.ndim != 2 or keys.shape[0] != len(c) or keys.shape[1] % 2:
             raise ValueError("Expected packed keys of shape (N, 2 * words)")
         if keys.dtype not in (torch.int32, torch.uint32):
             raise ValueError("Packed keys must have int32/uint32 dtype")
         if num_qubits is None:
             num_qubits = keys.shape[1] // 2 * 32
-        if (not isinstance(num_qubits, (int, np.integer)) or num_qubits < 1
+        if (not isinstance(num_qubits, (int, np.integer)) or num_qubits < 0
                 or 2 * ((num_qubits + 31) // 32) != keys.shape[1]):
             raise ValueError("num_qubits does not match the packed width")
         super().__init__(keys.to(torch.int32).contiguous(), c.contiguous(), num_qubits)
@@ -63,7 +63,7 @@ class SparsePauliGradientOp(SparsePauliOp, BaseSparsePauliGradientOp):
 
     def to_spo(self):
         keys, c, _ = self._storage.export()
-        return SparsePauliOp(keys, c, self.num_qubits)
+        return self._copy_metadata_to(SparsePauliOp(keys, c, self.num_qubits))
 
 
 def create_gradient_op(pauli_dict, num_qubits=None, precision=None, device="cuda"):

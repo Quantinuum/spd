@@ -1,4 +1,9 @@
 from .kernels import (
+    reindex_spo,
+    contract_zero_forward,
+    contract_zero_backward,
+    insert_identity_forward,
+    insert_identity_backward,
     conjugate_CX_backward,
     conjugate_CX_forward,
     conjugate_CY_backward,
@@ -36,6 +41,8 @@ from .sparse_pauli import SparsePauliGradientOp, SparsePauliOp
 from . import utils
 
 __all__ = [
+    "reindex_spo", "contract_zero_forward", "contract_zero_backward",
+    "insert_identity_forward", "insert_identity_backward",
     "SparsePauliGradientOp",
     "SparsePauliOp",
     "conjugate_CX_backward",
@@ -72,3 +79,5 @@ __all__ = [
     "set_precision",
     "utils",
 ]
+
+from .sparse_pauli import checkpoint_size

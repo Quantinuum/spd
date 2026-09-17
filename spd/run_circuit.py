@@ -6,6 +6,9 @@ points accept an existing backend-specific SPO or SPGO together with either a
 """
 
 from collections.abc import Sequence
+from bisect import bisect_left
+from dataclasses import dataclass, replace
+from copy import copy
 import math
 import sys
 import time
@@ -14,9 +17,11 @@ import numpy as np
 import psutil
 
 from .backend_adapter import BackendAdapter
+from .checkpoints import (CheckpointStore, DEFAULT_CHECKPOINT_MEMORY_BUDGET_BYTES,
+                          DEFAULT_CHECKPOINT_DEVICE_MEMORY_BUDGET_BYTES)
 from .pruning import _validate_method, _plan_forward, _finish_record, _BarrierPruning
 from .circuit_ir import (
-    CircuitIR,
+    CircuitIR, CHANNEL_TYPES, CreateZero, ResetZero, Discard,
     PauliRotation,
     SingleQubitClifford,
     SkippedOperation,
@@ -30,7 +35,145 @@ _IR_OPERATION_TYPES = (
     SingleQubitClifford,
     TwoQubitClifford,
     SkippedOperation,
+    *CHANNEL_TYPES,
 )
+
+
+@dataclass(frozen=True)
+class _ContractionGroup:
+    """Execution-only batch of independent contractions and intervening barriers."""
+    checkpoint_key: int
+    operations: tuple
+
+    @property
+    def contractions(self):
+        return tuple(op for op in self.operations if isinstance(op, (CreateZero, ResetZero)))
+
+    @property
+    def gate_name(self):
+        return "Zero-state contractions (" + str(len(self.contractions)) + ")"
+
+
+def _is_barrier(operation):
+    return isinstance(operation, SkippedOperation) and operation.gate_name in ("Barrier", "barrier", "OpType.Barrier")
+
+
+def _group_contractions(operations):
+    """Group distinct indices across barriers, stopping at any other operation.
+
+    Repeated resets are separate groups. No gates are reordered, including
+    gates on disjoint indices: a checkpoint must describe one exact boundary.
+    """
+    grouped = []
+    index = 0
+    while index < len(operations):
+        operation = operations[index]
+        if not isinstance(operation, (CreateZero, ResetZero)):
+            grouped.append(operation)
+            index += 1
+            continue
+        start, used = index, set()
+        while index < len(operations):
+            operation = operations[index]
+            if isinstance(operation, (CreateZero, ResetZero)) and operation.qubit not in used:
+                used.add(operation.qubit)
+            elif not _is_barrier(operation):
+                break
+            index += 1
+        grouped.append(_ContractionGroup(start, tuple(operations[start:index])))
+    return tuple(grouped)
+
+
+def _channel_circuit(circuit, state):
+    operations = circuit.operations if isinstance(circuit, CircuitIR) else circuit
+    if (not any(isinstance(op, CHANNEL_TYPES) for op in operations)
+            and state.active_qubits is None and getattr(state, "_channel_checkpoints", None) is None):
+        return None
+    if isinstance(circuit, CircuitIR):
+        return circuit
+    if state.system_size is None:
+        raise ValueError("Channel operation sequences require an SPO system_size or CircuitIR.")
+    return CircuitIR(state.system_size, tuple(operations))
+
+
+def _checkpoint_signature(circuit, backend, trunc_val, max_num_str):
+    return (circuit, backend.name, backend.precision, trunc_val, max_num_str)
+
+
+def _prepare_channel_observable(spo, circuit, backend):
+    if spo.system_size is not None and spo.system_size != circuit.system_size:
+        raise ValueError("Observable system_size does not match circuit.")
+    source = copy(spo)
+    source.set_active_qubits(circuit.system_size, spo.active_qubits)
+    active, final = source.qubit_indices, circuit.final_active_qubits
+    if set(active) != set(final) and spo.active_qubits is not None:
+        raise ValueError("Observable active_qubits must match the circuit's final active outputs.")
+    # The backend verifies width and rejects nonidentity on omitted columns.
+    result = backend.reindex_spo(source, len(active), [active.index(q) for q in final])
+    return result.set_active_qubits(circuit.system_size, final)
+
+
+def _operation_in_columns(operation, active, *, backward=False):
+    """Translate original integer indices to the current SPO column positions."""
+    if isinstance(operation, PauliRotation):
+        pauli = operation.pauli
+        return replace(operation, pauli="".join(pauli[q] if q < len(pauli) else "I" for q in active))
+    if isinstance(operation, SingleQubitClifford):
+        return replace(operation, qubit=active.index(operation.qubit))
+    if isinstance(operation, TwoQubitClifford):
+        return replace(operation, control_qubit=active.index(operation.control_qubit),
+                       target_qubit=active.index(operation.target_qubit))
+    if isinstance(operation, Discard):
+        column = active.index(operation.qubit) if backward else bisect_left(active, operation.qubit)
+        return replace(operation, qubit=column)
+    return operation
+
+
+def _contraction_columns(group, active):
+    columns = [active.index(op.qubit) for op in group.contractions]
+    removed = [active.index(op.qubit) for op in group.contractions if isinstance(op, CreateZero)]
+    return columns, removed
+
+
+def _apply_channel_forward(state, operation, backend, checkpoints, trunc_val, max_num_str):
+    active = state.qubit_indices
+    if isinstance(operation, _ContractionGroup):
+        checkpoints.save(operation.checkpoint_key, state)
+        columns, removed = _contraction_columns(operation, active)
+        result = backend.apply_zero_contractions_forward(state, columns, removed)
+        active = [q for column, q in enumerate(active) if column not in removed]
+    else:
+        translated = _operation_in_columns(operation, active)
+        result = backend.apply_forward(state, translated, trunc_val, max_num_str)
+        if isinstance(operation, Discard):
+            active.insert(translated.qubit, operation.qubit)
+    result[0].set_active_qubits(state.system_size, active)
+    return result
+
+
+def _apply_channel_backward(state, operation, backend, checkpoints, trunc_val, max_num_str):
+    if isinstance(operation, _ContractionGroup):
+        original = checkpoints.take(operation.checkpoint_key)
+        active = original.qubit_indices
+        columns, removed = _contraction_columns(operation, active)
+        result = backend.apply_zero_contractions_backward(state, original, columns, removed)
+        # Only this boundary's complete SPO is held while applying its transpose.
+        del original
+    else:
+        active = state.qubit_indices
+        translated = _operation_in_columns(operation, active, backward=True)
+        result = backend.apply_backward(state, translated, trunc_val, max_num_str)
+        if isinstance(operation, Discard):
+            active.remove(operation.qubit)
+    result[0].set_active_qubits(state.system_size, active)
+    return result
+
+
+def close_channel_checkpoints(state):
+    """Release an evaluation's checkpoints when backward is not needed."""
+    checkpoints = getattr(state, "_channel_checkpoints", None)
+    if checkpoints is not None:
+        checkpoints.close()
 
 
 def _zero_step_info():
@@ -273,7 +416,10 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progre
         t0 = time.time()
         state, num_string, extra, step_info = apply_fn(state, operation)
         if step_info is not None:
-            _append_step_info(history, step_info)
+            # Grouping does not change operation-aligned truncation diagnostics.
+            count = len(operation.contractions) if isinstance(operation, _ContractionGroup) else 1
+            for _ in range(count):
+                _append_step_info(history, step_info)
         if num_string is None:
             continue
 
@@ -286,7 +432,7 @@ def _run_operation_loop(operations, state, apply_fn, total_start_time, *, progre
         current_weight = state.get_norm_square()
         weight_left = current_weight / initial_weight if initial_weight else 0.0
         current_row_size = state.get_size()
-        ose = state.get_OSE()
+        ose = state.get_OSE() if current_weight else 0.0
         step_time = t1 - t0
 
         _print_progress(
@@ -336,6 +482,7 @@ def create_spo(
     data,
     *,
     system_size=None,
+    active_qubits=None,
     backend_name=None,
     precision="single",
     backend=None,
@@ -345,6 +492,11 @@ def create_spo(
     With backend_name=None, prefer Triton when its optional runtime and NVIDIA
     CUDA are available, otherwise use NumPy. An explicit name or adapter takes
     precedence. Subsequent evolution infers the backend from the state.
+
+    system_size is the fixed circuit index-space size. active_qubits[k] gives
+    the index represented by Pauli column k; None means full canonical order,
+    and [] permits scalar data such as {"": 1.0}. Compact string keys must have
+    exactly len(active_qubits) columns. Measurement lists use original indices.
     """
     backend = _resolve_backend_for_creation(
         backend_name,
@@ -352,17 +504,44 @@ def create_spo(
         precision=precision,
     )
 
+    if active_qubits is not None:
+        if system_size is None:
+            raise ValueError("system_size is required with active_qubits.")
+        active_qubits = list(active_qubits)
+        width = len(active_qubits)
+    else:
+        width = system_size
     if isinstance(data, list):
         if system_size is None:
             raise ValueError("system_size is required when data is a list of qubits.")
-        padded_system_size = _compute_padded_system_size(system_size, backend.packbit)
-        return backend.create_initial_spo(data, padded_system_size)
-
-    if isinstance(data, dict):
-        padded_size = _compute_padded_system_size(system_size, backend.packbit) if system_size is not None else None
-        return backend.create_initial_spo(data, padded_size)
-
-    raise ValueError("data must be a list of qubits or a string-key dict of Pauli coefficients.")
+        active = list(range(system_size)) if active_qubits is None else active_qubits
+        if any(q not in active for q in data):
+            raise ValueError("Measurement indices must be active.")
+        data = {''.join('Z' if q in data else 'I' for q in active): 1.0}
+    if not isinstance(data, dict):
+        raise ValueError("data must be a list of qubits or a string-key dict of Pauli coefficients.")
+    if any(isinstance(p, tuple) for p in data):
+        raise ValueError("Tuple-key measurement dicts are no longer supported.")
+    if any(not isinstance(p, str) or set(p) - set('IXYZ') for p in data):
+        raise ValueError("Observable keys must be I/X/Y/Z strings.")
+    if width is None:
+        width = max(map(len, data), default=0)
+        if width == 0:
+            raise ValueError("system_size is required for an empty or scalar observable.")
+        system_size = width
+    if active_qubits is None:
+        if any(len(p) > width for p in data):
+            raise ValueError("Pauli string width exceeds system_size.")
+        # Preserve the legacy convention that omitted trailing indices are I.
+        padded = {}
+        for p, coeff in data.items():
+            key = p.ljust(width, 'I')
+            padded[key] = padded.get(key, 0.) + coeff
+        data = padded
+    elif any(len(p) != width for p in data):
+        raise ValueError("Pauli string width must agree with the active register width.")
+    result = backend.create_initial_spo(data, _compute_padded_system_size(width, backend.packbit))
+    return result.set_active_qubits(system_size, active_qubits)
 
 
 def evolve(
@@ -377,8 +556,25 @@ def evolve(
     progress=True,
     in_place=False,
     pruning=None,
+    checkpoint_directory=None,
+    checkpoint_memory_budget_bytes=DEFAULT_CHECKPOINT_MEMORY_BUDGET_BYTES,
+    checkpoint_device_memory_budget_bytes=DEFAULT_CHECKPOINT_DEVICE_MEMORY_BUDGET_BYTES,
 ):
-    """Propagate an SPO forward; progress=False skips reporting reductions.
+    """Propagate an observable in reverse circuit order.
+
+    All operations dispatch to the selected backend. Unsupported channel
+    backends fail before execution, without CPU fallback. Independent creation/
+    reset operations separated only by barriers share one complete checkpoint.
+    Execution retains native snapshots within checkpoint_memory_budget_bytes
+    (CPU, default 4 GiB) and checkpoint_device_memory_budget_bytes (per device,
+    default 1 GiB). Oldest snapshots move device -> host -> disk as needed;
+    serialization happens only on disk spill under checkpoint_directory. Zero
+    bypasses retention in that tier. Budgets exclude live states and buffers.
+    Backward consumes snapshots; expectation-only callers close them explicitly.
+    Channels are exact; unitary segments retain existing SPD approximation rules.
+    info["active_widths"] reports the initial width and each original reverse step.
+
+    For legacy circuits, progress=False skips reporting reductions.
 
     pruning="light-cone" builds a cone from this input SPO once per call.
     pruning="light-cone-barrier" refreshes from the current SPO before each
@@ -414,6 +610,14 @@ def evolve(
         else normalized_circuit
     )
 
+    channel_circuit = _channel_circuit(normalized_circuit, spo)
+    if channel_circuit is not None:
+        backend.require_channel_support()
+        if save_strings or pruning is not None or in_place:
+            raise NotImplementedError("Channel/compact execution does not support save_strings, pruning, or in_place.")
+        if not math.isfinite(trunc_val) or trunc_val < 0:
+            raise ValueError("trunc_val must be finite and nonnegative.")
+
     plan = None
     schedule = None
     system_size = normalized_circuit.system_size if isinstance(normalized_circuit, CircuitIR) else None
@@ -423,7 +627,26 @@ def evolve(
         plan = _plan_forward(spo, operations, system_size, backend.name, trunc_val)
         operations = plan.retained_operations
 
-    if backend.name == "triton":
+    checkpoints = None
+    active_widths = None
+    if channel_circuit is not None:
+        loop_state = _prepare_channel_observable(spo, channel_circuit, backend)
+        operations = _group_contractions(channel_circuit.operations)
+        checkpoints = CheckpointStore(
+            _checkpoint_signature(channel_circuit, backend, trunc_val, max_num_str),
+            checkpoint_directory, memory_budget_bytes=checkpoint_memory_budget_bytes,
+            device_memory_budget_bytes=checkpoint_device_memory_budget_bytes,
+            backend=backend.create_checkpoint_backend(loop_state))
+        active_widths = [len(loop_state.qubit_indices)]
+
+        def apply_forward(state, operation):
+            result = _apply_channel_forward(state, operation, backend, checkpoints, trunc_val, max_num_str)
+            members = operation.operations[::-1] if isinstance(operation, _ContractionGroup) else (operation,)
+            for member in members:
+                change = -1 if isinstance(member, CreateZero) else 1 if isinstance(member, Discard) else 0
+                active_widths.append(active_widths[-1] + change)
+            return result
+    elif backend.name == "triton":
         loop_state = spo if in_place or all(isinstance(op, SkippedOperation) for op in operations) else spo.copy()
         apply_forward = lambda state, operation: state.apply_in_place(operation, trunc_val, max_num_str)
     else:
@@ -432,10 +655,15 @@ def evolve(
             state, operation, trunc_val=trunc_val, max_num_str=max_num_str,
         )
 
-    final_spo, _, _, info = _run_operation_loop(
-        operations[::-1], loop_state, apply_forward, total_start_time, progress=progress,
-        pruning_schedule=schedule,
-    )
+    try:
+        final_spo, _, _, info = _run_operation_loop(
+            operations[::-1], loop_state, apply_forward, total_start_time, progress=progress,
+            pruning_schedule=schedule,
+        )
+    except BaseException:
+        if checkpoints is not None:
+            checkpoints.close()
+        raise
     if backend.name == "triton" and not in_place and final_spo is not spo:
         final_spo = final_spo.compact()
 
@@ -443,7 +671,12 @@ def evolve(
         plan = schedule.record()
     if plan is not None:
         info = plan.align_info(info, reverse=True)
+    if channel_circuit is None:
+        spo._copy_metadata_to(final_spo)
     final_spo = _finish_record(final_spo, spo, plan, backend.name, in_place=in_place)
+    if checkpoints is not None:
+        final_spo._channel_checkpoints = checkpoints
+        info["active_widths"] = active_widths
 
     if save_strings:
         _save_state_pickle(final_spo, "strings", trunc_val)
@@ -471,6 +704,9 @@ def init_gradient_spo(
         raise TypeError(
             f"target_spo must be a {backend.name} SparsePauliOp when backend='{backend.name}'."
         )
+    checkpoints = getattr(final_spo, "_channel_checkpoints", None)
+    if checkpoints is not None and (loss_type != "basis_expectation" or lambda_ose != 0):
+        raise NotImplementedError("Channel gradients currently support basis_expectation loss without OSE only.")
     result = backend.init_gradient_spo(
         final_spo,
         loss_type=loss_type,
@@ -480,7 +716,9 @@ def init_gradient_spo(
         alpha=alpha,
     )
 
+    final_spo._copy_metadata_to(result)
     result._pruning_record = getattr(final_spo, "_pruning_record", None)
+    result._channel_checkpoints = checkpoints
     return result
 
 
@@ -523,6 +761,19 @@ def backpropagate(
         if isinstance(normalized_circuit, CircuitIR)
         else normalized_circuit
     )
+    channel_circuit = _channel_circuit(normalized_circuit, spgo)
+    checkpoints = getattr(spgo, "_channel_checkpoints", None)
+    if channel_circuit is not None:
+        backend.require_channel_support()
+        if in_place or save_strings:
+            raise NotImplementedError("Channel backward does not support in_place or save_strings.")
+        if checkpoints is None or checkpoints.closed:
+            raise ValueError("Channel backward requires live checkpoints from evolve/init_gradient_spo.")
+        if checkpoints.signature != _checkpoint_signature(channel_circuit, backend, trunc_val, max_num_str):
+            raise ValueError("Channel circuit, backend, precision, and approximation settings must match forward.")
+        if spgo.system_size != channel_circuit.system_size or spgo.qubit_indices != channel_circuit.initial_active_qubits:
+            raise ValueError("Gradient active_qubits must match the forward circuit inputs.")
+        operations = _group_contractions(channel_circuit.operations)
     plan = getattr(spgo, "_pruning_record", None)
     if plan is not None:
         plan.check_circuit(operations, normalized_circuit.system_size if isinstance(normalized_circuit, CircuitIR) else None)
@@ -531,7 +782,11 @@ def backpropagate(
         operations = plan.retained_operations
     grads = []
 
-    if backend.name == "triton":
+    if channel_circuit is not None:
+        loop_state = spgo
+        apply_backward = lambda state, operation: _apply_channel_backward(
+            state, operation, backend, checkpoints, trunc_val, max_num_str)
+    elif backend.name == "triton":
         loop_state = spgo if in_place or all(isinstance(op, SkippedOperation) for op in operations) else spgo.copy()
         apply_backward = lambda state, operation: state.apply_in_place(operation, trunc_val, max_num_str)
     else:
@@ -546,13 +801,13 @@ def backpropagate(
             grads.append(grad_i)
         return next_state, num_string, grad_i, step_info
 
-    final_spgo, _, _, info = _run_operation_loop(
-        operations,
-        loop_state,
-        _apply_backward,
-        total_start_time,
-        progress=progress,
-    )
+    try:
+        final_spgo, _, _, info = _run_operation_loop(
+            operations, loop_state, _apply_backward, total_start_time, progress=progress,
+        )
+    finally:
+        if checkpoints is not None:
+            checkpoints.close()
 
     if backend.name == "triton" and not in_place and final_spgo is not spgo:
         final_spgo.compact()
@@ -560,7 +815,10 @@ def backpropagate(
     if plan is not None:
         info = plan.align_info(info, reverse=False)
         grads = plan.align_gradients(grads)
+    if channel_circuit is None:
+        spgo._copy_metadata_to(final_spgo)
     final_spgo = _finish_record(final_spgo, spgo, None, backend.name, in_place=in_place)
+    final_spgo._channel_checkpoints = None
 
     if save_strings:
         _save_state_pickle(final_spgo, "grad_strings", trunc_val)
@@ -604,6 +862,8 @@ def backpropagate_noise_analysis(
             "backpropagate_noise_analysis requires a pytket Circuit or CircuitIR "
             "with a physical system_size."
         )
+    if _channel_circuit(circuit_ir, spgo) is not None:
+        raise NotImplementedError("Noise analysis of channel/compact circuits is unsupported.")
     operations = circuit_ir.operations
     parameter_grads = []
     noise_grads = {

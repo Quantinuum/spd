@@ -13,7 +13,8 @@ Boundary:
 from dataclasses import dataclass
 from typing import Protocol
 
-from .circuit_ir import PauliRotation, SingleQubitClifford, SkippedOperation, TwoQubitClifford
+from .circuit_ir import (PauliRotation, SingleQubitClifford, SkippedOperation, TwoQubitClifford,
+                         CreateZero, ResetZero, Discard)
 
 
 def _zero_step_info():
@@ -31,7 +32,13 @@ class BackendModule(Protocol):
 
     def set_precision(self, precision: str): ...
     def create_measurement_op(self, measurement_dict, padded_system_size): ...
-    def create_op(self, pauli_dict): ...
+    def create_op(self, pauli_dict, *, num_qubits=None): ...
+    # Optional channel capability: all five entry points must be implemented.
+    def reindex_spo(self, spo, num_qubits, columns): ...
+    def contract_zero_forward(self, spo, num_qubits, columns, remove_columns): ...
+    def contract_zero_backward(self, spgo, checkpoint, num_qubits, columns, remove_columns): ...
+    def insert_identity_forward(self, spo, num_qubits, column): ...
+    def insert_identity_backward(self, spgo, num_qubits, column): ...
     def init_gradient_spo(
         self,
         spo,
@@ -119,18 +126,17 @@ class BackendAdapter:
 
     def create_initial_spo(self, measure_qubits_data, padded_system_size=None):
         if isinstance(measure_qubits_data, dict):
-            if self.name == "triton" and not measure_qubits_data:
+            if not measure_qubits_data:
                 if padded_system_size is None:
                     raise ValueError("system_size is required for an empty observable.")
-                return self.module.create_op({}, num_qubits=padded_system_size, precision=self.precision)
+                return self.module.create_op({}, num_qubits=padded_system_size)
             key = next(iter(measure_qubits_data))
             if isinstance(key, str):
                 if self.name == "triton":
-                    width = padded_system_size or self.packbit * (
-                        (max(map(len, measure_qubits_data)) + self.packbit - 1) // self.packbit
-                    )
+                    width = (padded_system_size if padded_system_size is not None else
+                             self.packbit * ((max(map(len, measure_qubits_data)) + self.packbit - 1) // self.packbit))
                     return self.module.create_op(measure_qubits_data, num_qubits=width, precision=self.precision)
-                return self.module.create_op(measure_qubits_data)
+                return self.module.create_op(measure_qubits_data, num_qubits=padded_system_size)
             if isinstance(key, tuple):
                 raise ValueError(
                     "Tuple-key measurement dicts are no longer supported. "
@@ -149,6 +155,43 @@ class BackendAdapter:
             return self.module.create_measurement_op(measurement_dict, padded_system_size)
 
         raise ValueError("measure_qubits_data must be a dict or list")
+
+    def require_channel_support(self):
+        """Fail before execution when this backend lacks the channel interface."""
+        required = ("reindex_spo", "contract_zero_forward", "contract_zero_backward",
+                    "insert_identity_forward", "insert_identity_backward")
+        if any(not callable(getattr(self.module, name, None)) for name in required):
+            raise NotImplementedError(
+                f"Static channel execution is not implemented for backend '{self.name}'. "
+                "Choose backend_name='numpy' explicitly; execution never falls back to another backend."
+            )
+
+    def create_checkpoint_backend(self, state):
+        """Capture backend size/transfer helpers once, without retaining state."""
+        factory = getattr(self.module, "create_checkpoint_backend", None)
+        if factory is not None:
+            return factory(state)
+        if self.name == "numpy":
+            from .checkpoints import CheckpointBackend
+            return CheckpointBackend(size=self.module.checkpoint_size)
+        raise NotImplementedError(
+            f"Backend '{self.name}' must implement create_checkpoint_backend for channel snapshots."
+        )
+
+    def reindex_spo(self, spo, num_qubits, columns):
+        self.require_channel_support()
+        return self.module.reindex_spo(spo, num_qubits, columns)
+
+    def apply_zero_contractions_forward(self, spo, columns, remove_columns):
+        self.require_channel_support()
+        result = self.module.contract_zero_forward(spo, len(spo.qubit_indices), columns, remove_columns)
+        return result, result.get_size(), None, _zero_step_info()
+
+    def apply_zero_contractions_backward(self, spgo, checkpoint, columns, remove_columns):
+        self.require_channel_support()
+        result = self.module.contract_zero_backward(
+            spgo, checkpoint, len(checkpoint.qubit_indices), columns, remove_columns)
+        return result, result.get_size(), None, _zero_step_info()
 
     def init_gradient_spo(
         self,
@@ -176,6 +219,13 @@ class BackendAdapter:
         return self.module.get_one_qubit_depolarizing_susceptibility(spgo, qubit)
 
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
+        if isinstance(operation, (CreateZero, ResetZero)):
+            remove = [operation.qubit] if isinstance(operation, CreateZero) else []
+            return self.apply_zero_contractions_forward(spo, [operation.qubit], remove)
+        if isinstance(operation, Discard):
+            self.require_channel_support()
+            result = self.module.insert_identity_forward(spo, len(spo.qubit_indices), operation.qubit)
+            return result, result.get_size(), None, _zero_step_info()
         if isinstance(operation, PauliRotation):
             # Reuse Triton's cached string packing, ignoring frontend identity padding.
             xzk = (operation.pauli.rstrip("I") if self.name == "triton"
@@ -202,7 +252,17 @@ class BackendAdapter:
 
         raise ValueError(f"Unsupported operation: {operation}")
 
-    def apply_backward(self, spgo, operation, trunc_val, max_num_str):
+    def apply_backward(self, spgo, operation, trunc_val, max_num_str, *, checkpoint=None):
+        if isinstance(operation, (CreateZero, ResetZero)):
+            self.require_channel_support()
+            if checkpoint is None:
+                raise ValueError("Creation/reset backward requires the pre-contraction checkpoint.")
+            remove = [operation.qubit] if isinstance(operation, CreateZero) else []
+            return self.apply_zero_contractions_backward(spgo, checkpoint, [operation.qubit], remove)
+        if isinstance(operation, Discard):
+            self.require_channel_support()
+            result = self.module.insert_identity_backward(spgo, len(spgo.qubit_indices), operation.qubit)
+            return result, result.get_size(), None, _zero_step_info()
         if isinstance(operation, PauliRotation):
             # Reuse Triton's cached string packing, ignoring frontend identity padding.
             xzk = (operation.pauli.rstrip("I") if self.name == "triton"

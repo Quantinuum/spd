@@ -129,7 +129,9 @@ not remove the protective backward copy.
 
 - Forward rotations keep `abs(c) > cutoff`; backward uses `abs(c) >= cutoff` on
   meaningful `(c, g)` support. Gradient-only rows survive at cutoff zero and can
-  grow through backward rotations.
+  grow through backward rotations. Compact/static-channel execution additionally
+  retains zero rotation coordinates at cutoff zero, using the functional kernel
+  so contraction pullbacks preserve exact-cancellation derivatives.
 - Caps rank by primal magnitude; the same selected rows apply to keys,
   coefficients, and adjoints. Direct gate APIs enforce exact caps. Public runner
   caps round upward to a power of two, matching JAX (1000 becomes 1024).
@@ -143,6 +145,12 @@ not remove the protective backward copy.
 - Row order and equal-magnitude cap ties are unspecified. NumPy retains forward
   cutoff equality; Triton/JAX use a strict forward cutoff. Cross-backend bitwise
   equality is not promised.
+
+Static `CreateZero`, `ResetZero`, and `Discard` operations support native GPU
+expectations and reconstruction gradients. Grouped checkpoints retain native
+objects under the default 1 GiB per-device and 4 GiB CPU budgets, transferring
+to host arrays on device eviction and serializing only on disk spill. See
+[static channels](../../docs/static_channels.md) for semantics and limitations.
 
 The public adapter defaults to single precision; direct backend construction
 initially defaults to double. Existing states retain their precision.

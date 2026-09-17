@@ -10,7 +10,7 @@ import math
 from pytket.circuit import OpType
 
 from .circuit_ir import (
-    CircuitIR,
+    CircuitIR, CreateZero, ResetZero, Discard,
     PauliRotation,
     SingleQubitClifford,
     SkippedOperation,
@@ -48,7 +48,12 @@ def maybe_rebase_pytket_circuit(circ):
 
 def parse_pytket_circuit(circ, padded_system_size):
     """Lower a pytket circuit into the internal SPD execution IR."""
-    operations = []
+    from pytket.circuit import Qubit
+    if circ.qubits != [Qubit(i) for i in range(circ.n_qubits)]:
+        raise ValueError("SPD requires canonical integer qubits q[0], ..., q[n-1].")
+    if any(a != b for a, b in circ.implicit_qubit_permutation().items()):
+        raise ValueError("Implicit qubit permutations must be materialized before SPD import.")
+    operations = [CreateZero(q.index[0]) for q in sorted(circ.created_qubits)]
     for command in circ.get_commands():
         op_type = command.op.type
         gate_name = str(op_type)
@@ -68,11 +73,17 @@ def parse_pytket_circuit(circ, padded_system_size):
                     target_qubit=command.args[1].index[0],
                 )
             )
+        elif op_type == OpType.Reset:
+            operations.append(ResetZero(command.qubits[0].index[0]))
+        elif op_type == OpType.Measure and (circ.created_qubits or circ.discarded_qubits
+                                            or any(c.op.type == OpType.Reset for c in circ.get_commands())):
+            raise ValueError("Measurements are unsupported in channel circuits.")
         elif op_type in _SKIPPED_GATES:
             operations.append(SkippedOperation(gate_name=gate_name))
         else:
             raise ValueError(f"Unsupported gate type: {command.op.type}")
 
+    operations.extend(Discard(q.index[0]) for q in sorted(circ.discarded_qubits))
     return CircuitIR(system_size=circ.n_qubits, operations=tuple(operations))
 
 

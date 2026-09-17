@@ -87,7 +87,7 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
         with torch.cuda.device(self._storage.device):
             result = type(self)._from_storage(_Storage(self, self._storage.dead_fraction))
             result._pruning_record = getattr(self, "_pruning_record", None)
-            return result
+            return self._copy_metadata_to(result)
 
     def _mutable_storage(self):
         if not self._storage.owned:
@@ -155,11 +155,17 @@ class SparsePauliOp(StateMethods, BaseSparsePauliOp):
             state["grad_c_array"] = g
         if getattr(self, "_pruning_record", None) is not None:
             state["_pruning_record"] = self._pruning_record
+        if self.active_qubits is not None:
+            state["active_qubits"] = self.active_qubits
+        if self.system_size is not None:
+            state["system_size"] = self.system_size
         return state
 
     def __setstate__(self, state):
         # Also accepts pickles written before storage became an owned object.
         from .persistent import _Storage
+        self.active_qubits = state.get("active_qubits")
+        self.system_size = state.get("system_size")
         self.num_qubits = state["num_qubits"]
         self._pruning_record = state.get("_pruning_record")
         self._storage = _Storage.wrap(state["xz_array"], state["c_array"],
@@ -192,8 +198,8 @@ def create_op(pauli_dict, num_qubits=None, precision=None, device="cuda"):
         raise ValueError("precision must be single or double")
     if num_qubits is None:
         num_qubits = max(map(len, pauli_dict), default=0)
-    if num_qubits < 1:
-        raise ValueError("num_qubits must be positive (also for an empty observable)")
+    if num_qubits < 0:
+        raise ValueError("num_qubits must be nonnegative")
     device = torch.device(device)
     if device.type != "cuda":
         raise ValueError("The Triton backend requires a CUDA device")
@@ -205,7 +211,7 @@ def create_op(pauli_dict, num_qubits=None, precision=None, device="cuda"):
         key = tuple(_pack(pauli, num_qubits))
         merged[key] = merged.get(key, 0.) + float(c)
     width = 2 * ((num_qubits + 31) // 32)
-    keys = np.array(list(merged), dtype=np.int32).reshape(-1, width)
+    keys = np.array(list(merged), dtype=np.int32).reshape(len(merged), width)
     dtype = torch.float64 if precision == "double" else torch.float32
     return SparsePauliOp(torch.as_tensor(keys, device=device),
                          torch.tensor(list(merged.values()), dtype=dtype, device=device),
@@ -299,4 +305,15 @@ __all__ = _gate_exports + [
     'get_depolarizing_susceptibility', 'get_one_qubit_depolarizing_susceptibility',
     'get_two_qubit_depolarizing_susceptibility', 'pauli_product_uint',
     'pauli_product_batched_second_uint',
+]
+
+from .channels import (
+    reindex_spo, contract_zero_forward, contract_zero_backward,
+    insert_identity_forward, insert_identity_backward, create_checkpoint_backend,
+    checkpoint_size,
+)
+__all__ += [
+    'reindex_spo', 'contract_zero_forward', 'contract_zero_backward',
+    'insert_identity_forward', 'insert_identity_backward',
+    'create_checkpoint_backend', 'checkpoint_size',
 ]

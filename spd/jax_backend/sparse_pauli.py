@@ -24,11 +24,16 @@ class SparsePauliOp(BaseSparsePauliOp):
         self.lexsorted = bool(lexsorted)
 
     def tree_flatten(self):
-        return ((self.xz_array, self.c_array), self.lexsorted)
+        return ((self.xz_array, self.c_array),
+                (self.lexsorted, None if self.active_qubits is None else tuple(self.active_qubits), self.system_size))
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children, lexsorted=aux_data)
+        lexsorted, active, system_size = aux_data
+        result = cls(*children, lexsorted=lexsorted)
+        result.active_qubits = None if active is None else list(active)
+        result.system_size = system_size
+        return result
 
     def __iter__(self):
         return iter((self.xz_array, self.c_array))
@@ -48,11 +53,12 @@ class SparsePauliOp(BaseSparsePauliOp):
         from .kernels import lexsort_spo_arrays
 
         xz_array, c_array = lexsort_spo_arrays(self.xz_array, self.c_array)
-        return self.__class__(xz_array, c_array, lexsorted=True)
+        return self._copy_metadata_to(self.__class__(xz_array, c_array, lexsorted=True))
 
     def dot(self, other):
         if not isinstance(other, SparsePauliOp):
             raise TypeError("other must be a JAX SparsePauliOp.")
+        self._check_mapping(other)
         if self.get_size() == 0 or other.get_size() == 0:
             return jnp.asarray(0.0, dtype=self.c_array.dtype)
 
@@ -138,6 +144,8 @@ class SparsePauliOp(BaseSparsePauliOp):
         return self.get_operator_stabilizer_entropy(alpha)
 
     def translate(self, x: int, system_size: int):
+        if self.active_qubits is not None:
+            raise NotImplementedError("Translation of compact operators is unsupported.")
         half_words = self.xz_array.shape[1] // 2
         translated_x = utils.translate_packed_uint_rows_prefix_right(
             self.xz_array[:, :half_words],
@@ -150,13 +158,14 @@ class SparsePauliOp(BaseSparsePauliOp):
             system_size,
         )
         translated_xz = jnp.concatenate([translated_x, translated_z], axis=1)
-        return self.__class__(translated_xz, self.c_array)
+        return self._copy_metadata_to(self.__class__(translated_xz, self.c_array))
 
     def __add__(self, other):
         if other == 0:
-            return self.__class__(self.xz_array, self.c_array, lexsorted=self.lexsorted)
+            return self._copy_metadata_to(self.__class__(self.xz_array, self.c_array, lexsorted=self.lexsorted))
         if not isinstance(other, SparsePauliOp):
             return NotImplemented
+        self._check_mapping(other)
         from .kernels import merge_, next_pow2, slice_to_size_c_arr, slice_to_size_x_arr
 
         xz_array, c_array, valid_count = merge_(
@@ -169,7 +178,7 @@ class SparsePauliOp(BaseSparsePauliOp):
         slice_size = min(max(1, int(next_pow2(valid_count))), xz_array.shape[0])
         xz_array = slice_to_size_x_arr(xz_array, slice_size)
         c_array = slice_to_size_c_arr(c_array, slice_size)
-        return self.__class__(xz_array, c_array)
+        return self._copy_metadata_to(self.__class__(xz_array, c_array))
 
     def __sub__(self, other):
         if not isinstance(other, SparsePauliOp):
@@ -179,12 +188,12 @@ class SparsePauliOp(BaseSparsePauliOp):
     def __mul__(self, scalar):
         scalar = utils.real_scalar(scalar)
         if np.isclose(np.asarray(scalar), 0.0):
-            return self.__class__(
+            return self._copy_metadata_to(self.__class__(
                 jnp.zeros((0, self.xz_array.shape[1]), dtype=self.xz_array.dtype),
                 utils.as_real_array([]),
                 lexsorted=True,
-            )
-        return self.__class__(self.xz_array, scalar * self.c_array, lexsorted=self.lexsorted)
+            ))
+        return self._copy_metadata_to(self.__class__(self.xz_array, scalar * self.c_array, lexsorted=self.lexsorted))
 
     def __rmul__(self, scalar):
         return self * scalar
@@ -206,11 +215,16 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
         self.lexsorted = bool(lexsorted)
 
     def tree_flatten(self):
-        return ((self.xz_array, self.c_array, self.grad_c_array), self.lexsorted)
+        return ((self.xz_array, self.c_array, self.grad_c_array),
+                (self.lexsorted, None if self.active_qubits is None else tuple(self.active_qubits), self.system_size))
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children, lexsorted=aux_data)
+        lexsorted, active, system_size = aux_data
+        result = cls(*children, lexsorted=lexsorted)
+        result.active_qubits = None if active is None else list(active)
+        result.system_size = system_size
+        return result
 
     def __iter__(self):
         return iter((self.xz_array, self.c_array, self.grad_c_array))
@@ -232,12 +246,12 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
             self.c_array,
             self.grad_c_array,
         )
-        return self.__class__(
+        return self._copy_metadata_to(self.__class__(
             xz_array,
             c_array,
             grad_c_array,
             lexsorted=True,
-        )
+        ))
 
     def get_operator_stabilizer_entropy(self, alpha: float = 1) -> float:
         probabilities = jnp.abs(self.c_array) ** 2
@@ -248,7 +262,7 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
             return (1 / (1 - alpha)) * jnp.log(jnp.sum(probabilities ** alpha) + 1e-12)
 
     def to_spo(self):
-        return SparsePauliOp(self.xz_array, self.c_array, lexsorted=self.lexsorted)
+        return self._copy_metadata_to(SparsePauliOp(self.xz_array, self.c_array, lexsorted=self.lexsorted))
 
     # alias for existing callers.
     def get_OSE(self, alpha: float = 1) -> float:
@@ -256,14 +270,15 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
 
     def __add__(self, other):
         if other == 0:
-            return self.__class__(
+            return self._copy_metadata_to(self.__class__(
                 self.xz_array,
                 self.c_array,
                 self.grad_c_array,
                 lexsorted=self.lexsorted,
-            )
+            ))
         if not isinstance(other, SparsePauliGradientOp):
             return NotImplemented
+        self._check_mapping(other)
         from .kernels import (
             merge_val_grad_,
             next_pow2,
@@ -280,20 +295,20 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
         xz_array = slice_to_size_x_arr(xz_array, slice_size)
         c_array = slice_to_size_c_arr(c_array, slice_size)
         grad_c_array = slice_to_size_c_arr(grad_c_array, slice_size)
-        return self.__class__(
+        return self._copy_metadata_to(self.__class__(
             xz_array,
             c_array,
             grad_c_array,
-        )
+        ))
 
     def __radd__(self, other):
         if other == 0:
-            return self.__class__(
+            return self._copy_metadata_to(self.__class__(
                 self.xz_array,
                 self.c_array,
                 self.grad_c_array,
                 lexsorted=self.lexsorted,
-            )
+            ))
         return self.__add__(other)
 
     def __mul__(self, scalar):
@@ -301,13 +316,13 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
         if np.isclose(np.asarray(scalar), 0.0):
             empty_xz = jnp.zeros((0, self.xz_array.shape[1]), dtype=self.xz_array.dtype)
             empty_c = utils.as_real_array([])
-            return self.__class__(empty_xz, empty_c, empty_c, lexsorted=True)
-        return self.__class__(
+            return self._copy_metadata_to(self.__class__(empty_xz, empty_c, empty_c, lexsorted=True))
+        return self._copy_metadata_to(self.__class__(
             self.xz_array,
             scalar * self.c_array,
             scalar * self.grad_c_array,
             lexsorted=self.lexsorted,
-        )
+        ))
 
     def __rmul__(self, scalar):
         return self * scalar
