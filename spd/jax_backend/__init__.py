@@ -76,3 +76,14 @@ __all__ = [
     "set_precision",
     "utils",
 ]
+
+from .channels import (
+    reindex_spo, contract_zero_forward, contract_zero_backward,
+    insert_identity_forward, insert_identity_backward, create_checkpoint_backend,
+    checkpoint_size,
+)
+__all__ += [
+    'reindex_spo', 'contract_zero_forward', 'contract_zero_backward',
+    'insert_identity_forward', 'insert_identity_backward',
+    'create_checkpoint_backend', 'checkpoint_size',
+]

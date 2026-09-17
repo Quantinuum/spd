@@ -10,7 +10,7 @@ from spd.circuit_ir import PauliRotation as Rot, SingleQubitClifford as One, Two
 from spd.checkpoints import CheckpointStore
 
 
-@pytest.fixture(params=["numpy", "triton"])
+@pytest.fixture(params=["numpy", "jax", "triton"])
 def channel_backend_name(request):
     """Backends implementing native channel kernels; no host fallback."""
     if request.param == "triton":
@@ -370,9 +370,9 @@ def test_random_unitary_segments_against_density_matrix(seed, channel_backend_na
     np.testing.assert_allclose(grads, finite_differences(c, obs), atol=1e-9)
 
 
-def test_unitary_truncation_remains_a_gradient_approximation():
+def test_unitary_truncation_remains_a_gradient_approximation(channel_backend_name):
     c = spd.CircuitIR(2, [spd.CreateZero(0), Rot('Ry', 'YI', .01), spd.ResetZero(1)])
-    o = spd.create_spo({'ZI': 1.}, backend_name='numpy', precision='double')
+    o = spd.create_spo({'ZI': 1.}, backend_name=channel_backend_name, precision='double')
     f, info = spd.evolve(o, c, .1, 100, progress=False)
     assert info['history']['num_str_truncated'] == [0, 1, 0]
     assert f.get_expectation_value() == pytest.approx(np.cos(.01))
@@ -497,9 +497,9 @@ def test_large_creation_batch_has_one_checkpoint(tmp_path, monkeypatch):
 def test_backend_channel_capability_preflight(all_backend, tmp_path, monkeypatch):
     name, module = all_backend
     adapter = spd.BackendAdapter.from_name(name, precision='double')
-    if name in ('numpy', 'triton'):
-        adapter.require_channel_support()
-        return
+    adapter.require_channel_support()
+    # Simulate a backend missing one required primitive, now that all support it.
+    monkeypatch.delattr(module, 'contract_zero_forward')
     o = spd.create_spo({'II': 1.}, backend=adapter)
     g = spd.init_gradient_spo(o, backend=adapter)
     def unexpected(*args, **kwargs):
@@ -507,7 +507,6 @@ def test_backend_channel_capability_preflight(all_backend, tmp_path, monkeypatch
     monkeypatch.setattr(CheckpointStore, '__init__', unexpected)
     monkeypatch.setattr(module, 'conjugate_H_forward', unexpected)
     monkeypatch.setattr(module, 'conjugate_H_backward', unexpected)
-    monkeypatch.setattr(spd.numpy_backend, 'contract_zero_forward', unexpected)
     for channel in [spd.CreateZero(0), spd.ResetZero(0), spd.Discard(0)]:
         c = spd.CircuitIR(2, [One('OpType.H', 1), channel, One('OpType.H', 1)])
         with pytest.raises(NotImplementedError, match=f"backend '{name}'"):

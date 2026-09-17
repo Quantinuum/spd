@@ -307,6 +307,9 @@ def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
 # ---------------------------------------------------------------------- #
 
 def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):
+    if spo.active_qubits is not None:
+        from .channels import compact_rotation
+        return compact_rotation(spo, xzk, theta, trunc_val, max_num_str)
     return _load_algorithm_module().forward_step(
         spo,
         xzk,
@@ -318,6 +321,9 @@ def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):
 
 
 def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str):
+    if spo_val_grad.active_qubits is not None:
+        from .channels import compact_rotation
+        return compact_rotation(spo_val_grad, xzk, theta, trunc_val, max_num_str, backward=True)
     return _load_algorithm_module().backward_step(
         spo_val_grad,
         xzk,

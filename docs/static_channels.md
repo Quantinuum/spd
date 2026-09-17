@@ -1,9 +1,10 @@
 # Fixed-index static channels
 
 SPD supports `CreateZero(i)`, `ResetZero(i)`, and `Discard(i)` in `CircuitIR`.
-NumPy and Triton implement expectation evaluation and rotation gradients for
-these operations. JAX channel execution raises `NotImplementedError`. Select
-`backend_name="numpy"` or `backend_name="triton"` when creating a channel observable.
+NumPy, JAX, and Triton implement expectation evaluation and rotation gradients
+for these operations. Select the backend with `backend_name` when creating an
+observable. JAX executes on its selected CPU or accelerator device without a
+NumPy fallback for channel computation.
 
 ## Circuit semantics
 
@@ -41,6 +42,7 @@ CircuitIR → run_circuit → BackendAdapter → selected backend kernels
 | Execution order, index translation, contraction grouping, checkpoint lifetime | `spd/run_circuit.py` |
 | Backend capability checks and dispatch | `spd/backend_adapter.py` |
 | NumPy channel transformations and coefficient-gradient transposes | `spd/numpy_backend/kernels.py` |
+| JAX channel transformations and checkpoint transfers | `spd/jax_backend/channels.py` |
 | GPU channel transformations and checkpoint transfers | `spd/triton_backend/channels.py`, `spd/triton_backend/kernels.py` |
 | SPO active-index metadata and validation | `spd/core/sparse_pauli.py` |
 | Snapshot storage in host memory/disk and cleanup | `spd/checkpoints.py` |
@@ -220,12 +222,14 @@ is unsupported.
 - `size(state)`: estimate resident bytes for a native or host representation.
 - `device_of(state)`: return a device identifier, or `None` for CPU.
 - `to_host(state)`: transfer a complete device snapshot into host storage.
-- `from_host(state, device)`: restore it to the original device.
+- `from_host(state, device)`: restore it to the original device. For CPU-origin
+  disk snapshots, `device` is `None`; the factory captures any required CPU context.
 
 NumPy supplies `checkpoint_size`; its host conversions are identity operations.
 Device backends export `create_checkpoint_backend(state)` to capture
 restoration context once per evaluation, without retaining the input snapshot.
-Transfers must preserve coefficients, Pauli rows, precision, and active-index
+CPU-native snapshots also use `to_host` immediately before disk serialization,
+and disk reads call `from_host` for both CPU and device origins. Transfers must preserve coefficients, Pauli rows, precision, and active-index
 metadata and finish before the original device reference is released. Helpers
 must not mutate inputs or retain hidden snapshot references.
 
@@ -240,8 +244,24 @@ Eviction copies complete packed rows and coefficients into NumPy arrays without
 compacting or mutating the snapshot; restoration preserves its device, precision,
 and active-index metadata. Only these host representations are pickled on disk.
 
+JAX uses compiled packed-column transforms, sorted row merging, and the existing
+lexical row lookup. Compact/channel rotations retain exact zero coordinates at
+cutoff zero and use inverse reconstruction without donation or per-gate caches.
+This compact path is shared by all JAX algorithm settings; ordinary full-register
+unitary execution continues to use the selected algorithm. Avoiding donation
+protects retained checkpoints and shared primal buffers. Channel outputs have
+exact row counts rather than sentinel padding, including zero-column scalars.
+
+JAX CPU snapshots remain native objects under the CPU budget. Before disk spill,
+CPU-native snapshots also pass through the backend's host conversion helper.
+Device snapshots convert on device eviction. JAX host representations contain
+NumPy arrays and metadata only; restoration preserves the original device and
+array dtypes independently of the current default device or precision setting.
+The backend factory captures a device identifier, never the input snapshot.
+Multi-device sharded JAX snapshots are unsupported.
+
 The generic device-tier policy is tested with a simulated backend and actual
-Triton GPU transfers. JAX channel execution remains unimplemented.
+JAX/Triton GPU transfers, alongside JAX CPU retention and disk restoration.
 
 ## Rotation parameters and units
 
@@ -303,8 +323,9 @@ From the repository root:
 
 ```sh
 python -m examples.functionality.static_channels
-JAX_PLATFORMS=cpu python -m pytest -q tests/test_checkpoints.py tests/test_static_channels.py tests/test_create_spo.py tests/test_circuit_ir.py tests/test_variational_circuit.py
+JAX_PLATFORMS=cpu python -m pytest -q tests/test_checkpoints.py tests/test_static_channels.py tests/test_jax_channels.py tests/test_triton_channels.py tests/test_create_spo.py tests/test_circuit_ir.py tests/test_variational_circuit.py
 JAX_PLATFORMS=cpu python -m pytest -q tests
+XLA_PYTHON_CLIENT_PREALLOCATE=false python -m pytest -q tests/test_jax_channels.py
 ```
 
 Set `PYTHONPATH` to the worktree's absolute path when running the full suite so
@@ -316,6 +337,8 @@ propagation contracts through widths `8 → 4 → 2 → 0`, using three checkpoi
 The reset example prepares a correlated pair, resets one index, and rotates it
 again. Both rotations share a parameter with factors 1 and 2; analytic
 expectation and derivative assertions verify the result.
+
+Benchmark design is described in [static channel benchmarks](static_channel_benchmarks.md).
 
 Focused tests compare against independent dense calculations and finite
 differences. They cover activity validation, output mappings, entanglement,

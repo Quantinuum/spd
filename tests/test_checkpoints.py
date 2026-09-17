@@ -253,3 +253,27 @@ def test_eviction_and_take_release_native_references(tmp_path):
     del restored
     assert restored_ref() is None  # take did not retain/promote the restored state.
     store.close()
+
+
+def test_cpu_native_spill_uses_backend_host_representation(tmp_path):
+    events = []
+    def to_host(state):
+        events.append('host')
+        return {'payload': state.data}
+    def from_host(host, device):
+        assert device is None
+        events.append('restore')
+        return State(host['payload'])
+    backend = CheckpointBackend(size=lambda state: len(state.data),
+                                to_host=to_host, from_host=from_host)
+    store = CheckpointStore(None, tmp_path, backend=backend, memory_budget_bytes=3)
+    native = State(b'abc')
+    store.save(0, native)
+    assert store.load(0) is native and events == []
+    store.save(1, State(b'def'))
+    assert events == ['host']
+    with store._snapshots[0].value.open('rb') as stream:
+        assert pickle.load(stream) == {'payload': b'abc'}
+    assert store.take(0) == native
+    assert events == ['host', 'restore']
+    store.close()

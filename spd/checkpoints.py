@@ -30,7 +30,9 @@ class CheckpointBackend:
     size estimates resident bytes for native and host representations. device_of
     returns None for CPU or a hashable device identifier. to_host must finish the
     transfer before returning; from_host restores the captured device/context.
-    CPU backends only need size. No callback serializes or mutates its input.
+    CPU-native snapshots also use to_host before disk spill and from_host with
+    device=None after disk reads. CPU backends with portable native objects only
+    need size. No callback serializes or mutates its input.
     """
     size: Callable[[object], int]
     device_of: Callable[[object], Hashable | None] = _host_device
@@ -80,8 +82,11 @@ class CheckpointStore:
             self._temporary = TemporaryDirectory(prefix='spd-channels-', dir=self._parent_directory)
             self.directory = Path(self._temporary.name)
         path = self.directory / f'{key}.pickle'
+        # CPU-native backends may also need a portable host representation
+        # (e.g. JAX CPU arrays). Device evictions already performed this step.
+        value = self.backend.to_host(entry.value) if entry.device is None else entry.value
         with path.open('wb') as stream:
-            pickle.dump(entry.value, stream, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(value, stream, protocol=pickle.HIGHEST_PROTOCOL)
         entry.value, entry.tier, entry.size = path, 'disk', 0
 
     def _retain_host(self, key, entry):
@@ -141,7 +146,7 @@ class CheckpointStore:
             if entry.tier == 'disk':
                 with state.open('rb') as stream:
                     state = pickle.load(stream)
-            if entry.tier != 'device' and entry.device is not None:
+            if entry.tier == 'disk' or (entry.tier != 'device' and entry.device is not None):
                 state = self.backend.from_host(state, entry.device)
             return state
         except BaseException:
