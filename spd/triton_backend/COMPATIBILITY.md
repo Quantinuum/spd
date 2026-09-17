@@ -28,6 +28,14 @@ metadata. This distinction is necessary for comparable gradient evaluations.
 | Equality diagnostics | JAX stack drops the row but omits its discarded norms; search accounts for it | Correct accounting, as in search |
 | Zero generated candidates | NumPy can count these as truncated; JAX excludes them | Exclude zero primal coefficients from diagnostics |
 
+Raw discarded-term counts can differ under floating-point cancellation: fused
+multiply-add can leave a tiny nonzero residual where separately rounded products
+cancel exactly. Both implementations count computed nonzero discarded terms, so
+cross-backend reconstruction tests compare retained coefficients, gradients, and
+discarded L1/L2 weight within tolerance. They do not require matching raw counts
+or their sums. Exact count assertions remain appropriate for controlled cases
+without cancellation; no numerical-zero threshold is added to runtime diagnostics.
+
 Tied cap selections can affect later trajectories. Tests requiring identical
 support must avoid ambiguous ties or allow their effect. Bitwise identity and
 identical optimizer iterates are not required. Row order remains unspecified.

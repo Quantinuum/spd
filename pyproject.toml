@@ -2,6 +2,10 @@
 requires = ["setuptools"]  # Required to build the package
 build-backend = "setuptools.build_meta"  # Use setuptools to build the package
 
+[tool.setuptools.packages.find]
+include = ["spd", "spd.*"]
+namespaces = false
+
 [project]
 name = "spd"
 version = "0.0.1"
