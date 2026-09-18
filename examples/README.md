@@ -14,6 +14,7 @@ Most scripts in this directory use the `pytket` frontend and therefore require t
 
 - [`run_simple_circuit_1.py`](run_simple_circuit_1.py): smallest in-code `pytket` circuit example using `spd.create_spo(...)`, `evolve(...)`, `get_expectation_value(...)`, and truncation info
 - [`gradient/run_tfi_gs.py`](gradient/run_tfi_gs.py): 1D/2D/3D TFI optimization with `VariationalCircuit`
+- [`gradient/run_1d_tfi_hva_tmera.py`](gradient/run_1d_tfi_hva_tmera.py): periodic 1D TFI optimization with the channel-backed binary HVA-TMERA ansatz
 - [`gradient/run_afh_gs.py`](gradient/run_afh_gs.py): 1D/2D/3D AFH optimization with signed staggered parameters
 - [`run_with_backend_adapter.py`](run_with_backend_adapter.py): small example with a reusable configured backend
 - [`tfi_noise_susceptibility.py`](tfi_noise_susceptibility.py): operation-aligned one- and two-qubit depolarizing susceptibilities for a short TFI Trotter circuit
@@ -46,6 +47,7 @@ python examples/gradient/run_tfi_gs.py 2 6 100 --linear-system-size 12
 python examples/gradient/run_tfi_gs.py 3 6 100 --linear-system-size 6
 python examples/gradient/run_tfi_gs.py 2 6 100 --algorithm search_update_merge
 python examples/gradient/run_tfi_gs.py 1 6 100 --init-params-path previous/final_params.txt
+python examples/gradient/run_1d_tfi_hva_tmera.py 16 4 100 --rounds 2 --backend triton
 ```
 
 The AFH runner takes the dimension, number of four-parameter layers, and
