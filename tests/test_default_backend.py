@@ -26,11 +26,12 @@ def test_creation_selects_available_backend(monkeypatch, torch_present, cuda_bui
     monkeypatch.setitem(sys.modules, "torch", torch if torch_present else None)
     monkeypatch.setitem(sys.modules, "triton", SimpleNamespace() if triton_present else None)
     calls = []
-    sentinel = object()
+    sentinel = SimpleNamespace()
+    sentinel.set_active_qubits = lambda system_size, active_qubits: sentinel
 
     def make_backend(name, **kwargs):
         calls.append((name, kwargs))
-        return SimpleNamespace(create_initial_spo=lambda data, size: sentinel)
+        return SimpleNamespace(packbit=32, create_initial_spo=lambda data, size: sentinel)
 
     monkeypatch.setattr(run_circuit, "_make_backend", make_backend)
     assert spd.create_spo({"Z": 1.0}, precision="double") is sentinel

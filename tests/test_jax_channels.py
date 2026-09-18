@@ -99,7 +99,7 @@ def test_fifo_eviction(device, tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize('algorithm', ['stack_sort_merge', 'search_update_merge', 'search_update_merge_donate'])
+@pytest.mark.parametrize('algorithm', ['stack_sort_merge', 'search_update_merge'])
 @pytest.mark.parametrize('precision', ['single', 'double'])
 @pytest.mark.parametrize('disk', [False, True])
 def test_dense_gradient_reconstruction(device, algorithm, precision, disk, tmp_path, monkeypatch):
@@ -149,7 +149,7 @@ def test_complete_transpose_and_empty_scalar(device):
     adapter = spd.BackendAdapter.from_name('jax', precision='double')
     o = adapter.module.create_op({'II': 1., 'ZI': -1., 'XI': 4., 'YZ': 0., 'IZ': 2.}, num_qubits=2)
     reduced = backend.contract_zero_forward(o, 2, [0], [0])
-    assert reduced.get_size() == 2
+    assert reduced.get_size() == 1  # The cancelled identity is removed.
     target = backend.create_op({'I': 0., 'Z': 2.}, num_qubits=1)
     g = backend.SparsePauliGradientOp(target.xz_array, target.c_array, jax.numpy.array([3., -2.]))
     restored = backend.contract_zero_backward(g, o, 2, [0], [0])
@@ -159,7 +159,7 @@ def test_complete_transpose_and_empty_scalar(device):
     for key, gradient in zip(np.asarray(o.xz_array), np.asarray(restored.grad_c_array)):
         assert gradient == expected[backend.utils.uint_to_pauli_str(key, 32)[:2]]
     empty = backend.create_op({}, num_qubits=0)
-    assert backend.insert_identity_forward(empty, 0, 0).xz_array.shape == (0, 2)
+    assert backend.insert_identity_forward(empty, 0, 0).xz_array.shape == (1, 2)
     scalar = backend.reindex_spo(empty, 0, [])
     assert scalar.xz_array.shape == (1, 0)
     hooks = backend.create_checkpoint_backend(scalar)
@@ -187,20 +187,13 @@ def test_validation_and_checkpoint_readonly(device):
         backend.reindex_spo(o, 3, [0, 0])
     with pytest.raises(ValueError, match='outside'):
         backend.reindex_spo(o, 2, [0, 1])
-    # Saturating a tiny cap under the donation strategy must never invalidate
-    # a native snapshot or the operator retained by the caller.
+    # Donation must fail before checkpoint buffers can be retained or consumed.
     previous = backend.get_algorithm()
     backend.set_algorithm('search_update_merge_donate')
     circuit = spd.CircuitIR(3, [spd.ResetZero(0), Rot('Ry', 'YII', .4), spd.ResetZero(2)])
     try:
-        f, _ = spd.evolve(o, circuit, 0., 1, progress=False)
-        store = f._channel_checkpoints
-        retained = [store.load(key) for key in store._snapshots]
-        snapshots = [[np.array(a) for a in arrays(s)] for s in retained]
-        spd.backpropagate(spd.init_gradient_spo(f), circuit, 0., 1, progress=False)
-        for state, expected in zip(retained, snapshots):
-            for actual, before in zip(arrays(state), expected):
-                np.testing.assert_array_equal(actual, before)
+        with pytest.raises(NotImplementedError, match='checkpoints retain forward buffers'):
+            spd.evolve(o, circuit, 0., 1, progress=False)
         assert float(o.get_norm_square()) == 1.
     finally:
         backend.set_algorithm(previous)

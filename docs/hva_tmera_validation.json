@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "ansatz": {
+    "name": "open-chain HVA brickwork binary MERA",
+    "four_qubit_round": [
+      "ZZ(0,1)",
+      "ZZ(2,3)",
+      "X(0)",
+      "X(1)",
+      "X(2)",
+      "X(3)",
+      "ZZ(1,2)",
+      "X(0)",
+      "X(1)",
+      "X(2)",
+      "X(3)"
+    ],
+    "two_qubit_round": [
+      "ZZ(0,1)",
+      "X(0)",
+      "X(1)"
+    ],
+    "parameter_sharing": "independent within a tensor; shared across spatial instances of one scale/role; independent across scale, role, and round"
+  },
+  "experiment": {
+    "system_size": 16,
+    "chi": 4,
+    "g": 1.1,
+    "seed": 7,
+    "optimizer": "L-BFGS-B",
+    "max_iterations": 100,
+    "backend": "native Triton double precision",
+    "cutoff": 0,
+    "term_cap": 1000000
+  },
+  "runs": [
+    {
+      "rounds": 1,
+      "bottom": false,
+      "parameter_count": 55,
+      "initial_energy": -15.927600531435893,
+      "energy": -21.102391756515342,
+      "energy_per_site": -1.3188994847822089,
+      "gradient_inf_norm": 0.07298178782717427,
+      "iterations": 100,
+      "evaluations": 109,
+      "success": false,
+      "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "forward_discarded": 0,
+      "backward_discarded": 0
+    },
+    {
+      "rounds": 1,
+      "bottom": true,
+      "parameter_count": 61,
+      "initial_energy": -15.927600531435893,
+      "energy": -21.355321594962476,
+      "energy_per_site": -1.3347075996851547,
+      "gradient_inf_norm": 0.026501256094927886,
+      "iterations": 100,
+      "evaluations": 111,
+      "success": false,
+      "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "forward_discarded": 0,
+      "backward_discarded": 0
+    },
+    {
+      "rounds": 2,
+      "bottom": false,
+      "parameter_count": 110,
+      "initial_energy": -16.012302129760503,
+      "energy": -21.432477495228195,
+      "energy_per_site": -1.3395298434517622,
+      "gradient_inf_norm": 0.11564355658029214,
+      "iterations": 100,
+      "evaluations": 105,
+      "success": false,
+      "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "forward_discarded": 0,
+      "backward_discarded": 0
+    },
+    {
+      "rounds": 2,
+      "bottom": true,
+      "parameter_count": 122,
+      "initial_energy": -16.012302129760503,
+      "energy": -21.3589965910466,
+      "energy_per_site": -1.3349372869404126,
+      "gradient_inf_norm": 0.05106402248472036,
+      "iterations": 100,
+      "evaluations": 108,
+      "success": false,
+      "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "forward_discarded": 0,
+      "backward_discarded": 0
+    },
+    {
+      "rounds": 3,
+      "bottom": false,
+      "parameter_count": 165,
+      "initial_energy": -16.282330525164646,
+      "energy": -21.348187629713664,
+      "energy_per_site": -1.334261726857104,
+      "gradient_inf_norm": 0.06264514569945112,
+      "iterations": 100,
+      "evaluations": 104,
+      "success": false,
+      "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "forward_discarded": 0,
+      "backward_discarded": 0
+    },
+    {
+      "rounds": 3,
+      "bottom": true,
+      "parameter_count": 183,
+      "initial_energy": -16.282330525164646,
+      "energy": -21.357092031858052,
+      "energy_per_site": -1.3348182519911282,
+      "gradient_inf_norm": 0.08145778656453434,
+      "iterations": 100,
+      "evaluations": 113,
+      "success": false,
+      "message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "forward_discarded": 0,
+      "backward_discarded": 0
+    }
+  ],
+  "verification": {
+    "lightweight_command": "python -m pytest tests/test_hva_mera.py tests/test_hva_mera_bond_dimension.py tests/test_hva_mera_channels.py tests/test_hva_mera_example.py --ignore=tests/test_hva_mera_triton.py",
+    "lightweight_result": "59 passed in 5.99s (2026-09-17)",
+    "native_triton_command": "python -m pytest tests/test_hva_mera_triton.py",
+    "native_triton_result": "3 native Triton application cases passed directly in the rebased worktree",
+    "native_triton_exact_reference": "N=8 one/two rounds and N=16 one round passed",
+    "kernels_modified_by_feature": false,
+    "jax_cpu_smoke": "N=4 energy and gradients matched exact reference; zero discarded terms",
+    "numpy_smoke": "N=4 energy and gradients matched exact reference; zero discarded terms"
+  },
+  "integration": {
+    "main_commit": "f0138d2fcff6b20443fd2f9eeb94732cb9fe38d7",
+    "static_channels_merged": true,
+    "backends_checked": [
+      "numpy",
+      "jax-cpu",
+      "triton-gpu"
+    ]
+  }
+}

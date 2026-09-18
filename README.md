@@ -237,6 +237,10 @@ dimensions are rejected because they cannot be split into two disjoint
 even/odd bond coverings. See `examples/variational_tfi.py` for a complete
 forward and backward calculation.
 
+A finite standard-binary HVA-MERA builder with fixed-index channel boundaries is
+also available. See [`docs/hva_tmera.md`](docs/hva_tmera.md) for its brickwork
+block, parameter sharing, physical-layer option, and integration status.
+
 Periodic antiferromagnetic Heisenberg generators are available as `afh_1d_hva`,
 `afh_2d_hva`, and `afh_3d_hva`. Each layer uses shared XX, YY, ZZ, and
 staggered Rz parameters. The staggered signs are recorded in

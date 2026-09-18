@@ -195,6 +195,16 @@ class CircuitIR:
             "gate_names": dict(sorted(gate_names.items())),
         }
 
+    def draw(self, output: str = "text", filename: Optional[str] = None,
+             fold: int = 40) -> str:
+        """Render the circuit as dependency-free text or SVG.
+
+        ``fold`` limits the dependency layers per panel, keeping moderate and
+        large circuits readable without creating an unbounded canvas.
+        """
+        from .circuit_visualization import draw_circuit
+        return draw_circuit(self, output=output, filename=filename, fold=fold)
+
     def print_statistics(self, file: Optional[TextIO] = None) -> None:
         """Print a human-readable summary of :meth:`statistics`."""
         statistics = self.statistics()
