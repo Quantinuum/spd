@@ -5,8 +5,9 @@ SPD executor can evaluate cleanly. It is not meant to be a universal circuit
 IR; it is the lowered operation layer consumed by the backend adapter.
 """
 
+from collections import Counter
 from dataclasses import dataclass
-from typing import Union
+from typing import Any, Dict, Optional, TextIO, Union
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class Discard:
 
 
 CHANNEL_TYPES = (CreateZero, ResetZero, Discard)
+GATE_TYPES = (PauliRotation, SingleQubitClifford, TwoQubitClifford)
 
 
 CircuitOperation = Union[
@@ -147,3 +149,71 @@ class CircuitIR:
     def final_active_qubits(self):
         discarded = {op.qubit for op in self.operations if isinstance(op, Discard)}
         return sorted(set(range(self.system_size)) - discarded)
+
+    def statistics(self) -> Dict[str, Any]:
+        """Return gate, channel, and depth statistics for this circuit.
+
+        Gate arity is determined from the qubits on which an operation acts, so
+        a :class:`PauliRotation` can contribute to any of the arity counts. The
+        two-qubit depth is the longest dependency-path depth when exactly
+        two-qubit gates have cost one and all other operations have cost zero.
+        """
+        gate_operations = [
+            operation for operation in self.operations
+            if isinstance(operation, GATE_TYPES)
+        ]
+        arities = Counter(len(get_operation_qubits(operation)) for operation in gate_operations)
+        operation_types = Counter(type(operation).__name__ for operation in self.operations)
+        gate_names = Counter(operation.gate_name for operation in gate_operations)
+
+        qubit_depths = [0] * self.system_size
+        for operation in self.operations:
+            qubits = get_operation_qubits(operation)
+            if not qubits:
+                continue
+            input_depth = max(qubit_depths[qubit] for qubit in qubits)
+            output_depth = input_depth + int(
+                isinstance(operation, GATE_TYPES) and len(qubits) == 2
+            )
+            for qubit in qubits:
+                qubit_depths[qubit] = output_depth
+
+        return {
+            "system_size": self.system_size,
+            "total_operations": len(self.operations),
+            "gate_operations": len(gate_operations),
+            "single_qubit_gates": arities[1],
+            "two_qubit_gates": arities[2],
+            "multi_qubit_gates": sum(count for arity, count in arities.items() if arity > 2),
+            "zero_qubit_gates": arities[0],
+            "two_qubit_depth": max(qubit_depths, default=0),
+            "create_zero": operation_types["CreateZero"],
+            "reset_zero": operation_types["ResetZero"],
+            "discard": operation_types["Discard"],
+            "skipped_operations": operation_types["SkippedOperation"],
+            "operation_types": dict(sorted(operation_types.items())),
+            "gate_names": dict(sorted(gate_names.items())),
+        }
+
+    def print_statistics(self, file: Optional[TextIO] = None) -> None:
+        """Print a human-readable summary of :meth:`statistics`."""
+        statistics = self.statistics()
+        labels = (
+            ("System size", "system_size"),
+            ("Total operations", "total_operations"),
+            ("Gate operations", "gate_operations"),
+            ("Single-qubit gates", "single_qubit_gates"),
+            ("Two-qubit gates", "two_qubit_gates"),
+            ("Multi-qubit gates", "multi_qubit_gates"),
+            ("Zero-qubit gates", "zero_qubit_gates"),
+            ("Two-qubit depth", "two_qubit_depth"),
+            ("CreateZero", "create_zero"),
+            ("ResetZero", "reset_zero"),
+            ("Discard", "discard"),
+            ("Skipped operations", "skipped_operations"),
+        )
+        print("CircuitIR statistics:", file=file)
+        for label, key in labels:
+            print("  {}: {}".format(label, statistics[key]), file=file)
+        print("  Operation types: {}".format(statistics["operation_types"]), file=file)
+        print("  Gate names: {}".format(statistics["gate_names"]), file=file)
