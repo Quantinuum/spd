@@ -104,3 +104,48 @@ def test_print_statistics(capsys):
     assert "Two-qubit gates: 0" in output
     assert "CreateZero: 1" in output
     assert "ResetZero: 1" in output
+
+
+def test_draw_text_places_disjoint_operations_in_the_same_layer():
+    circuit = CircuitIR(3, (
+        SingleQubitClifford("H", 0),
+        SingleQubitClifford("X", 2),
+        TwoQubitClifford("CX", 0, 1),
+    ))
+
+    drawing = circuit.draw()
+
+    assert drawing.count("[H]") == 1
+    assert drawing.count("[X]") == 1
+    assert drawing.count("[CX]") == 2
+    assert len(drawing.splitlines()) == 3
+
+
+def test_draw_text_folds_large_circuits():
+    circuit = CircuitIR(1, tuple(SingleQubitClifford("X", 0) for _ in range(5)))
+    drawing = circuit.draw(fold=2)
+    assert "layers 0-1" in drawing
+    assert "layers 2-3" in drawing
+    assert "layers 4-4" in drawing
+
+
+def test_draw_svg_is_standalone_and_escapes_gate_labels(tmp_path):
+    circuit = CircuitIR(2, (SingleQubitClifford("A&B", 0), ResetZero(1)))
+    destination = tmp_path / "circuit.svg"
+    drawing = circuit.draw(output="svg", filename=str(destination))
+    assert drawing.startswith('<svg xmlns="http://www.w3.org/2000/svg"')
+    assert "A&amp;B" in drawing
+    assert "CircuitIR diagram" in drawing
+    assert destination.read_text() == drawing
+
+
+@pytest.mark.parametrize("output", ["html", "png", ""])
+def test_draw_rejects_unknown_output(output):
+    with pytest.raises(ValueError, match="output"):
+        CircuitIR(1, ()).draw(output=output)
+
+
+@pytest.mark.parametrize("fold", [0, -1, True, 1.5])
+def test_draw_rejects_invalid_fold(fold):
+    with pytest.raises(ValueError, match="fold"):
+        CircuitIR(1, ()).draw(fold=fold)
