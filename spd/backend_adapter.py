@@ -158,6 +158,12 @@ class BackendAdapter:
 
     def require_channel_support(self):
         """Fail before execution when this backend lacks the channel interface."""
+        if self.name == "jax" and self.module.get_algorithm() == "search_update_merge_donate":
+            raise NotImplementedError(
+                "JAX static channels do not support search_update_merge_donate: "
+                "channel checkpoints retain forward buffers. Select stack_sort_merge "
+                "or search_update_merge."
+            )
         required = ("reindex_spo", "contract_zero_forward", "contract_zero_backward",
                     "insert_identity_forward", "insert_identity_backward")
         if any(not callable(getattr(self.module, name, None)) for name in required):
@@ -182,9 +188,11 @@ class BackendAdapter:
         self.require_channel_support()
         return self.module.reindex_spo(spo, num_qubits, columns)
 
-    def apply_zero_contractions_forward(self, spo, columns, remove_columns):
+    def apply_zero_contractions_forward(self, spo, columns, remove_columns, *, preserve_zero_support=False):
         self.require_channel_support()
-        result = self.module.contract_zero_forward(spo, len(spo.qubit_indices), columns, remove_columns)
+        options = {"preserve_zero_support": preserve_zero_support} if self.name == "jax" else {}
+        result = self.module.contract_zero_forward(
+            spo, len(spo.qubit_indices), columns, remove_columns, **options)
         return result, result.get_size(), None, _zero_step_info()
 
     def apply_zero_contractions_backward(self, spgo, checkpoint, columns, remove_columns):
@@ -221,7 +229,8 @@ class BackendAdapter:
     def apply_forward(self, spo, operation, trunc_val, max_num_str):
         if isinstance(operation, (CreateZero, ResetZero)):
             remove = [operation.qubit] if isinstance(operation, CreateZero) else []
-            return self.apply_zero_contractions_forward(spo, [operation.qubit], remove)
+            return self.apply_zero_contractions_forward(
+                spo, [operation.qubit], remove, preserve_zero_support=trunc_val == 0)
         if isinstance(operation, Discard):
             self.require_channel_support()
             result = self.module.insert_identity_forward(spo, len(spo.qubit_indices), operation.qubit)

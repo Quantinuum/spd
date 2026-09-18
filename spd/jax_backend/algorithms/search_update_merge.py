@@ -95,7 +95,7 @@ def _top_k_step_info_values(magnitudes, final_keep_mask):
     return count, l1_norm, jnp.sqrt(l2_square)
 
 
-def forward_step(spo, xzk, theta, trunc_val, max_num_str):
+def forward_step(spo, xzk, theta, trunc_val, max_num_str, *, preserve_zero_support=False):
     """
     Conjugate a sparse-Pauli operator using the lexicographic search/update path.
     """
@@ -116,6 +116,7 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
         theta,
         trunc_val,
         max_num_str,
+        preserve_zero_support=preserve_zero_support,
     )
     jax.block_until_ready(new_size)
 
@@ -124,6 +125,7 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
     jax.block_until_ready(c_)
 
+    x_, c_ = kernels.pad_storage(x_, c_)
     new_spo = SparsePauliOp(x_, c_, lexsorted=True)
     return (
         new_spo,
@@ -280,8 +282,8 @@ def forward_search_update_merge_jitted(spo, xzk, theta, trunc_val):
     return sorted_xz, sorted_c, new_size, final_valid_count
 
 
-@partial(jax.jit, static_argnames=("max_num_str",))
-def forward_search_update_merge_top_k_jitted(spo, xzk, theta, trunc_val, max_num_str):
+@partial(jax.jit, static_argnames=("max_num_str", "preserve_zero_support"))
+def forward_search_update_merge_top_k_jitted(spo, xzk, theta, trunc_val, max_num_str, *, preserve_zero_support=False):
     """
     Forward search/update with cap truncation by largest coefficient magnitude.
 
@@ -313,7 +315,7 @@ def forward_search_update_merge_top_k_jitted(spo, xzk, theta, trunc_val, max_num
 
     c_array_updated = val_self * cos_t - val_pair * sin_t * sign_array
 
-    mask_insert = mask_anti_commute & (~is_duplicate)
+    mask_insert = mask_anti_commute & (~is_duplicate) & (xz_array[:, 0] != kernels.PAD_VAL)
     new_xz = jnp.where(mask_insert[:, None], xz_array_conj, kernels.PAD_VAL)
     new_c_val = val_self * sin_t * sign_array
     new_c = jnp.where(mask_insert, new_c_val, 0.0)
@@ -323,6 +325,8 @@ def forward_search_update_merge_top_k_jitted(spo, xzk, theta, trunc_val, max_num
 
     magnitudes = jnp.abs(merged_c)
     live_mask = magnitudes > trunc_val
+    if preserve_zero_support:
+        live_mask |= (trunc_val == 0) & (merged_xz[:, 0] != kernels.PAD_VAL)
     scores = jnp.where(live_mask, magnitudes, -jnp.inf)
     k = min(int(max_num_str), merged_c.shape[0])
     _, top_indices = jax.lax.top_k(scores, k)
@@ -397,6 +401,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
     grad_c_ = kernels.slice_to_size_c_arr(grad_c_concat, slice_size)
     jax.block_until_ready(grad_c_)
 
+    x_, c_, grad_c_ = kernels.pad_storage(x_, c_, grad_c_)
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_, lexsorted=True)
     return (
         new_spo_val_grad,

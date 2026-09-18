@@ -44,6 +44,11 @@ class SparsePauliOp(BaseSparsePauliOp):
     __repr__ = __str__
 
     def get_size(self) -> int:
+        if self.active_qubits is not None or getattr(self, "_channel_storage", False):
+            if not self.xz_array.shape[1]:
+                return min(1, self.c_array.size)
+            from .kernels import PAD_VAL
+            return int(jnp.sum(self.xz_array[:, 0] != PAD_VAL))
         return self.c_array.size
 
     def get_norm_square(self):
@@ -235,6 +240,11 @@ class SparsePauliGradientOp(BaseSparsePauliGradientOp):
     __repr__ = __str__
 
     def get_size(self) -> int:
+        if self.active_qubits is not None or getattr(self, "_channel_storage", False):
+            if not self.xz_array.shape[1]:
+                return min(1, self.c_array.size)
+            from .kernels import PAD_VAL
+            return int(jnp.sum(self.xz_array[:, 0] != PAD_VAL))
         return self.c_array.size
 
     def get_norm_square(self):

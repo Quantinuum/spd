@@ -1,5 +1,7 @@
 """Wrapper for the current JAX stack/sort/merge algorithm."""
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 # import time
@@ -60,8 +62,10 @@ def _count_stored_terms(c_array):
     return int(jnp.sum(jnp.abs(c_array) > 0))
 
 
-def _apply_hard_cutoff(x_array, c_array, trunc_val):
+def _apply_hard_cutoff(x_array, c_array, trunc_val, preserve_zero_support=False):
     keep_mask = jnp.abs(c_array) > trunc_val
+    if preserve_zero_support:
+        keep_mask |= (trunc_val == 0) & (x_array[:, 0] != kernels.PAD_VAL)
     return (
         jnp.where(keep_mask[:, None], x_array, kernels.PAD_VAL),
         jnp.where(keep_mask, c_array, 0.0),
@@ -80,7 +84,7 @@ def _apply_gradient_hard_cutoff(x_array, c_array, grad_c_array, trunc_val):
     )
 
 
-def forward_step(spo, xzk, theta, trunc_val, max_num_str):
+def forward_step(spo, xzk, theta, trunc_val, max_num_str, *, preserve_zero_support=False):
     """
     Conjugate a batch of Pauli strings by rotation R_k(theta):
     exp(i theta/2 * sigma_k) * sigma_j * exp(-i theta/2 * sigma_k)
@@ -96,7 +100,7 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
     """
     # t0 = time.time()
     x_concat, c_concat, new_size, num_above_trunc_val = forward_stack_sort_merge_jitted(
-        spo, xzk, theta, trunc_val
+        spo, xzk, theta, trunc_val, preserve_zero_support=preserve_zero_support
     )
     jax.block_until_ready(new_size)
     # t1 = time.time()
@@ -106,16 +110,17 @@ def forward_step(spo, xzk, theta, trunc_val, max_num_str):
 
     x_ = kernels.slice_to_size_x_arr(x_concat, slice_size)
     c_ = kernels.slice_to_size_c_arr(c_concat, slice_size)
-    x_, c_, _ = _apply_hard_cutoff(x_, c_, trunc_val)
+    x_, c_, keep = _apply_hard_cutoff(x_, c_, trunc_val, preserve_zero_support)
     jax.block_until_ready(c_)
     # t2 = time.time()
-    num_stored_terms = _count_stored_terms(c_)
+    num_stored_terms = int(jnp.sum(keep))
 
     # print("Merge time:", (t1 - t0) * 1000, "ms, Pad time:", (t2 - t1) * 1000,
     #       "ms, Final size:", new_size, "Above trunc:", num_above_trunc_val,
     #       "Original size:", x_array_1.shape[0] + x_array_2.shape[0])
+    x_, c_ = kernels.pad_storage(x_, c_)
     new_spo = SparsePauliOp(x_, c_)
-    return new_spo, num_stored_terms, _step_info_from_removed(c_concat, trunc_val, slice_size)
+    return new_spo, num_stored_terms, _step_info_from_removed(c_concat, trunc_val, num_stored_terms)
 
 
 def forward_step_soft_cutoff(spo, xzk, theta, trunc_val, max_num_str):
@@ -132,15 +137,19 @@ def forward_step_soft_cutoff(spo, xzk, theta, trunc_val, max_num_str):
     new_spo = SparsePauliOp(x_, c_)
     return new_spo, _count_stored_terms(c_), _step_info_from_tail(c_concat, slice_size)
 
-@jax.jit
-def forward_stack_sort_merge_jitted(spo, xzk, theta, trunc_val):
+@partial(jax.jit, static_argnames=("preserve_zero_support",))
+def forward_stack_sort_merge_jitted(spo, xzk, theta, trunc_val, *, preserve_zero_support=False):
     print("Recompile: forward_jitted", spo.xz_array.shape,)
     spo_1, spo_2 = kernels.conjugated_pauli_batched_uint_(spo, xzk, theta)
 
+    if preserve_zero_support:
+        _, sign = kernels.pauli_product_phase_sign_second_uint(xzk, spo.xz_array)
+        valid_partner = (sign != 0) & (spo.xz_array[:, 0] != kernels.PAD_VAL)
+        spo_2.xz_array = jnp.where(valid_partner[:, None], spo_2.xz_array, kernels.PAD_VAL)
     x_concat, c_concat, num_above_trunc_val = kernels.merge_(
         spo_1.xz_array, spo_1.c_array,
         spo_2.xz_array, spo_2.c_array,
-        trunc_val)
+        trunc_val, preserve_zero_support=preserve_zero_support)
 
     new_size = kernels.next_pow2(num_above_trunc_val)
     return x_concat, c_concat, new_size, num_above_trunc_val
@@ -177,6 +186,7 @@ def backward_step(spo_val_grad, xzk, theta, trunc_val, max_num_str):
         grad_c_,
         trunc_val,
     )
+    x_, c_, grad_c_ = kernels.pad_storage(x_, c_, grad_c_)
     new_spo_val_grad = SparsePauliGradientOp(x_, c_, grad_c_)
     num_stored_terms = int(jnp.sum(keep_mask))
 

@@ -140,7 +140,8 @@ def _apply_channel_forward(state, operation, backend, checkpoints, trunc_val, ma
     if isinstance(operation, _ContractionGroup):
         checkpoints.save(operation.checkpoint_key, state)
         columns, removed = _contraction_columns(operation, active)
-        result = backend.apply_zero_contractions_forward(state, columns, removed)
+        result = backend.apply_zero_contractions_forward(
+            state, columns, removed, preserve_zero_support=trunc_val == 0)
         active = [q for column, q in enumerate(active) if column not in removed]
     else:
         translated = _operation_in_columns(operation, active)

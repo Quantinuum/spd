@@ -18,7 +18,11 @@ import torch
 if not any(name in os.environ for name in (
     "PYTORCH_CUDA_ALLOC_CONF", "PYTORCH_ALLOC_CONF",
 )):
-    torch.cuda.memory._set_allocator_settings("expandable_segments:True")
+    set_allocator_settings = getattr(
+        torch._C, "_accelerator_setAllocatorSettings",
+        torch.cuda.memory._set_allocator_settings,
+    )
+    set_allocator_settings("expandable_segments:True")
 
 from ..circuit_ir import PauliRotation, SkippedOperation
 from .kernels import build_index, rotate

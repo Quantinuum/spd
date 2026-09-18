@@ -306,25 +306,51 @@ def get_two_qubit_depolarizing_susceptibility(spgo, qubits):
 
 # ---------------------------------------------------------------------- #
 
+def _rotation_algorithm(state):
+    if state.active_qubits is not None and get_algorithm() == "search_update_merge_donate":
+        raise NotImplementedError("JAX channel checkpoints do not support buffer donation.")
+    return _load_algorithm_module()
+
+
+def _scalar_rotation_step(state, trunc_val, *, backward=False):
+    """A zero-width rotation is a global phase; only the cutoff can act."""
+    c = jnp.sum(state.c_array, keepdims=True)
+    keep = jnp.abs(c) >= trunc_val if backward else jnp.abs(c) > trunc_val
+    removed = jnp.where(keep, 0, jnp.abs(c))
+    keys = jnp.zeros((1, 0), dtype=state.xz_array.dtype)
+    info = dict(num_str_truncated=int(jnp.sum(removed != 0)),
+                truncated_l1_norm=float(removed.sum()),
+                truncated_l2_norm=float(removed.sum()))
+    if backward:
+        g = jnp.sum(state.grad_c_array, keepdims=True)
+        result = SparsePauliGradientOp(keys, jnp.where(keep, c, 0), jnp.where(keep, g, 0))
+        return result, 1, 0., info
+    return SparsePauliOp(keys, jnp.where(keep, c, 0)), 1, info
+
+
 def conjugate_pauli_rot_forward(spo, xzk, theta, trunc_val, max_num_str):
-    if spo.active_qubits is not None:
-        from .channels import compact_rotation
-        return compact_rotation(spo, xzk, theta, trunc_val, max_num_str)
-    return _load_algorithm_module().forward_step(
+    algorithm = _rotation_algorithm(spo)
+    if not spo.xz_array.shape[1]:
+        return _scalar_rotation_step(spo, trunc_val)
+    options = {} if get_algorithm() == "search_update_merge_donate" else {
+        "preserve_zero_support": spo.active_qubits is not None,
+    }
+    return algorithm.forward_step(
         spo,
         xzk,
         theta,
         trunc_val,
         max_num_str,
+        **options,
     )
 
 
 
 def conjugate_pauli_rot_backward(spo_val_grad, xzk, theta, trunc_val, max_num_str):
-    if spo_val_grad.active_qubits is not None:
-        from .channels import compact_rotation
-        return compact_rotation(spo_val_grad, xzk, theta, trunc_val, max_num_str, backward=True)
-    return _load_algorithm_module().backward_step(
+    algorithm = _rotation_algorithm(spo_val_grad)
+    if not spo_val_grad.xz_array.shape[1]:
+        return _scalar_rotation_step(spo_val_grad, trunc_val, backward=True)
+    return algorithm.backward_step(
         spo_val_grad,
         xzk,
         theta,
@@ -536,6 +562,7 @@ def conjugate_H_forward(spo, qubit):
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     new_spo = SparsePauliOp(xz_updated, phase * c_array)
     # return xz_updated, phase * c_array
     return new_spo
@@ -566,6 +593,7 @@ def conjugate_H_backward(spgo, qubit):
     and_bit = (x_word_updated & bit_mask) & (z_word_updated & bit_mask)
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     return SparsePauliGradientOp(
         xz_updated,
         phase * c_array,
@@ -613,6 +641,7 @@ def conjugate_S_forward(spo, qubit):
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     new_spo = SparsePauliOp(xz_updated, phase * c_array)
     # return xz_updated, phase * c_array
     return new_spo
@@ -658,6 +687,7 @@ def conjugate_Sdg_forward(spo, qubit):
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     new_spo = SparsePauliOp(xz_updated, phase * c_array)
     # return xz_updated, phase * c_array
     return new_spo
@@ -683,6 +713,7 @@ def conjugate_S_backward(spgo, qubit):
 
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     return SparsePauliGradientOp(
         xz_updated,
         phase * c_array,
@@ -710,6 +741,7 @@ def conjugate_Sdg_backward(spgo, qubit):
     and_bit = x_bit & z_word_updated
     phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     return SparsePauliGradientOp(
         xz_updated,
         phase * c_array,
@@ -779,6 +811,7 @@ def conjugate_CX_forward(spo, control_qubit, target_qubit):
     # phase = jnp.power(-1.0, jax.lax.population_count(and_bit))
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     new_spo = SparsePauliOp(xz_updated, phase * c_array)
     # return xz_updated, phase * c_array
     return new_spo
@@ -821,6 +854,7 @@ def conjugate_CX_backward(spgo, control_qubit, target_qubit):
     and_bit = (x_c_bit & z_t_bit) & (z_c_bit == x_t_bit)
     phase = jnp.power(-1.0, and_bit)
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     return SparsePauliGradientOp(
         xz_updated,
         phase * c_array,
@@ -913,6 +947,7 @@ def conjugate_CZ_forward(spo, control_qubit, target_qubit):
     phase = jnp.power(-1.0, and_bit)
 
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     new_spo = SparsePauliOp(xz_updated, phase * c_array)
     # return xz_updated, phase * c_array
     return new_spo
@@ -956,6 +991,7 @@ def conjugate_CZ_backward(spgo, control_qubit, target_qubit):
     and_bit = (x_c_bit & x_t_bit) & (z_c_bit ^ z_t_bit)
     phase = jnp.power(-1.0, and_bit)
     xz_updated = jnp.concatenate([x_array, z_array], axis=1)
+    xz_updated = jnp.where((xz_array[:, 0] != PAD_VAL)[:, None], xz_updated, PAD_VAL)
     return SparsePauliGradientOp(
         xz_updated,
         phase * c_array,
@@ -1139,8 +1175,8 @@ def conjugate_Z_backward(spgo, qubit):
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-@jax.jit
-def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
+@functools.partial(jax.jit, static_argnames=("preserve_zero_support",))
+def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val, *, preserve_zero_support=False):
     print("Recompiling merge_...", x_array_1.shape, x_array_2.shape)
     x_concat = jnp.concatenate([x_array_1, x_array_2], axis=0)
     c_concat = jnp.concatenate([c_array_1, c_array_2], axis=0)
@@ -1172,11 +1208,20 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
     # Array([ 3,  7, 18,  8,  9], dtype=int32)
     # Array([ 3,  7, 18,  8,  9,  0,  0,  0,  0,  0], dtype=int32)
 
-    # Now sorted according to c_concat before truncation
-    c_sort_indices = jnp.argsort(-jnp.abs(c_concat))  # Descending order))
+    keep = jnp.abs(c_concat) > trunc_val
+    if preserve_zero_support:
+        # Exact channel differentiation also needs zero-valued coordinates.
+        support = jax.ops.segment_sum(
+            (x_concat[:, 0] != PAD_VAL).astype(jnp.int32), group_ids,
+            num_segments=total_size, indices_are_sorted=True,
+        ) > 0
+        keep |= (trunc_val == 0) & support
+        c_sort_indices = jnp.lexsort((-jnp.abs(c_concat), ~keep))
+    else:
+        c_sort_indices = jnp.argsort(-jnp.abs(c_concat))
     c_concat = c_concat[c_sort_indices]
 
-    mask = jnp.abs(c_concat) > trunc_val
+    mask = keep[c_sort_indices]
     num_above_trunc_val = jnp.sum(mask.astype(jnp.int32))
     ## Keep the discarded coefficient magnitudes in the tail so the algorithm
     ## wrapper can report truncation norms from c_concat[slice_size:].
@@ -1212,6 +1257,8 @@ def merge_(x_array_1, c_array_1, x_array_2, c_array_2, trunc_val):
     ## due to power-of-two storage.
     # x_concat = x_concat[c_sort_indices] * mask[:, None].astype(x_concat.dtype)
     x_concat = x_concat[c_sort_indices]
+    if preserve_zero_support:
+        x_concat = jnp.where(mask[:, None], x_concat, PAD_VAL)
 
     return x_concat, c_concat, num_above_trunc_val
 
@@ -1288,6 +1335,16 @@ def merge_val_grad_(spo_val_grad_1, spo_val_grad_2, trunc_val):
     x_concat = x_concat[c_sort_indices]
 
     return x_concat, c_concat, grad_c_concat, num_above_trunc_val
+
+
+def pad_storage(keys, *values):
+    """Round an already selected prefix to a power-of-two PAD allocation."""
+    size = 1 << (max(1, len(keys)) - 1).bit_length()
+    extra = size - len(keys)
+    if not extra:
+        return (keys, *values)
+    return (jnp.pad(keys, ((0, extra), (0, 0)), constant_values=PAD_VAL),
+            *(jnp.pad(value, (0, extra)) for value in values))
 
 
 def next_pow2(x):
