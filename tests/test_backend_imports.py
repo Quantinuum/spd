@@ -25,7 +25,10 @@ def test_triton_allocator_default_respects_environment(config_name, config):
     subprocess.run([sys.executable, "-c", f"""
 import torch
 calls = []
-torch.cuda.memory._set_allocator_settings = calls.append
+if hasattr(torch._C, "_accelerator_setAllocatorSettings"):
+    torch._C._accelerator_setAllocatorSettings = calls.append
+else:
+    torch.cuda.memory._set_allocator_settings = calls.append
 import spd
 assert calls == []
 import spd.triton_backend

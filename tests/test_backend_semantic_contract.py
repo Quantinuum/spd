@@ -89,11 +89,7 @@ def test_size_cap_ties_require_magnitudes_not_specific_keys(engine):
     np.testing.assert_array_equal(abs(coefficients(engine, state)), [1., 1.])
 
 
-@pytest.mark.parametrize("engine", [
-    "jax-search", "triton",
-    pytest.param("jax-stack", marks=pytest.mark.xfail(strict=True, reason=
-        "Existing stack_sort_merge removes cutoff-equal rows but omits their discarded norms")),
-], indirect=True)
+@pytest.mark.parametrize("engine", ["jax-search", "jax-stack", "triton"], indirect=True)
 def test_discarded_norms_include_cutoff_equal_coefficients(engine):
     _, count, info = forward(engine, {"X": .5}, .5, 8)
     assert count == 0
