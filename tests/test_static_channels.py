@@ -265,18 +265,18 @@ def test_pytket_creation_discard_reset_and_shared_factors(channel_backend_name):
         c.add_barrier([0, 1, 2])
         return c
     c = make(.31)
-    ir = parse_pytket_circuit(c, 32)
+    ir = parse_pytket_circuit(c)
     assert ir.initial_active_qubits == [0, 1]
     assert ir.final_active_qubits == [0, 2]
     vc = spd.VariationalCircuit(c, [0, -1, 0], (1,), [.7, 1., -.4])
     spo = spd.create_spo({'IIZ': 1.}, backend_name=backend_name, precision='double')
     f, _ = spd.evolve(spo, c, 0, 1000, progress=False)
     _, grads, _ = spd.backpropagate(spd.init_gradient_spo(f), c, 0, 1000, progress=False)
-    expected = (dense(parse_pytket_circuit(make(.310001), 32), {'IIZ': 1.}) -
-                dense(parse_pytket_circuit(make(.309999), 32), {'IIZ': 1.})) / 2e-6
+    expected = (dense(parse_pytket_circuit(make(.310001)), {'IIZ': 1.}) -
+                dense(parse_pytket_circuit(make(.309999)), {'IIZ': 1.})) / 2e-6
     assert vc.parameter_gradients(grads)[0] == pytest.approx(expected, abs=2e-9)
     ordinary = Circuit(1); ordinary.add_qubit(Qubit(1))
-    assert parse_pytket_circuit(ordinary, 32).initial_active_qubits == [0, 1]
+    assert parse_pytket_circuit(ordinary).initial_active_qubits == [0, 1]
 
 
 def test_approximation_keeps_channels_exact_and_reports_unitary_truncation():
@@ -410,7 +410,7 @@ def test_pytket_numeric_pauli_exp_box_across_reset():
     c = Circuit(2).Ry(.2, 0).Reset(1)
     c.add_pauliexpbox(PauliExpBox([Pauli.X, Pauli.Y], .31), [0, 1])
     from spd.pytket_frontend import parse_pytket_circuit
-    ir = parse_pytket_circuit(c, 32)
+    ir = parse_pytket_circuit(c)
     value, gradients, *_ = evaluate(ir, {'ZZ': 1.})
     assert value == pytest.approx(dense(ir, {'ZZ': 1.}))
     np.testing.assert_allclose(gradients, finite_differences(ir, {'ZZ': 1.}), atol=1e-9)

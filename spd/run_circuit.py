@@ -316,15 +316,14 @@ def _resolve_backend_from_state(state, backend, *, state_name="state"):
     return backend
 
 
-def _setup_pytket_operations(circ, backend, rebase):
+def _setup_pytket_operations(circ, rebase):
     """Prepare lowered operations for a pytket circuit."""
     from .pytket_frontend import maybe_rebase_pytket_circuit, parse_pytket_circuit
 
     if rebase:
         maybe_rebase_pytket_circuit(circ)
 
-    padded_system_size = _compute_padded_system_size(circ.n_qubits, backend.packbit)
-    return parse_pytket_circuit(circ, padded_system_size)
+    return parse_pytket_circuit(circ)
 
 
 def _validate_ir_operations(input_circuit):
@@ -354,7 +353,7 @@ def _normalize_input_circuit(input_circuit, backend, rebase):
         PytketCircuit = None
 
     if PytketCircuit is not None and isinstance(input_circuit, PytketCircuit):
-        return _setup_pytket_operations(input_circuit, backend, rebase)
+        return _setup_pytket_operations(input_circuit, rebase)
 
     if rebase:
         raise ValueError("rebase=True is only supported when input_circuit is a pytket Circuit.")

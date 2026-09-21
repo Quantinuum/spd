@@ -225,10 +225,7 @@ def main():
         adapter = BackendAdapter.from_name(
             args.backend, packbit=PACKBIT, precision=args.precision,
         )
-    circ = parse_pytket_circuit(
-        step_circuit,
-        padded_system_size(num_qubits),
-    )
+    circ = parse_pytket_circuit(step_circuit)
     operations = circ.operations
     if args.backend == "triton":
         observable = create_op(build_initial_observable(args.n),

@@ -372,7 +372,7 @@ def tfi_binary_mera_channels(params, system_size=8, brickwork_rounds=1, *, chi=4
     """
     reference, initializations = _build_network(
         params, system_size, brickwork_rounds, chi, physical_bottom)
-    ir = parse_pytket_circuit(reference.circuit, int(system_size))
+    ir = parse_pytket_circuit(reference.circuit)
     insertions = dict(initializations)
     operations = []
     for offset, op in enumerate(ir.operations):

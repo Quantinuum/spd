@@ -72,14 +72,14 @@ def main():
         nq, steps = 128, 10
         cutoff = 2**-18 if a.cutoff is None else a.cutoff
         ham = setup.build_initial_observable(11)
-        ops = parse_pytket_circuit(setup.build_one_step_circuit(11, 3.044382, .04), nq).operations
+        ops = parse_pytket_circuit(setup.build_one_step_circuit(11, 3.044382, .04)).operations
     else:
         import heisenberg_setup as setup
         nq, steps = 224, 1
         cutoff = 3e-4 if a.cutoff is None else a.cutoff
         theta = np.random.RandomState(0).uniform(-.5, .5, 8)
         ham = setup.gen_3d_Hamiltonian_dict(6, 6, 6, full=False)
-        ops = parse_pytket_circuit(setup.gen_3d_AFH_ansatz_circuit(theta, 6, 6, 6), nq).operations
+        ops = parse_pytket_circuit(setup.gen_3d_AFH_ansatz_circuit(theta, 6, 6, 6)).operations
     tiny = gpu.create_gradient_op({'X':(.7,.2), 'Y':(.2,.3), 'Z':(.1,.4)}, num_qubits=nq, precision='double')
     warm = (PauliRotation('rotation','Z',.31), SingleQubitClifford('OpType.X',1))
     for cap in [2,16]:

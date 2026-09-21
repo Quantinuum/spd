@@ -42,6 +42,23 @@ def test_evolve_single_qubit_ry_z_expectation(backend_name):
     assert_info_consistent(info, expected_steps=1)
 
 
+@pytest.mark.parametrize("system_size", [31, 32, 33])
+def test_logical_width_ir_packs_at_word_boundaries(backend_name, system_size):
+    circ = Circuit(system_size)
+    circ.Ry(0.25, system_size - 1)
+    circuit_ir = parse_pytket_circuit(circ)
+
+    assert circuit_ir.operations[0].pauli == "I" * (system_size - 1) + "Y"
+
+    initial_spo = make_initial_spo(backend_name, [system_size - 1], system_size)
+    final_spo, info = spd.evolve(initial_spo, circuit_ir, 1e-12, MAX_NUM_STR)
+
+    assert np.isclose(
+        float(np.asarray(final_spo.get_expectation_value())), np.cos(np.pi / 4), atol=1e-6
+    )
+    assert_info_consistent(info, expected_steps=1)
+
+
 def test_evolve_bell_state_observables(backend_name):
     circ = Circuit(2)
     circ.H(0)
@@ -88,7 +105,7 @@ def test_pytket_and_ir_inputs_match_for_evolve_and_backpropagate(backend_name):
     circ.Rz(0.125, 1)
 
     initial_spo = make_initial_spo(backend_name, {"ZZ": 1.0}, circ.n_qubits)
-    operations = parse_pytket_circuit(circ, padded_system_size(circ.n_qubits))
+    operations = parse_pytket_circuit(circ)
 
     final_spo_from_circuit, info_from_circuit = spd.evolve(initial_spo, circ, 1e-12, MAX_NUM_STR)
     final_spo_from_ir, info_from_ir = spd.evolve(initial_spo, operations, 1e-12, MAX_NUM_STR)
@@ -125,7 +142,7 @@ def test_pytket_and_ir_inputs_match_for_evolve_and_backpropagate(backend_name):
 def test_ir_input_rejects_rebase(backend_name):
     circ = Circuit(1)
     circ.Ry(0.25, 0)
-    operations = parse_pytket_circuit(circ, padded_system_size(circ.n_qubits))
+    operations = parse_pytket_circuit(circ)
     initial_spo = make_initial_spo(backend_name, [0], circ.n_qubits)
 
     with pytest.raises(ValueError, match="rebase=True is only supported"):

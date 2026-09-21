@@ -28,7 +28,6 @@ from benchmark_2d_obc_xx_z_stepwise import (
     benchmark_filename,
     build_one_step_circuit,
     neighbor_list,
-    padded_system_size,
     save_benchmark_data,
 )
 from spd.circuit_ir import PauliRotation
@@ -85,9 +84,7 @@ def main():
     nq, edges = neighbor_list(args.n)
     num_gate = nq + len(edges)
     threshold = 2.0 ** (-args.threshold_log)
-    ir = parse_pytket_circuit(
-        build_one_step_circuit(args.n, args.h, args.dt), padded_system_size(nq)
-    )
+    ir = parse_pytket_circuit(build_one_step_circuit(args.n, args.h, args.dt))
     gates = []
     for operation in reversed(ir.operations):
         if isinstance(operation, PauliRotation):

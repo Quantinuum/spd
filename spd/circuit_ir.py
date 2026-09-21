@@ -6,7 +6,7 @@ IR; it is the lowered operation layer consumed by the backend adapter.
 """
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, Optional, TextIO, Union
 
 
@@ -97,8 +97,7 @@ class CircuitIR:
         if self.system_size < 1:
             raise ValueError("system_size must be at least 1.")
 
-        operations = tuple(self.operations)
-        object.__setattr__(self, "operations", operations)
+        operations = list(self.operations)
         for index, operation in enumerate(operations):
             if not isinstance(
                 operation,
@@ -108,8 +107,17 @@ class CircuitIR:
                     "operations must contain CircuitOperation instances; "
                     f"got {type(operation)!r} at index {index}."
                 )
-            if isinstance(operation, PauliRotation) and set(operation.pauli) - set("IXYZ"):
-                raise ValueError("Rotation Paulis must contain only I/X/Y/Z.")
+            if isinstance(operation, PauliRotation):
+                if set(operation.pauli) - set("IXYZ"):
+                    raise ValueError("Rotation Paulis must contain only I/X/Y/Z.")
+                if len(operation.pauli) > self.system_size:
+                    raise ValueError(
+                        "Rotation Pauli strings cannot exceed system_size; "
+                        f"got {len(operation.pauli)} for system_size={self.system_size}."
+                    )
+                if len(operation.pauli) < self.system_size:
+                    operation = replace(operation, pauli=operation.pauli.ljust(self.system_size, "I"))
+                    operations[index] = operation
             if any(not isinstance(q, int) or isinstance(q, bool)
                    for q in get_operation_qubits(operation)):
                 raise TypeError("Qubit indices must be integers.")
@@ -124,6 +132,8 @@ class CircuitIR:
                     f"{invalid_qubits}."
                 )
 
+        operations = tuple(operations)
+        object.__setattr__(self, "operations", operations)
         created = [op.qubit for op in operations if isinstance(op, CreateZero)]
         if len(set(created)) != len(created):
             raise ValueError("At most one CreateZero is allowed per index; recreation is unsupported.")

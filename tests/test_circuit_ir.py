@@ -39,12 +39,22 @@ def test_circuit_ir_rejects_nonpositive_system_size(system_size):
     [
         SingleQubitClifford("OpType.H", 2),
         TwoQubitClifford("OpType.CX", 0, 2),
-        PauliRotation("RX", "IIZ", 0.1),
     ],
 )
 def test_circuit_ir_rejects_operations_outside_system(operation):
     with pytest.raises(ValueError, match="outside"):
         CircuitIR(system_size=2, operations=(operation,))
+
+
+def test_circuit_ir_normalizes_abbreviated_rotation_paulis():
+    circuit = CircuitIR(system_size=3, operations=(PauliRotation("RX", "X", 0.1),))
+
+    assert circuit.operations[0].pauli == "XII"
+
+
+def test_circuit_ir_rejects_rotation_paulis_longer_than_system_size():
+    with pytest.raises(ValueError, match="cannot exceed system_size"):
+        CircuitIR(system_size=2, operations=(PauliRotation("RX", "XII", 0.1),))
 
 
 def test_get_operation_qubits_covers_ir_operation_types():

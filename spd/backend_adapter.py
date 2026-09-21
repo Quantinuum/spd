@@ -236,7 +236,7 @@ class BackendAdapter:
             result = self.module.insert_identity_forward(spo, len(spo.qubit_indices), operation.qubit)
             return result, result.get_size(), None, _zero_step_info()
         if isinstance(operation, PauliRotation):
-            # Reuse Triton's cached string packing, ignoring frontend identity padding.
+            # Canonicalize Triton cache keys by omitting equivalent trailing identities.
             xzk = (operation.pauli.rstrip("I") if self.name == "triton"
                    else self.utils.pauli_str_to_uint(operation.pauli))
             next_state, num_string, step_info = self.module.conjugate_pauli_rot_forward(
@@ -273,7 +273,7 @@ class BackendAdapter:
             result = self.module.insert_identity_backward(spgo, len(spgo.qubit_indices), operation.qubit)
             return result, result.get_size(), None, _zero_step_info()
         if isinstance(operation, PauliRotation):
-            # Reuse Triton's cached string packing, ignoring frontend identity padding.
+            # Canonicalize Triton cache keys by omitting equivalent trailing identities.
             xzk = (operation.pauli.rstrip("I") if self.name == "triton"
                    else self.utils.pauli_str_to_uint(operation.pauli))
             return self.module.conjugate_pauli_rot_backward(

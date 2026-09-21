@@ -137,6 +137,18 @@ print("final SPO size:", final_spo.get_size())
 print("tracked truncation steps:", info["num_steps_tracked"])
 ```
 
+## Inspecting a Lowered Circuit
+
+Use `parse_pytket_circuit(...)` to inspect the logical circuit SPD executes:
+
+```python
+ir = spd.parse_pytket_circuit(circ)
+print(ir.draw())
+```
+
+`CircuitIR` Pauli strings have exactly `ir.system_size` characters. Backend
+packing pads them internally as needed.
+
 ## Light-cone pruning
 
 For local observables, use `pruning="light-cone"` to plan once or

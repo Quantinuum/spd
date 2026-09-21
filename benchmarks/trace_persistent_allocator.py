@@ -35,9 +35,9 @@ import benchmark_2d_obc_xx_z_stepwise as setup
 
 assert Path(gpu.__file__).resolve().is_relative_to(a.repo.resolve())
 nq, cutoff, cap = 128, 2**-18, 10**9
-ops = parse_pytket_circuit(setup.build_one_step_circuit(11, 3.044382, .04), nq).operations
+ops = parse_pytket_circuit(setup.build_one_step_circuit(11, 3.044382, .04)).operations
 state = gpu.create_op(setup.build_initial_observable(11), nq, 'double')
-# Old and new forward entry points use different but equivalent label padding.
+# Warm the cached Triton gate data for every rotation.
 for op in ops:
     if not isinstance(op, PauliRotation):
         continue

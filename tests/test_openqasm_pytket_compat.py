@@ -74,9 +74,9 @@ def test_openqasm_string_matches_pytket_lowered_ir():
     measure q[0] -> c[0];
     """
 
-    native_ir = parse_openqasm_str(source, padded_system_size=32)
+    native_ir = parse_openqasm_str(source)
     circ = circuit_from_qasm_str(source)
-    pytket_ir = parse_pytket_circuit(circ, padded_system_size=32)
+    pytket_ir = parse_pytket_circuit(circ)
 
     assert native_ir.system_size == pytket_ir.system_size == circ.n_qubits == 3
     _assert_semantic_ir_match(native_ir.operations, pytket_ir.operations)
@@ -87,9 +87,9 @@ def test_openqasm_sample_matches_pytket_lowered_ir():
 
     path = "tests/fixtures/open_qasm/periodic_small_8q.qasm"
 
-    native_ir = parse_openqasm_file(path, padded_system_size=32)
+    native_ir = parse_openqasm_file(path)
     circ = circuit_from_qasm(path)
-    pytket_ir = parse_pytket_circuit(circ, padded_system_size=32)
+    pytket_ir = parse_pytket_circuit(circ)
 
     assert native_ir.system_size == pytket_ir.system_size == circ.n_qubits == 8
     assert len(native_ir.operations) == 36
@@ -111,7 +111,7 @@ def test_openqasm_ir_matches_pytket_forward_execution(backend_name):
     """
 
     pytket_circ = circuit_from_qasm_str(source)
-    native_ir = parse_openqasm_str(source, padded_system_size=32)
+    native_ir = parse_openqasm_str(source)
     initial_spo = make_initial_spo(backend_name, [1], 3)
 
     native_final_spo, _ = spd.evolve(initial_spo, native_ir, trunc_val=1e-12, max_num_str=1000)
@@ -136,7 +136,7 @@ def test_openqasm_file_ir_matches_pytket_forward_execution_on_sample(backend_nam
     path = "tests/fixtures/open_qasm/periodic_small_8q.qasm"
     pytket_circ = circuit_from_qasm(path)
     measurement = list(range(8))
-    native_ir = parse_openqasm_file(path, padded_system_size=32)
+    native_ir = parse_openqasm_file(path)
     initial_spo = make_initial_spo(backend_name, measurement, 8)
 
     native_final_spo, _ = spd.evolve(initial_spo, native_ir, trunc_val=1e-4, max_num_str=100000)

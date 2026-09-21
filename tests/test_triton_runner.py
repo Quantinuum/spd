@@ -225,7 +225,7 @@ def test_capped_mixed_circuit_and_ir_round_trip(tmp_path, monkeypatch):
         results.append((final, back, grads, info, back_info))
         if name == "triton":
             assert final.get_size() <= 32  # public cap rounds 23 to 32
-            ir = parse_pytket_circuit(circ, 32)
+            ir = parse_pytket_circuit(circ)
             for circuit_input in [ir, list(ir.operations)]:
                 other, other_info = spd.evolve(initial, circuit_input, .03, 23, progress=False)
                 assert_states(other, final)

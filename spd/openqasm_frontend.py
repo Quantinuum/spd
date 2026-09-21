@@ -43,8 +43,8 @@ _TWO_QUBIT_CLIFFORDS = {
 _SUPPORTED_INCLUDES = {"qelib1.inc", "stdgates.inc"}
 
 
-def parse_openqasm_str(source: str, padded_system_size: int | None = None):
-    """Parse an OpenQASM 2 program string into SPD IR operations.
+def parse_openqasm_str(source: str):
+    """Parse an OpenQASM 2 program string into logical-width SPD IR operations.
 
     Returns a `CircuitIR`.
     """
@@ -92,13 +92,12 @@ def parse_openqasm_str(source: str, padded_system_size: int | None = None):
         if system_size == 0:
             raise ValueError("At least one qreg declaration is required before gate statements.")
 
-        effective_padded_system_size = _resolve_padded_system_size(system_size, padded_system_size)
         operations.append(
             _parse_operation(
                 statement,
                 registers=registers,
                 classical_registers=classical_registers,
-                padded_system_size=effective_padded_system_size,
+                system_size=system_size,
             )
         )
 
@@ -110,13 +109,13 @@ def parse_openqasm_str(source: str, padded_system_size: int | None = None):
     return CircuitIR(system_size=system_size, operations=tuple(operations))
 
 
-def parse_openqasm_file(path: str, padded_system_size: int | None = None):
+def parse_openqasm_file(path: str):
     """Parse an OpenQASM file into SPD IR operations.
 
     Returns a `CircuitIR`.
     """
     with open(path, "r", encoding="utf-8") as f:
-        return parse_openqasm_str(f.read(), padded_system_size)
+        return parse_openqasm_str(f.read())
 
 
 def _split_statements(source: str) -> List[str]:
@@ -131,7 +130,7 @@ def _parse_include(statement: str) -> str:
     return match.group(1)
 
 
-def _parse_operation(statement, *, registers, classical_registers, padded_system_size):
+def _parse_operation(statement, *, registers, classical_registers, system_size):
     if statement.lower().startswith("barrier"):
         return SkippedOperation(gate_name="barrier")
 
@@ -154,7 +153,7 @@ def _parse_operation(statement, *, registers, classical_registers, padded_system
             raise ValueError(f"Gate '{gate_name_raw}' requires one qubit argument.")
         theta = _evaluate_angle(params_raw)
         qubit = _resolve_qubit(args[0], registers)
-        pauli = _build_pauli_string(padded_system_size, ((qubit, _SINGLE_QUBIT_ROTATIONS[gate_name]),))
+        pauli = _build_pauli_string(system_size, ((qubit, _SINGLE_QUBIT_ROTATIONS[gate_name]),))
         return PauliRotation(gate_name=f"OpenQASM.{gate_name_raw}", pauli=pauli, theta=theta)
 
     if gate_name in _TWO_QUBIT_ROTATIONS:
@@ -165,7 +164,7 @@ def _parse_operation(statement, *, registers, classical_registers, padded_system
         theta = _evaluate_angle(params_raw)
         qubits = [_resolve_qubit(arg, registers) for arg in args]
         axis = _TWO_QUBIT_ROTATIONS[gate_name]
-        pauli = _build_pauli_string(padded_system_size, ((qubits[0], axis), (qubits[1], axis)))
+        pauli = _build_pauli_string(system_size, ((qubits[0], axis), (qubits[1], axis)))
         return PauliRotation(gate_name=f"OpenQASM.{gate_name_raw}", pauli=pauli, theta=theta)
 
     if gate_name in _SINGLE_QUBIT_CLIFFORDS:
@@ -227,17 +226,11 @@ def _resolve_qubit(reference: str, registers: Dict[str, Tuple[int, int]]) -> int
     return base_index + local_index
 
 
-def _build_pauli_string(padded_system_size: int, assignments) -> str:
-    pauli = ["I"] * padded_system_size
+def _build_pauli_string(system_size: int, assignments) -> str:
+    pauli = ["I"] * system_size
     for qubit, axis in assignments:
         pauli[qubit] = axis
     return "".join(pauli)
-
-
-def _resolve_padded_system_size(system_size: int, padded_system_size: int | None) -> int:
-    if padded_system_size is None:
-        return 32 * ((system_size + 31) // 32)
-    return padded_system_size
 
 
 def _evaluate_angle(expr: str) -> float:

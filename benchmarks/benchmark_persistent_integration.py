@@ -109,7 +109,7 @@ def main():
     results = dict(device=torch.cuda.get_device_name(), torch=torch.__version__, triton=triton.__version__,
                    precision='double', cutoff=cutoff, cap=cap, timed_passes=1, workloads={})
     for name, circuit, ham, basis in cases:
-        ops = parse_pytket_circuit(circuit, nq).operations
+        ops = parse_pytket_circuit(circuit).operations
         state = gpu.create_op(ham, precision='double')
         # Prepare the shared cached gate tensors before either measurement, so
         # the first path does not pay all cache misses or retain less cache memory.

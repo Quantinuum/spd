@@ -64,7 +64,7 @@ def main():
                  timing='one pass per backward path; tiny compilation; terminal initialization and observations excluded',
                  workloads={})
     for name,circuit,ham,basis in cases:
-        ops=parse_pytket_circuit(circuit,nq).operations
+        ops=parse_pytket_circuit(circuit).operations
         for op in ops:
             if isinstance(op,PauliRotation):
                 # Prepare both frontend-normalized and original labels before timing.

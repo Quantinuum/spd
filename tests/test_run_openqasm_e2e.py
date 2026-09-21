@@ -13,7 +13,7 @@ def test_openqasm_ir_single_qubit_rx_z_expectation(all_backend):
     qreg q[1];
     rx(pi/2) q[0];
     """
-    circuit_ir = parse_openqasm_str(source, padded_system_size=32)
+    circuit_ir = parse_openqasm_str(source)
     initial_spo = make_initial_spo(backend_name, [0], 1)
     final_spo, info = spd.evolve(initial_spo, circuit_ir, trunc_val=1e-12, max_num_str=1000)
     exp_val = final_spo.get_expectation_value()
@@ -31,7 +31,7 @@ def test_openqasm_ir_backward_single_parameter_gradient(all_backend):
     qreg q[1];
     rx(pi/4) q[0];
     """
-    circuit_ir = parse_openqasm_str(source, padded_system_size=32)
+    circuit_ir = parse_openqasm_str(source)
     initial_spo = make_initial_spo(backend_name, [0], 1)
     final_spo, _ = spd.evolve(initial_spo, circuit_ir, trunc_val=1e-12, max_num_str=1000)
     initial_spgo = spd.init_gradient_spo(final_spo)

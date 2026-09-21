@@ -46,8 +46,8 @@ def maybe_rebase_pytket_circuit(circ):
     AutoRebase(PYTKET_REBASE_GATES).apply(circ)
 
 
-def parse_pytket_circuit(circ, padded_system_size):
-    """Lower a pytket circuit into the internal SPD execution IR."""
+def parse_pytket_circuit(circ):
+    """Lower a pytket circuit into logical-width SPD execution IR."""
     from pytket.circuit import Qubit
     if circ.qubits != [Qubit(i) for i in range(circ.n_qubits)]:
         raise ValueError("SPD requires canonical integer qubits q[0], ..., q[n-1].")
@@ -59,7 +59,7 @@ def parse_pytket_circuit(circ, padded_system_size):
         gate_name = str(op_type)
 
         if op_type in _ROTATION_DISPATCH:
-            pauli, theta = parse_pauli_theta(command, padded_system_size)
+            pauli, theta = parse_pauli_theta(command, circ.n_qubits)
             operations.append(PauliRotation(gate_name=gate_name, pauli=pauli, theta=theta))
         elif op_type in _SINGLE_QUBIT_CLIFFORDS:
             operations.append(
@@ -87,9 +87,9 @@ def parse_pytket_circuit(circ, padded_system_size):
     return CircuitIR(system_size=circ.n_qubits, operations=tuple(operations))
 
 
-def parse_pauli_theta(command, padded_system_size):
+def parse_pauli_theta(command, system_size):
     """Extract the Pauli string and SPD theta for a pytket rotation command."""
-    pauli = ["I"] * padded_system_size
+    pauli = ["I"] * system_size
     op_type = command.op.type
     pauli, theta = _ROTATION_DISPATCH[op_type](command, pauli)
     return "".join(pauli), theta

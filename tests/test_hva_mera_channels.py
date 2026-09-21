@@ -26,7 +26,7 @@ def test_adapter_metadata_order_units_and_activity(chi):
     assert channel.circuit.initial_active_qubits == []
     assert channel.circuit.final_active_qubits == list(range(8))
     assert sorted(op.qubit for op in channel.circuit.operations if isinstance(op,CreateZero)) == list(range(8))
-    lowered = parse_pytket_circuit(reference.circuit,8)
+    lowered = parse_pytket_circuit(reference.circuit)
     assert tuple(op for op in channel.circuit.operations if not isinstance(op,CreateZero)) == lowered.operations
     np.testing.assert_array_equal(channel.gate_parameter_indices,reference.gate_parameter_indices)
     np.testing.assert_allclose(channel.gate_parameter_factors,np.pi*reference.gate_parameter_factors)

@@ -30,7 +30,6 @@ from benchmark_2d_obc_xx_z_stepwise import (
     build_initial_observable,
     build_one_step_circuit,
     neighbor_list,
-    padded_system_size,
     save_benchmark_data,
 )
 from spd.circuit_ir import PauliRotation
@@ -61,9 +60,7 @@ def main():
     from monoprop import Circuit, ExpGate, PauliOperator, PauliPropagator
 
     nq, edges = neighbor_list(args.n)
-    ir = parse_pytket_circuit(
-        build_one_step_circuit(args.n, args.h, args.dt), padded_system_size(nq)
-    )
+    ir = parse_pytket_circuit(build_one_step_circuit(args.n, args.h, args.dt))
     rotations = [op for op in ir.operations if isinstance(op, PauliRotation)]
     assert len(rotations) == nq + len(edges)
     # MonoProp reverses authoring order in Heisenberg propagation. Preserve
