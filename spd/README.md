@@ -66,6 +66,20 @@ Example:
 
 This conversion currently happens in [`pytket_frontend.py`](pytket_frontend.py).
 
+## Pytket Export
+
+`export_pytket_circuit(circuit_ir)` converts the supported IR subset back to a
+pytket circuit. It supports Pauli rotations, the supported Clifford gates,
+`ResetZero`, barriers, and terminal full-register measurements. Measurements
+use one classical bit per qubit and map `q[i]` to `c[i]`.
+
+The exporter does not add barriers. Include barriers in the input IR when its
+total operation order must survive pytket's dependency-based command ordering.
+`CreateZero`, `Discard`, partial measurements, and mid-circuit measurements
+raise `ValueError` because the current IR cannot round-trip them faithfully.
+Rotation names are descriptive rather than semantic, and pytket may normalize
+angles by multiples of `4*pi`; both representations describe the same unitary.
+
 ## Noise Susceptibility
 
 `backpropagate_noise_analysis(...)` extends SPGO backpropagation with the

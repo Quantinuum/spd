@@ -1,8 +1,8 @@
-"""Parse `pytket` circuits into the internal SPD execution IR.
+"""Translate between `pytket` circuits and the SPD execution IR.
 
-This module is the current frontend boundary. Its job is to translate pytket's
-gate representation and parameter conventions into backend-agnostic IR objects,
-including conversion to SPD's rotation-angle convention.
+This module translates pytket's gate representation and parameter conventions
+into backend-agnostic IR objects and exports the supported IR subset back to
+pytket.
 """
 
 import math
@@ -37,6 +37,13 @@ PYTKET_REBASE_GATES = {
 _SINGLE_QUBIT_CLIFFORDS = {OpType.H, OpType.S, OpType.Sdg, OpType.X, OpType.Y, OpType.Z}
 _TWO_QUBIT_CLIFFORDS = {OpType.CX, OpType.CY, OpType.CZ}
 _SKIPPED_GATES = {OpType.Measure, OpType.Barrier}
+
+_BARRIER_NAMES = {"barrier", "optype.barrier"}
+_MEASURE_NAMES = {"measure", "measurement", "optype.measure"}
+_SINGLE_QUBIT_CLIFFORD_NAMES = {
+    "h": "H", "s": "S", "sdg": "Sdg", "x": "X", "y": "Y", "z": "Z",
+}
+_TWO_QUBIT_CLIFFORD_NAMES = {"cx": "CX", "cy": "CY", "cz": "CZ"}
 
 
 def maybe_rebase_pytket_circuit(circ):
@@ -85,6 +92,106 @@ def parse_pytket_circuit(circ):
 
     operations.extend(Discard(q.index[0]) for q in sorted(circ.discarded_qubits))
     return CircuitIR(system_size=circ.n_qubits, operations=tuple(operations))
+
+
+def export_pytket_circuit(circuit_ir):
+    """Export the supported :class:`CircuitIR` subset to a pytket circuit.
+
+    Unitary operations, resets, barriers, and terminal full-register
+    measurements are supported. A measurement block must contain one marker per
+    qubit and is exported as ``q[i] -> c[i]``. ``CreateZero`` and ``Discard``
+    cannot retain their IR positions in pytket, so they are rejected.
+
+    No ordering barriers are added. Callers that require a fixed total command
+    order should include barriers in the input IR.
+    """
+    from pytket.circuit import Circuit
+
+    if not isinstance(circuit_ir, CircuitIR):
+        raise TypeError("circuit_ir must be a CircuitIR.")
+
+    operations = circuit_ir.operations
+    measurement_start = len(operations)
+    while (measurement_start > 0
+           and _operation_name(operations[measurement_start - 1]) in _MEASURE_NAMES):
+        measurement_start -= 1
+    measurements = operations[measurement_start:]
+    if any(_operation_name(op) in _MEASURE_NAMES for op in operations[:measurement_start]):
+        raise ValueError("Measurements must form one terminal full-register block.")
+    if measurements and len(measurements) != circuit_ir.system_size:
+        raise ValueError(
+            "A terminal measurement block must contain one measurement per qubit."
+        )
+
+    circuit = Circuit(circuit_ir.system_size,
+                      circuit_ir.system_size if measurements else 0)
+    for operation in operations[:measurement_start]:
+        if isinstance(operation, PauliRotation):
+            _export_pauli_rotation(circuit, operation)
+        elif isinstance(operation, SingleQubitClifford):
+            gate = _SINGLE_QUBIT_CLIFFORD_NAMES.get(_operation_name(operation))
+            if gate is None:
+                raise ValueError(f"Unsupported single-qubit Clifford: {operation.gate_name}")
+            getattr(circuit, gate)(operation.qubit)
+        elif isinstance(operation, TwoQubitClifford):
+            gate = _TWO_QUBIT_CLIFFORD_NAMES.get(_operation_name(operation))
+            if gate is None:
+                raise ValueError(f"Unsupported two-qubit Clifford: {operation.gate_name}")
+            getattr(circuit, gate)(operation.control_qubit, operation.target_qubit)
+        elif isinstance(operation, ResetZero):
+            circuit.Reset(operation.qubit)
+        elif isinstance(operation, (CreateZero, Discard)):
+            raise ValueError(f"{type(operation).__name__} export is unsupported.")
+        elif isinstance(operation, SkippedOperation):
+            if _operation_name(operation) not in _BARRIER_NAMES:
+                raise ValueError(f"Unsupported skipped operation: {operation.gate_name}")
+            circuit.add_barrier(list(range(circuit_ir.system_size)))
+        else:
+            raise TypeError(f"Unsupported circuit operation: {type(operation)!r}")
+
+    if measurements:
+        for qubit in range(circuit_ir.system_size):
+            circuit.Measure(qubit, qubit)
+    return circuit
+
+
+def _operation_name(operation):
+    """Return a normalized gate name without an optional ``OpType.`` prefix."""
+    name = operation.gate_name.lower()
+    return name.removeprefix("optype.")
+
+
+def _export_pauli_rotation(circuit, operation):
+    """Append one SPD-convention Pauli rotation to a pytket circuit."""
+    from pytket.circuit import PauliExpBox
+    from pytket.pauli import Pauli
+
+    parameter = operation.theta / math.pi
+    support = [(qubit, pauli) for qubit, pauli in enumerate(operation.pauli)
+               if pauli != "I"]
+    if len(support) == 1:
+        qubit, pauli = support[0]
+        getattr(circuit, {"X": "Rx", "Y": "Ry", "Z": "Rz"}[pauli])(
+            parameter, qubit
+        )
+        return
+    if len(support) == 2 and support[0][1] == support[1][1]:
+        pauli = support[0][1]
+        getattr(circuit, {"X": "XXPhase", "Y": "YYPhase", "Z": "ZZPhase"}[pauli])(
+            parameter, support[0][0], support[1][0]
+        )
+        return
+
+    # Keeping only the non-identity support gives the same unitary. For an
+    # identity rotation, retain one identity qubit so pytket can carry the
+    # global phase as a PauliExpBox command and the parser can recover it.
+    if support:
+        qubits = [qubit for qubit, _ in support]
+        paulis = [getattr(Pauli, pauli) for _, pauli in support]
+    else:
+        qubits = [0]
+        paulis = [Pauli.I]
+    circuit.add_pauliexpbox(PauliExpBox(paulis, parameter), qubits)
 
 
 def parse_pauli_theta(command, system_size):

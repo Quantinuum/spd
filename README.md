@@ -149,6 +149,19 @@ print(ir.draw())
 `CircuitIR` Pauli strings have exactly `ir.system_size` characters. Backend
 packing pads them internally as needed.
 
+Convert supported IR operations back to pytket with
+`export_pytket_circuit(...)`:
+
+```python
+pytket_circuit = spd.export_pytket_circuit(ir)
+round_trip = spd.parse_pytket_circuit(pytket_circuit)
+```
+
+The exporter supports unitary operations, resets, existing barriers, and a
+terminal measurement of every qubit into the corresponding classical bit. It
+does not add ordering barriers. `CreateZero`, `Discard`, partial measurements,
+and mid-circuit measurements are rejected.
+
 ## Light-cone pruning
 
 For local observables, use `pruning="light-cone"` to plan once or

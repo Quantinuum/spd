@@ -17,10 +17,11 @@ def __getattr__(name):
         module = import_module(f".{name}", __name__)
         globals()[name] = module
         return module
-    if name == "parse_pytket_circuit":
-        from .pytket_frontend import parse_pytket_circuit
-        globals()[name] = parse_pytket_circuit
-        return parse_pytket_circuit
+    if name in ("parse_pytket_circuit", "export_pytket_circuit"):
+        from . import pytket_frontend
+        value = getattr(pytket_frontend, name)
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -28,5 +29,5 @@ __all__ = [
     "jax_backend", "numpy_backend", "run_circuit", "backpropagate",
     "backpropagate_noise_analysis", "BackendAdapter", "create_spo", "evolve",
     "close_channel_checkpoints", "init_gradient_spo", "CircuitIR", "VariationalCircuit", "CreateZero", "ResetZero", "Discard",
-    "parse_pytket_circuit",
+    "parse_pytket_circuit", "export_pytket_circuit",
 ]
