@@ -12,6 +12,7 @@ This package is organized around sparse-Pauli state objects and backend-specific
 - [`pruning.py`](pruning.py): per-call light-cone plans, observable support, and original-index mapping
 - [`openqasm_frontend.py`](openqasm_frontend.py): built-in OpenQASM 2 parser into the internal IR
 - [`pytket_frontend.py`](pytket_frontend.py): parser from `pytket` circuits into the internal IR
+- [`guppy_emitter.py`](guppy_emitter.py): direct `CircuitIR` to standalone Guppy v1 source renderer
 - [`backend_adapter.py`](backend_adapter.py): backend-facing execution adapter used by the runner
 - [`run_circuit.py`](run_circuit.py): execution over the chosen backend
 
@@ -79,6 +80,26 @@ total operation order must survive pytket's dependency-based command ordering.
 raise `ValueError` because the current IR cannot round-trip them faithfully.
 Rotation names are descriptive rather than semantic, and pytket may normalize
 angles by multiples of `4*pi`; both representations describe the same unitary.
+
+## Guppy Source Export
+
+`render_guppy_source(circuit_ir, function_name="apply_circuit",
+include_main=True)` returns deterministic standalone source.
+`write_guppy_source(path, circuit_ir, ...)` writes it. The implementation is
+independent of pytket, and rendering does not require Guppy to be installed.
+
+The reusable function has the owned-and-returned contract
+`array[qubit, N] @owned -> array[qubit, N]`. This supports composition and
+repeated cooling cycles, including `ResetZero`. The default `main` allocates a
+zero-state register, calls the reusable function once, measures every qubit,
+and outputs the collected booleans under `"q"`. Use `include_main=False` when
+only the reusable function is wanted.
+
+Supported operations are Pauli rotations, H/S/Sdg/X/Y/Z, CX/CY/CZ,
+`ResetZero`, and barriers already present in the IR. `CreateZero`, `Discard`,
+measurement markers, unknown skipped operations, and all-identity rotations
+raise `ValueError`. Generated modules target Python 3.12+ and
+`guppylang==1.0.1`, available through the project `guppy` extra.
 
 ## Noise Susceptibility
 

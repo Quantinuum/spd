@@ -22,6 +22,11 @@ def __getattr__(name):
         value = getattr(pytket_frontend, name)
         globals()[name] = value
         return value
+    if name in ("render_guppy_source", "write_guppy_source"):
+        from . import guppy_emitter
+        value = getattr(guppy_emitter, name)
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -30,4 +35,5 @@ __all__ = [
     "backpropagate_noise_analysis", "BackendAdapter", "create_spo", "evolve",
     "close_channel_checkpoints", "init_gradient_spo", "CircuitIR", "VariationalCircuit", "CreateZero", "ResetZero", "Discard",
     "parse_pytket_circuit", "export_pytket_circuit",
+    "render_guppy_source", "write_guppy_source",
 ]

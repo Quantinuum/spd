@@ -30,6 +30,13 @@ pip install -e '.[pytket]'         # CPU
 pip install -e '.[triton,pytket]'  # NVIDIA GPU
 ```
 
+To emit and compile standalone Guppy programs, use Python 3.12 or newer and
+install the pinned Guppy v1 extra:
+
+```bash
+pip install -e '.[guppy]'
+```
+
 JAX remains available as a legacy backend for existing workflows. To use it on
 an NVIDIA GPU, install its CUDA dependencies and select `backend_name="jax"`
 explicitly:
@@ -161,6 +168,29 @@ The exporter supports unitary operations, resets, existing barriers, and a
 terminal measurement of every qubit into the corresponding classical bit. It
 does not add ordering barriers. `CreateZero`, `Discard`, partial measurements,
 and mid-circuit measurements are rejected.
+
+## Guppy Source Export
+
+`render_guppy_source(ir)` returns a standalone Guppy v1 Python module, and
+`write_guppy_source(path, ir)` writes the same deterministic source. This path
+translates `CircuitIR` directly and does not use pytket.
+
+By default the module contains two Guppy functions. `apply_circuit` accepts an
+owned `array[qubit, N]`, applies the circuit, and returns the owned register so
+it can be composed or called repeatedly. `main` allocates `N` zero-state
+qubits, calls `apply_circuit` once, measures the full register, and outputs the
+boolean array under `"q"`. Pass `include_main=False` to emit only the reusable
+function.
+
+The emitter supports Pauli rotations, H/S/Sdg/X/Y/Z, CX/CY/CZ, existing full
+register barriers, and `ResetZero`. It rejects `CreateZero`, `Discard`, input
+measurement markers, and unknown skipped operations because the fixed-width
+reusable function cannot preserve their lifecycle or result semantics. Source
+rendering itself does not import Guppy. Importing, checking, compiling, or
+running the generated module requires Python 3.12+ and `guppylang==1.0.1`.
+
+See [`examples/functionality/export_guppy.py`](./examples/functionality/export_guppy.py)
+for a complete source-generation and type-check example.
 
 ## Light-cone pruning
 

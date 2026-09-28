@@ -26,3 +26,6 @@ triton = [
 pytket = [
     "pytket>=2.7.0",
 ]
+guppy = [
+    "guppylang==1.0.1; python_version >= '3.12'",
+]
